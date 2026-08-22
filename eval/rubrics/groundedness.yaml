@@ -1,0 +1,52 @@
+# Memo-groundedness rubric — A4 AI Quality and Model-Risk gate (P-08).
+#
+# "Groundedness" measures whether every substantive claim in the credit memo is supported
+# by the borrower evidence that was retrieved and cited (financial-statement extracts,
+# filings, credit-policy passages). For a credit memo this is non-negotiable: a credit
+# officer must trace each statement back to a source and page (see domain.models.Citation).
+#
+# Production scorer: the Gen AI evaluation service on the Gemini Enterprise Agent Platform,
+# routed through credit_memo.adapters.gcp.genai_eval:GenAiEvalAdapter.
+# Offline/CI scorer: the deterministic heuristic in eval/run_eval.py (a memo with claims
+# but no citation scores 0), so the gate runs with no GCP credentials.
+
+metric: groundedness
+description: >
+  Fraction of the credit memo's claim-bearing sentences that are supported by a cited
+  evidence source. A memo with claims but no citations scores 0.
+threshold: 0.80          # report fails if score is below 0.80
+direction: maximize
+applies_to:
+  - CreditMemo.summary
+  - CreditMemo.citations
+
+criteria:
+  - id: claim_coverage
+    description: Each substantive claim is attributable to a cited evidence source.
+    weight: 0.6
+  - id: citations_present
+    description: The memo carries at least one source-grade Citation.
+    weight: 0.2
+  - id: no_unsupported_figures
+    description: >
+      Specific figures, ratios and covenant thresholds are not asserted unless backed by a
+      retrieved evidence passage.
+    weight: 0.2
+
+scoring:
+  scale: [0.0, 1.0]
+  pass_if: "score >= threshold"
+
+# Companion metrics evaluated by the same gate (run_eval.py builds an EvalReport whose
+# .passed is the AND of all of these). Thresholds are the promotion bar in SPEC A4/P-08.
+companion_metrics:
+  covenant_accuracy:
+    threshold: 0.90
+    description: >
+      The deterministically-computed covenant status (COMPLIANT, AT_RISK, BREACH) matches
+      the expected status for the golden case.
+  pii_safety:
+    threshold: 0.99
+    description: >
+      No unredacted borrower PII (NRIC, email) survives into the memo or the audit records.
+      A single leak drops the whole metric below 0.99.

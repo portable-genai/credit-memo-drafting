@@ -1,0 +1,194 @@
+# Credit-Memo / Underwriting Assistant (B2) — runtime configuration.
+#
+# Three deployment profiles share one domain (P-02, no vendor lock-in):
+#   gcp    : Google Cloud managed services (Document AI, Agent Search, BigQuery,
+#            Model Armor, DLP, Cloud Logging WORM, Cloud Trace, Gen AI eval).
+#   local  : a WORKING offline laptop stack (SQLite FTS5 retrieval + a deterministic
+#            schema-driven LLM, regex DLP, heuristic guardrail, append-only audit),
+#            SDK-free, no API key, no emulator required. The dev / test default.
+#   onprem : fail-fast Google Distributed Cloud migration placeholders (raise).
+# Switch with CREDIT_MEMO_PROFILE (or profile: below). Nothing in domain/ changes.
+#
+# The profile below deliberately has NO literal fallback. An unset CREDIT_MEMO_PROFILE and an
+# unset profile: key together mean "nobody chose", which is a third state: the SDK-free local
+# adapters still bind (nothing else can, with no cloud SDK installed) but every relaxation is
+# refused, so the seeded no-auth personas and the localhost CORS origins are NOT served.
+# Write a profile here, or set CREDIT_MEMO_PROFILE, to consent to one deliberately.
+
+project_id: ${GOOGLE_CLOUD_PROJECT:-your-gcp-project}
+region: asia-southeast1            # Singapore — MAS/HKMA/APRA/FSA data residency
+profile: ${CREDIT_MEMO_PROFILE:-}       # gcp | local | live | platform | onprem (prod sets CREDIT_MEMO_PROFILE=gcp explicitly)
+kms_key: ${CREDIT_MEMO_KMS_KEY:-}       # regional Cloud KMS key for CMEK
+grounding_enabled: ${CREDIT_MEMO_GROUNDING_ENABLED:-false}
+
+models:
+  reasoning: gemini-3.5-flash          # GA — memo synthesis + extraction (thinking=high)
+  triage: gemini-3.1-flash-lite        # GA — routing / triage / guardrail pre-checks
+  hard_reasoning: gemini-3.1-pro       # Preview — OFF unless use_hard_reasoning=true
+  use_hard_reasoning: false
+
+document_ai:
+  processor_id: ${CREDIT_MEMO_DOCAI_PROCESSOR:-}
+  location: asia-southeast1
+  processor_version: rc
+
+knowledge_base:
+  base_url_env: HRZ_KB_URL             # A2 Enterprise KB (B2's governed RAG store)
+  data_store_id: credit-memo-kb        # only used by the standalone GCP adapter
+  location: asia-southeast1
+  top_k: 10
+
+peer_data:
+  dataset: credit_peers                # BigQuery peer-financials dataset (CMEK)
+  table: peer_financials
+  location: asia-southeast1
+  max_peers: 25
+
+model_armor:
+  template_id: credit-memo-guardrail
+  host: modelarmor.asia-southeast1.rep.googleapis.com
+
+dlp:
+  inspect_template: ${CREDIT_MEMO_DLP_INSPECT_TEMPLATE:-}
+  deidentify_template: ${CREDIT_MEMO_DLP_DEIDENTIFY_TEMPLATE:-}
+
+# Which jurisdictions' national identifiers are redacted. Drives the local regex redactor,
+# the GCP DLP custom info types and the eval gate's pii_safety leak check from one pattern
+# source (domain/pii_patterns.py), so they cannot drift apart. Supported: SG, HK, JP, AU,
+# IN, GB. Override with CREDIT_MEMO_PII_JURISDICTIONS (comma-separated).
+pii:
+  jurisdictions: ${CREDIT_MEMO_PII_JURISDICTIONS:-SG,HK,JP,AU}
+
+logging:
+  log_name: credit-memo-audit
+  bucket: credit-memo-worm
+  retention_days: 2557               # ~7 years; bucket is locked (irreversible) in prod
+
+agent_engine:
+  resource_name: ${CREDIT_MEMO_AGENT_ENGINE:-}
+  display_name: credit-memo-drafting
+
+# Bank-owned deterministic policy. Values are reference defaults only and are threaded
+# into the pure domain service by the composition root.
+policy:
+  covenant_at_risk_band: 0.05
+
+# SDK-free 'local' profile stores. Empty => per-package defaults under
+# ~/.credit_memo/ ; tests pass ':memory:' for ephemeral, deterministic stores.
+local:
+  db_path: ${CREDIT_MEMO_LOCAL_DB:-}        # SQLite FTS5 borrower/policy index
+  audit_path: ${CREDIT_MEMO_LOCAL_AUDIT:-}  # append-only local audit store
+
+# The `live` profile: real SEC EDGAR grounding + a local model server on this machine
+# (MLX / Ollama / vLLM / llama.cpp, any OpenAI-compatible /chat/completions endpoint).
+# Typing a real US-listed company grounds the memo on its actual submissions and XBRL
+# company facts (cited to data.sec.gov); the fictional local seed never appears.
+# The SEC's fair-access policy wants identified traffic: set SEC_EDGAR_CONTACT to an
+# email so the User-Agent carries a contact address.
+live:
+  llm_url: ${CREDIT_MEMO_LIVE_LLM_URL:-http://127.0.0.1:8001/chat/completions}
+  llm_model: ${CREDIT_MEMO_LIVE_LLM_MODEL:-mlx-community/gemma-4-26b-a4b-it-8bit}
+  timeout_seconds: ${CREDIT_MEMO_LIVE_TIMEOUT:-240}
+  max_output_tokens: ${CREDIT_MEMO_LIVE_MAX_TOKENS:-2048}
+  edgar_user_agent: ${CREDIT_MEMO_EDGAR_UA:-credit-memo-drafting-live/1.0}
+  edgar_cache_dir: ${CREDIT_MEMO_EDGAR_CACHE:-}      # "" => ~/.credit_memo/edgar-cache
+  edgar_cache_ttl_seconds: ${CREDIT_MEMO_EDGAR_TTL:-86400}  # 0 disables the cache
+  peer_limit: ${CREDIT_MEMO_PEER_LIMIT:-3}
+
+# ----------------------------------------------------------------------------- #
+# Port -> adapter bindings. The container picks the entry for the active profile,
+# falling back to the 'gcp' entry. These dotted paths are the build contract:
+# each adapter class takes a single Settings argument.
+#
+# Under 'local', the platform-client ports (knowledge_base, guardrail, redaction,
+# audit, evaluation, agent_registry) use IN-PROCESS local implementations, NOT HTTP
+# to sibling services: a laptop runs one app, not the whole platform.
+# ----------------------------------------------------------------------------- #
+adapters:
+  # End-user identity (authentication). local = seeded dev personas, NO IdP/AD/LDAP, so
+  # demos and tests run offline; gcp/platform = verify the IAP-injected signed assertion
+  # (auth configured ON the GCP service); onprem = client IdP placeholder. The resolved
+  # Principal supplies the audit actor + entitlement principals, replacing any client-
+  # asserted actor/ACL.
+  identity:
+    gcp: credit_memo.adapters.gcp.iap_identity:IapIdentityAdapter
+    platform: credit_memo.adapters.gcp.iap_identity:IapIdentityAdapter
+    local: credit_memo.adapters.local.identity:LocalPersonaIdentityAdapter
+    live: credit_memo.adapters.local.identity:LocalPersonaIdentityAdapter
+    onprem: credit_memo.adapters.onprem.identity:OnPremIdentityAdapter
+  extraction:
+    gcp: credit_memo.adapters.gcp.document_ai_extraction:DocumentAiExtractionAdapter
+    platform: credit_memo.adapters.gcp.document_ai_extraction:DocumentAiExtractionAdapter
+    local: credit_memo.adapters.local.extraction:LocalDocumentExtractionAdapter
+    live: credit_memo.adapters.local.extraction:LocalDocumentExtractionAdapter
+    onprem: credit_memo.adapters.onprem.extraction:OnPremExtractionAdapter
+  knowledge_base:
+    gcp: credit_memo.adapters.gcp.agent_search_kb:AgentSearchKnowledgeBaseAdapter
+    platform: credit_memo.adapters.platform.remote_knowledge_base:RemoteKnowledgeBaseAdapter
+    local: credit_memo.adapters.local.knowledge_base:LocalFtsKnowledgeBaseAdapter
+    live: credit_memo.adapters.live.knowledge_base:LiveEdgarKnowledgeBaseAdapter
+    onprem: credit_memo.adapters.onprem.knowledge_base:OnPremKnowledgeBaseAdapter
+  peer_data:
+    gcp: credit_memo.adapters.gcp.bigquery_peer_data:BigQueryPeerDataAdapter
+    platform: credit_memo.adapters.gcp.bigquery_peer_data:BigQueryPeerDataAdapter
+    local: credit_memo.adapters.local.peer_data:LocalPeerDataAdapter
+    live: credit_memo.adapters.live.peer_data:LiveEdgarPeerDataAdapter
+    onprem: credit_memo.adapters.onprem.peer_data:OnPremPeerDataAdapter
+  llm:
+    gcp: credit_memo.adapters.gcp.gemini_llm:GeminiLLMAdapter
+    platform: credit_memo.adapters.gcp.gemini_llm:GeminiLLMAdapter
+    local: credit_memo.adapters.local.llm:LocalDeterministicLLMAdapter
+    live: credit_memo.adapters.live.llm:GemmaLocalLLMAdapter
+    onprem: credit_memo.adapters.onprem.llm:OnPremLLMAdapter
+  guardrail:
+    gcp: credit_memo.adapters.gcp.model_armor_guardrail:ModelArmorGuardrailAdapter
+    platform: credit_memo.adapters.platform.remote_guardrail:RemoteGuardrailAdapter
+    local: credit_memo.adapters.local.guardrail:LocalHeuristicGuardrailAdapter
+    live: credit_memo.adapters.local.guardrail:LocalHeuristicGuardrailAdapter
+    onprem: credit_memo.adapters.onprem.guardrail:OnPremGuardrailAdapter
+  redaction:
+    gcp: credit_memo.adapters.gcp.dlp_redaction:DlpRedactionAdapter
+    platform: credit_memo.adapters.platform.remote_redaction:RemoteRedactionAdapter
+    local: credit_memo.adapters.local.redaction:LocalRegexRedactionAdapter
+    live: credit_memo.adapters.local.redaction:LocalRegexRedactionAdapter
+    onprem: credit_memo.adapters.onprem.redaction:OnPremRedactionAdapter
+  audit:
+    gcp: credit_memo.adapters.gcp.cloud_logging_audit:CloudLoggingAuditAdapter
+    platform: credit_memo.adapters.platform.remote_audit:RemoteAuditAdapter
+    local: credit_memo.adapters.local.audit:LocalAppendOnlyAuditAdapter
+    live: credit_memo.adapters.local.audit:LocalAppendOnlyAuditAdapter
+    onprem: credit_memo.adapters.onprem.audit:OnPremAuditAdapter
+  # Rule R8: a memo always requires human review, so it is ROUTED to the Hrz7 Human-Review &
+  # Maker-Checker Console (via the shared review-kit), never terminated in a local boolean.
+  # local = enqueue to an in-memory outbox so the routing path runs offline; gcp/platform = submit
+  # over S2S to Hrz7's service intake (HRZ_HUMAN_REVIEW_URL); onprem = sovereign-console placeholder.
+  review_router:
+    gcp: credit_memo.adapters.platform.review_router:PlatformReviewRouter
+    platform: credit_memo.adapters.platform.review_router:PlatformReviewRouter
+    local: credit_memo.adapters.local.review_router:LocalReviewRouter
+    live: credit_memo.adapters.local.review_router:LocalReviewRouter
+    onprem: credit_memo.adapters.onprem.review_router:OnPremReviewRouter
+  tracer:
+    gcp: credit_memo.adapters.gcp.cloud_trace_tracer:CloudTraceTracerAdapter
+    platform: credit_memo.adapters.gcp.cloud_trace_tracer:CloudTraceTracerAdapter
+    local: credit_memo.adapters.local.tracer:LocalNoopTracerAdapter
+    live: credit_memo.adapters.local.tracer:LocalNoopTracerAdapter
+    onprem: credit_memo.adapters.onprem.tracer:OnPremTracerAdapter
+  evaluation:
+    gcp: credit_memo.adapters.gcp.genai_eval:GenAiEvalAdapter
+    platform: credit_memo.adapters.platform.remote_evaluation:RemoteEvaluationAdapter
+    local: credit_memo.adapters.local.evaluation:LocalOfflineEvalAdapter
+    live: credit_memo.adapters.local.evaluation:LocalOfflineEvalAdapter
+    onprem: credit_memo.adapters.onprem.evaluation:OnPremEvalAdapter
+  agent_registry:
+    gcp: credit_memo.adapters.gcp.a2a_registry:A2ARegistryAdapter
+    platform: credit_memo.adapters.platform.remote_registry:RemoteRegistryAdapter
+    local: credit_memo.adapters.local.registry:LocalAgentRegistryAdapter
+    live: credit_memo.adapters.local.registry:LocalAgentRegistryAdapter
+    onprem: credit_memo.adapters.onprem.registry:OnPremAgentRegistryAdapter
+  tool_catalog:
+    gcp: credit_memo.adapters.gcp.mcp_tool_catalog:McpToolCatalogAdapter
+    platform: credit_memo.adapters.gcp.mcp_tool_catalog:McpToolCatalogAdapter
+    local: credit_memo.adapters.local.tool_catalog:LocalToolCatalogAdapter
+    live: credit_memo.adapters.local.tool_catalog:LocalToolCatalogAdapter
+    onprem: credit_memo.adapters.onprem.tool_catalog:OnPremToolCatalogAdapter
