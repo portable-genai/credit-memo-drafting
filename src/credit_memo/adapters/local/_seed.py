@@ -20,6 +20,12 @@ from ...domain.models import (
     SourceType,
 )
 
+#: The ACL tag every built-in passage carries. A query holds it only via the fallback in
+#: ``LocalFtsKnowledgeBaseAdapter.search``, which admits this corpus when the borrower's own
+#: evidence retrieved NOTHING -- so the out-of-the-box CLI smoke run is still grounded, and a
+#: borrower that supplied filings is grounded in those filings and only those.
+DEMO_CORPUS_TAG = "demo:seed-corpus"
+
 
 def _passage(
     *,
@@ -42,6 +48,13 @@ def _passage(
             score=score,
         ),
         score=score,
+        # Tagged, and deliberately NOT untagged. Untagged means public under the ACL
+        # contract, so this fictional corpus was visible to every borrower: it competed
+        # with a borrower's own ingested filings on relevance, outranked them, and --
+        # because retrieval is capped at top_k -- displaced them. Memos for a real
+        # borrower were grounded in invented filings and cited them, and the covenant
+        # extractor read leverage and DSCR straight out of a made-up certificate.
+        acl_tags=(DEMO_CORPUS_TAG,),
     )
 
 
