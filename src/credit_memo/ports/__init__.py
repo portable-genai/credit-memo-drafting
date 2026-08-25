@@ -8,7 +8,7 @@ satisfies the same contract.
 from .extraction import DocumentExtractionPort
 from .generation import LLMPort
 from .governance import AgentRegistryPort, ToolCatalogPort
-from .identity import IdentityPort
+from .identity import EndUserAuthUnavailableError, IdentityPort
 from .knowledge_base import KnowledgeBaseClientPort
 from .observability import (
     AuditSinkPort,
@@ -34,5 +34,6 @@ __all__ = [
     "AgentRegistryPort",
     "ToolCatalogPort",
     "IdentityPort",
+    "EndUserAuthUnavailableError",
     "ReviewRouterPort",
 ]
