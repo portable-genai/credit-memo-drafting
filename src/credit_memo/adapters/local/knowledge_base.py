@@ -33,7 +33,7 @@ from ...domain.models import (
     RetrievedPassage,
     SourceType,
 )
-from ._seed import SEED_PASSAGES
+from ._seed import DEMO_CORPUS_TAG, SEED_PASSAGES
 
 # Default on-disk location for the local index (overridable via settings.local.db_path).
 _DEFAULT_DB_DIR = Path.home() / ".credit_memo"
@@ -70,8 +70,44 @@ class LocalFtsKnowledgeBaseAdapter:
         EDGAR facts and uploaded borrower documents), and this guard covers every
         construction path, including the live subclass.
         """
-        if self.settings.profile != "live" and self._is_empty():
+        if self.settings.profile == "live":
+            return
+        if self._is_empty():
             self.seed(SEED_PASSAGES)
+            return
+        self._retag_legacy_seed_rows()
+
+    def _retag_legacy_seed_rows(self) -> None:
+        """Repair an index that was seeded BEFORE the demo corpus carried its ACL tag.
+
+        Seeding only ever runs on an EMPTY index, so tagging the corpus in ``_seed.py``
+        does not reach a laptop that has already run this repo once: it still holds the
+        built-in passages as UNTAGGED rows, and untagged means public. The leak would
+        survive the fix on exactly the machines that have been used the most, and nothing
+        would say so -- ``make memo`` keeps printing a cited memo either way.
+
+        Scoped to untagged rows carrying a built-in source id. Ingested borrower evidence
+        is always written with its ``borrower:``/``tenant:`` tags, so it is never matched.
+        """
+        ids = tuple(p.citation.source_id for p in SEED_PASSAGES)
+        if not ids:
+            return
+        holes = ",".join("?" * len(ids))
+        with self._lock:
+            row = self._conn.execute(
+                f"SELECT count(*) AS n FROM passages "  # noqa: S608 - holes are '?' placeholders
+                f"WHERE acl_tags = '' AND source_id IN ({holes})",
+                ids,
+            ).fetchone()
+            if not int(row["n"]):
+                return
+            self._conn.execute(
+                f"DELETE FROM passages "  # noqa: S608 - holes are '?' placeholders
+                f"WHERE acl_tags = '' AND source_id IN ({holes})",
+                ids,
+            )
+            self._conn.commit()
+            self._insert(list(SEED_PASSAGES))
 
     # ------------------------------------------------------------------ #
     # Connection / schema
@@ -193,26 +229,54 @@ class LocalFtsKnowledgeBaseAdapter:
         )
 
     def search(self, query: RetrievalQuery) -> list[RetrievedPassage]:
-        """Return ranked passages with page-level citations for ``query`` (ACL-filtered)."""
+        """Return ranked, ACL-filtered passages with page-level citations for ``query``.
+
+        The built-in demo corpus is admitted only as a FALLBACK, when the borrower's own
+        evidence retrieved nothing. It used to be untagged, which under the ACL contract
+        means public: it then competed with a borrower's ingested filings on relevance,
+        and since retrieval is capped at ``top_k`` it did not merely join them but
+        displaced them. A memo for a real borrower cited a fictional covenant certificate.
+
+        Ordering the two passes this way is what makes the rule stateable in one sentence:
+        the demo corpus grounds a query that would otherwise be ungrounded, and never
+        competes with real evidence for a place in the result.
+
+        The rows are also over-fetched so the ACL filter runs BEFORE the ``top_k`` budget
+        is spent. The previous shape applied ``LIMIT top_k`` in SQL and filtered
+        afterwards, so rows the caller could not see consumed the budget and a ``top_k=1``
+        query could return nothing at all while admissible evidence sat unread.
+        """
+        rows = self._ranked_rows(query)
+        out = self._admit(rows, set(query.acl_principals or ()), query.top_k)
+        if not out:
+            out = self._admit(rows, {*(query.acl_principals or ()), DEMO_CORPUS_TAG}, query.top_k)
+        return out
+
+    def _ranked_rows(self, query: RetrievalQuery) -> list[sqlite3.Row]:
         match = self._build_match(query.text)
-        principals = set(query.acl_principals or ())
-
+        limit = max(query.top_k, 1) * 4
+        if not match:
+            # No usable query terms: fall back to a score-ordered scan so the pipeline
+            # still gets something deterministic rather than an FTS5 syntax error.
+            sql = "SELECT * FROM passages ORDER BY score DESC LIMIT ?"
+            params: tuple[object, ...] = (limit,)
+        else:
+            sql = "SELECT * FROM passages WHERE passages MATCH ? ORDER BY rank LIMIT ?"
+            params = (match, limit)
         with self._lock:
-            if not match:
-                # No usable query terms: fall back to a score-ordered scan so the pipeline
-                # still gets something deterministic rather than an FTS5 syntax error.
-                cursor = self._conn.execute(
-                    "SELECT * FROM passages ORDER BY score DESC LIMIT ?", (max(query.top_k, 1),)
-                )
-            else:
-                cursor = self._conn.execute(
-                    "SELECT * FROM passages WHERE passages MATCH ? ORDER BY rank LIMIT ?",
-                    (match, max(query.top_k, 1)),
-                )
-            rows = cursor.fetchall()
+            return list(self._conn.execute(sql, params).fetchall())
 
-        passages = [self._row_to_passage(row) for row in rows]
-        return [p for p in passages if self._acl_ok(p, principals)]
+    def _admit(
+        self, rows: list[sqlite3.Row], principals: set[str], top_k: int
+    ) -> list[RetrievedPassage]:
+        out: list[RetrievedPassage] = []
+        for row in rows:
+            passage = self._row_to_passage(row)
+            if self._acl_ok(passage, principals):
+                out.append(passage)
+            if len(out) >= max(top_k, 1):
+                break
+        return out
 
     # ------------------------------------------------------------------ #
     # Helpers
