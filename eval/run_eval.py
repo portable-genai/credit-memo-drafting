@@ -311,7 +311,7 @@ class FakeLLM:
 
     def __init__(self, by_borrower: dict[str, GoldenExample]) -> None:
         self._by_borrower = by_borrower
-        self.model = "gemini-3.5-flash"
+        self.model = "gemini-3.7-flash"
 
     def generate(self, request: LlmRequest) -> LlmResponse:
         user = request.messages[-1].content if request.messages else ""
