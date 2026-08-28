@@ -69,10 +69,14 @@ table.
 ### Is data residency enforced?
 
 At deploy time via `infra/terraform/*`: a single in-country region (default `asia-southeast1`),
-CMEK (`kms.tf`), a VPC-SC perimeter (`vpc_sc.tf`) and WORM audit logging (`logging_worm.tf`),
-with region and tenant as variables (P-03, P-09). The open gap (check D5) is that there is no CI
-Terraform validate job and no Org Policy resource-location allowlist resource yet, so close those
-before you rely on the pin in automation. The residency-violation CI gate is the sibling **Rsk3**
+CMEK (`kms.tf`), a VPC-SC perimeter (`vpc_sc.tf`), WORM audit logging (`logging_worm.tf`) and a
+`gcp.resourceLocations` Org Policy (`org_policy.tf`), with region and tenant as variables (P-03,
+P-09). **Two services do not follow the region, and cannot:** Document AI extracts in the `us`
+multi-region until Google grants single-region access, and Agent Search serves only `global` /
+`us` / `eu`. Widening the location policy to permit them (`resource_location_values`) is a
+jurisdiction statement, not plumbing — state the residency claim at that width. The remaining
+open gap (check D5) is that there is no CI Terraform validate job, so close that before you rely
+on the pin in automation. The residency-violation CI gate is the sibling **Rsk3**
 `architecture-validator` (`domain/residency/`); the exit / concentration-risk plan is **Rgc9**
 `operational-resilience-mapping` (`domain/concentration_exit/`). This repo enforces residency in
 its own infra and is one of the systems those tools reason about.
