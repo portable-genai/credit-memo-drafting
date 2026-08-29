@@ -32,8 +32,8 @@ against the pre-fix behaviour).
 
 The platform adapters (`adapters/platform/_s2s.py`, sourced from the shared `hex-service-kit`)
 require `https://` base URLs outside loopback (rejected at construction), attach a bearer
-credential from `HRZ_S2S_TOKEN`, and propagate the verified end-user actor as an HMAC-signed
-`X-Cm-Actor` / `X-Cm-Actor-Sig` pair (key from `HRZ_S2S_SIGNING_KEY`) rather than a trust-me
+credential from `S2S_TOKEN`, and propagate the verified end-user actor as an HMAC-signed
+`X-Cm-Actor` / `X-Cm-Actor-Sig` pair (key from `S2S_SIGNING_KEY`) rather than a trust-me
 JSON field. All six platform delegates (`remote_audit`, `remote_guardrail`,
 `remote_knowledge_base`, `remote_redaction`, `remote_registry`, `remote_evaluation`) validate
 their base URL. The receiving platform services own verification.
@@ -106,8 +106,8 @@ pending a breaking Next.js major bump; `pip-audit` is unaffected.
 ### Where are secrets? Are any committed?
 
 No secret values are in the repo. `config/settings.yaml` stores only the **names** of env vars
-holding secrets (e.g. `CREDIT_MEMO_KMS_KEY`, `CREDIT_MEMO_AGENT_ENGINE`, `HRZ_S2S_TOKEN`,
-`HRZ_S2S_SIGNING_KEY`); values are read at construction time and never logged. A literal-secret
+holding secrets (e.g. `CREDIT_MEMO_KMS_KEY`, `CREDIT_MEMO_AGENT_ENGINE`, `S2S_TOKEN`,
+`S2S_SIGNING_KEY`); values are read at construction time and never logged. A literal-secret
 scan over `src/` and `config/` is clean, and every fixture and figure is obviously fictional.
 
 ### What is explicitly out of scope / a residual risk?

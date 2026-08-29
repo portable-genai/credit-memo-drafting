@@ -24,7 +24,7 @@ contract as the happy path, because the shape they reject, ``{"passed": true}`` 
 behind it, is a promotion certified by nothing.
 
 Runs fully offline: the Hrz4 endpoint is mocked with respx and never actually served. The
-localhost default below MUST match ``HRZ_QUALITY_URL``'s default in the adapter.
+localhost default below MUST match ``QUALITY_GATE_URL``'s default in the adapter.
 """
 
 from __future__ import annotations
@@ -44,8 +44,8 @@ from credit_memo.domain.models import EvalReport
 CONFIG_PATH = "config/settings.yaml"
 
 # The platform client's localhost default (SPEC contract): mocked, never actually served.
-# This MUST match the HRZ_QUALITY_URL default hard-coded in remote_evaluation.py.
-HRZ_QUALITY = "http://localhost:8084"
+# This MUST match the QUALITY_GATE_URL default hard-coded in remote_evaluation.py.
+QUALITY_GATE = "http://localhost:8084"
 
 # A dataset *path*; the adapter derives dataset_id = basename without the ``.jsonl`` suffix.
 DATASET_PATH = "eval/datasets/golden_cases.jsonl"
@@ -130,7 +130,7 @@ def test_evaluate_sends_structured_target_and_matching_dataset_id():
     expected_model = Settings.load(CONFIG_PATH).models.reasoning
 
     with respx.mock:
-        route = respx.post(f"{HRZ_QUALITY}/v1/evaluations").respond(
+        route = respx.post(f"{QUALITY_GATE}/v1/evaluations").respond(
             json=_eval_body(run_id="run-fictional-0002", results=MIXED_ROWS),
         )
         report = adapter.evaluate(DATASET_PATH)
@@ -175,7 +175,7 @@ def test_evaluate_carries_the_attested_evidence_through_the_adapter():
     """
     adapter = _adapter()
     with respx.mock:
-        respx.post(f"{HRZ_QUALITY}/v1/evaluations").respond(
+        respx.post(f"{QUALITY_GATE}/v1/evaluations").respond(
             json=_eval_body(run_id="run-fictional-0004", results=PASSING_ROWS),
         )
         report = adapter.evaluate(DATASET_PATH)
@@ -200,7 +200,7 @@ def test_evaluate_REFUSES_scores_with_no_durable_run_identity():
     """
     adapter = _adapter()
     with respx.mock:
-        respx.post(f"{HRZ_QUALITY}/v1/evaluations").respond(
+        respx.post(f"{QUALITY_GATE}/v1/evaluations").respond(
             json={"results": PASSING_ROWS, "n_examples": 24}
         )
         with pytest.raises(RemoteEvaluationError):
@@ -212,7 +212,7 @@ def test_evaluate_REFUSES_a_row_whose_verdict_contradicts_its_score():
     adapter = _adapter()
     rows = [{"metric": "covenant_accuracy", "score": 0.41, "threshold": 0.90, "passed": True}]
     with respx.mock:
-        respx.post(f"{HRZ_QUALITY}/v1/evaluations").respond(
+        respx.post(f"{QUALITY_GATE}/v1/evaluations").respond(
             json=_eval_body(run_id="run-fictional-0003", results=rows)
         )
         with pytest.raises(RemoteEvaluationError):
@@ -223,7 +223,7 @@ def test_gate_posts_to_v1_gate_and_returns_true_on_a_full_decision():
     adapter = _adapter()
 
     with respx.mock:
-        route = respx.post(f"{HRZ_QUALITY}/v1/gate").respond(
+        route = respx.post(f"{QUALITY_GATE}/v1/gate").respond(
             json=_gate_body(passed=True, rows=PASSING_ROWS)
         )
         result = adapter.gate(DATASET_PATH)
@@ -246,7 +246,7 @@ def test_gate_returns_false_through_evidence_that_actually_failed():
     """
     adapter = _adapter()
     with respx.mock:
-        respx.post(f"{HRZ_QUALITY}/v1/gate").respond(json=_gate_body(passed=False, rows=MIXED_ROWS))
+        respx.post(f"{QUALITY_GATE}/v1/gate").respond(json=_gate_body(passed=False, rows=MIXED_ROWS))
         assert adapter.gate(DATASET_PATH) is False
 
 
@@ -258,7 +258,7 @@ def test_gate_REFUSES_a_naked_boolean_with_no_evidence():
     """
     adapter = _adapter()
     with respx.mock:
-        respx.post(f"{HRZ_QUALITY}/v1/gate").respond(json={"passed": True})
+        respx.post(f"{QUALITY_GATE}/v1/gate").respond(json={"passed": True})
         with pytest.raises(RemoteEvaluationError):
             adapter.gate(DATASET_PATH)
 
@@ -267,7 +267,7 @@ def test_gate_REFUSES_an_unattested_report_even_when_every_metric_passes():
     """Unattested scores are a draft run, not sign-off, however good the numbers look."""
     adapter = _adapter()
     with respx.mock:
-        respx.post(f"{HRZ_QUALITY}/v1/gate").respond(
+        respx.post(f"{QUALITY_GATE}/v1/gate").respond(
             json=_gate_body(passed=True, rows=PASSING_ROWS, attested=False)
         )
         with pytest.raises(RemoteEvaluationError):
@@ -286,7 +286,7 @@ def test_gate_REFUSES_a_redteam_aggregate_that_contradicts_its_rows():
         ],
     }
     with respx.mock:
-        respx.post(f"{HRZ_QUALITY}/v1/gate").respond(json=body)
+        respx.post(f"{QUALITY_GATE}/v1/gate").respond(json=body)
         with pytest.raises(RemoteEvaluationError):
             adapter.gate(DATASET_PATH)
 
@@ -297,7 +297,7 @@ def test_gate_REFUSES_a_decision_with_no_mrm_evidence_reference():
     body = _gate_body(passed=True, rows=PASSING_ROWS)
     body["mrm_evidence_ref"] = ""
     with respx.mock:
-        respx.post(f"{HRZ_QUALITY}/v1/gate").respond(json=body)
+        respx.post(f"{QUALITY_GATE}/v1/gate").respond(json=body)
         with pytest.raises(RemoteEvaluationError):
             adapter.gate(DATASET_PATH)
 
@@ -305,6 +305,6 @@ def test_gate_REFUSES_a_decision_with_no_mrm_evidence_reference():
 def test_non_2xx_raises_remote_evaluation_error():
     adapter = _adapter()
     with respx.mock:
-        respx.post(f"{HRZ_QUALITY}/v1/evaluations").respond(422, json={"detail": "dataset_id"})
+        respx.post(f"{QUALITY_GATE}/v1/evaluations").respond(422, json={"detail": "dataset_id"})
         with pytest.raises(RemoteEvaluationError):
             adapter.evaluate(DATASET_PATH)
