@@ -103,15 +103,15 @@ secure profiles resolve it from the IAP assertion. Agent skills: `build_credit_m
 
 ### 6.2 Endpoints this repo CONSUMES (existing siblings)
 
-- **Hrz1 guardrail** (`HRZ_GUARDRAIL_URL`): `POST /v1/guardrail/screen`, `POST /v1/redact`.
-- **Hrz2 enterprise KB** (`HRZ_KB_URL`): `POST /v1/ingest`, `POST /v1/search` (Doc2's RAG store).
-- **Hrz3 registry** (`HRZ_REGISTRY_URL`): `POST /v1/agents`, `GET /v1/agents/{name}`, `GET /v1/agents`.
-- **Hrz4 AI quality** (`HRZ_QUALITY_URL`): `POST /v1/evaluations` and `POST /v1/gate`, both with a
+- **Hrz1 guardrail** (`GUARDRAIL_GATEWAY_URL`): `POST /v1/guardrail/screen`, `POST /v1/redact`.
+- **Hrz2 enterprise KB** (`KNOWLEDGE_BASE_URL`): `POST /v1/ingest`, `POST /v1/search` (Doc2's RAG store).
+- **Hrz3 registry** (`AGENT_REGISTRY_URL`): `POST /v1/agents`, `GET /v1/agents/{name}`, `GET /v1/agents`.
+- **Hrz4 AI quality** (`QUALITY_GATE_URL`): `POST /v1/evaluations` and `POST /v1/gate`, both with a
   structured body `{target: {model, prompt_version, dataset_id, system}, dataset_id, bundle: "doc2-credit-memo"}`
   (the top-level `dataset_id` must equal `target.dataset_id`, else Hrz4 returns `422`). Metric selection is
   by the registered bundle name `doc2-credit-memo` (no bare metric names); the eval response is parsed from
   `results[]` and the gate returns `{passed}`.
-- **Hrz5 observability/audit** (`HRZ_OBSERVABILITY_URL`): `POST /v1/audit`.
+- **Hrz5 observability/audit** (`OBSERVABILITY_URL`): `POST /v1/audit`.
 
 Peer data is internal (BigQuery): no platform HTTP adapter.
 

@@ -32,7 +32,7 @@ fictional.
 | R4 Hrz3 registry | Met | `AgentRegistryPort` -> Hrz3 `/v1/agents`; A2A AgentCard at `/.well-known/agent-card.json`. |
 | R5 Hrz4 eval gate at promotion | Met | `EvaluationGatePort` -> Hrz4 `/v1/evaluations` + `/v1/gate`; offline mirror in `eval/run_eval.py`. |
 | R6 Rsk3 validation at intake | n/a in code | Doc2 is validated by Rsk3 at intake as a consuming check; there is no in-repo Rsk3 client (Rsk3 calls Doc2, not the reverse). The repo exposes the contract Rsk3 validates (SPEC §6) and the eval gate Rsk3 relies on. |
-| R8 Route `requires_human_review` to Hrz7 | Met | Every escalated memo is submitted to the Hrz7 Human-Review & Maker-Checker Console via the shared `review-kit` client (redact-before-wire); `local` enqueues to a transactional outbox so the routing path runs offline, `gcp`/`platform` submit over S2S to Hrz7's service intake (`HRZ_HUMAN_REVIEW_URL`). `ports/review_router.py`, `adapters/{local,platform,onprem}/review_router.py`, `adapters/_review_payload.py`. |
+| R8 Route `requires_human_review` to Hrz7 | Met | Every escalated memo is submitted to the Hrz7 Human-Review & Maker-Checker Console via the shared `review-kit` client (redact-before-wire); `local` enqueues to a transactional outbox so the routing path runs offline, `gcp`/`platform` submit over S2S to Hrz7's service intake (`HUMAN_REVIEW_URL`). `ports/review_router.py`, `adapters/{local,platform,onprem}/review_router.py`, `adapters/_review_payload.py`. |
 
 ## Notes on the credit domain
 

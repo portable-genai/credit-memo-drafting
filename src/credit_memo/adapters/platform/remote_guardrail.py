@@ -6,7 +6,7 @@ Model Armor and DLP) rather than calling Model Armor directly. This adapter impl
 :class:`GuardrailPort` by POSTing to that gateway's ``/v1/guardrail/screen`` endpoint and
 parsing the response back into a domain :class:`GuardrailVerdict` (SPEC §6, A1 contract).
 
-The base URL is read from ``HRZ_GUARDRAIL_URL`` (localhost default).
+The base URL is read from ``GUARDRAIL_GATEWAY_URL`` (localhost default).
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ class RemoteGuardrailAdapter:
     def __init__(self, settings: object) -> None:
         self._settings = settings
         self._base_url = _s2s.validate_base_url(
-            setting_or_default("HRZ_GUARDRAIL_URL", _DEFAULT_URL), service="guardrail gateway"
+            setting_or_default("GUARDRAIL_GATEWAY_URL", _DEFAULT_URL), service="guardrail gateway"
         )
 
     def screen(self, text: str, direction: Direction) -> GuardrailVerdict:
