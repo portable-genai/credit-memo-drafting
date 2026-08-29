@@ -10,7 +10,7 @@ import "./globals.css";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "B2 Credit-Memo Assistant",
+  title: "Credit-Memo Assistant",
   description:
     "Grounded underwriting assistant: cited credit memos, covenants, risk flags and peer comparisons for a commercial bank's credit team. Decision support, not a credit decision.",
 };
@@ -33,7 +33,7 @@ export default function RootLayout({
             <header className="border-b border-ink-200 bg-white">
               <div className="mx-auto max-w-3xl px-4 py-4">
                 <h1 className="text-lg font-semibold text-ink-900">
-                  B2 · Credit-Memo Assistant
+                  Credit-Memo Assistant
                 </h1>
                 <p className="text-sm text-ink-500">
                   Cited credit memos · region asia-southeast1 · synthetic data is fictional
