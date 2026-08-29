@@ -246,7 +246,9 @@ def test_gate_returns_false_through_evidence_that_actually_failed():
     """
     adapter = _adapter()
     with respx.mock:
-        respx.post(f"{QUALITY_GATE}/v1/gate").respond(json=_gate_body(passed=False, rows=MIXED_ROWS))
+        respx.post(f"{QUALITY_GATE}/v1/gate").respond(
+            json=_gate_body(passed=False, rows=MIXED_ROWS)
+        )
         assert adapter.gate(DATASET_PATH) is False
 
 
