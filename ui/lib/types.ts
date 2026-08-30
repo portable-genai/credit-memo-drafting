@@ -135,6 +135,10 @@ export interface CreditMemo {
 export interface HealthStatus {
   status: string;
   profile: string;
+  // Provenance the banner states on every page: where the runtime sits and which model
+  // answers. Both come from the service; nothing in the console infers either.
+  runtime: string;
+  generator_model: string;
   region: string;
 }
 

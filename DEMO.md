@@ -14,9 +14,9 @@ Step-by-step scripts for demoing Doc2 two ways:
 - **Demo C - REAL borrowers under the `live` profile** (the audience-facing demo): type
   any US-listed company name and the memo grounds on that company's **real SEC EDGAR
   record** (registrant profile, latest 10-K XBRL figures, filing accession), with real
-  same-industry peers (same SIC code, real filed figures) and generation on a local
-  Gemma model server. For a private borrower, upload its financial statements (PDF or
-  text; template downloadable) and the memo grounds on the uploaded evidence instead.
+  same-industry peers (same SIC code, real filed figures) and generation by the Gemini
+  API. For a private borrower, upload its financial statements (PDF or text; template
+  downloadable) and the memo grounds on the uploaded evidence instead.
 
 > Demo A / B use **fictional** synthetic borrower data. Do not run against live borrower
 > data without your own legal, security and model-risk sign-off. Demo C never serves the
@@ -25,10 +25,14 @@ Step-by-step scripts for demoing Doc2 two ways:
 ### Demo C in three commands
 
 ```bash
-# 1. Start a local OpenAI-compatible model server on :8001 (MLX / Ollama / vLLM).
+# 1. There is no local model server to start. Every model call in this profile is the
+#    Gemini API: EDGAR is not Google Search, but it leaves the data centre all the same,
+#    so this profile cannot answer without outbound network either way.
 
-# 2. Declare your EDGAR traffic (SEC fair-access policy) and serve live.
-SEC_EDGAR_CONTACT=you@example.com CREDIT_MEMO_PROFILE=live python -m credit_memo.api.app
+# 2. Declare your EDGAR traffic (SEC fair-access policy) and serve live (generation needs
+#    a GCP project + application-default credentials).
+SEC_EDGAR_CONTACT=you@example.com GOOGLE_CLOUD_PROJECT=<project> \
+  CREDIT_MEMO_PROFILE=live python -m credit_memo.api.app
 
 # 3. Build a memo for a real company (or use the UI on :3000).
 curl -s -X POST localhost:8093/v1/credit-memo -H 'Content-Type: application/json' \

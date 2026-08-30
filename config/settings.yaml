@@ -119,16 +119,16 @@ local:
   db_path: ${CREDIT_MEMO_LOCAL_DB:-}        # SQLite FTS5 borrower/policy index
   audit_path: ${CREDIT_MEMO_LOCAL_AUDIT:-}  # append-only local audit store
 
-# The `live` profile: real SEC EDGAR grounding + a local model server on this machine
-# (MLX / Ollama / vLLM / llama.cpp, any OpenAI-compatible /chat/completions endpoint).
-# Typing a real US-listed company grounds the memo on its actual submissions and XBRL
-# company facts (cited to data.sec.gov); the fictional local seed never appears.
+# The `live` profile: real SEC EDGAR grounding, every model call the Gemini API.
+# There is deliberately NO local model server. EDGAR is not Google Search, but it leaves
+# the data centre all the same: typing a real US-listed company fetches its actual
+# submissions and XBRL company facts from data.sec.gov, so this profile cannot answer
+# without outbound network, and a local-model generator beside that would describe a
+# deployment nobody would buy (org decision, 2026-08-30). Needs GOOGLE_CLOUD_PROJECT +
+# ADC. The fictional local seed never appears.
 # The SEC's fair-access policy wants identified traffic: set SEC_EDGAR_CONTACT to an
 # email so the User-Agent carries a contact address.
 live:
-  llm_url: ${CREDIT_MEMO_LIVE_LLM_URL:-http://127.0.0.1:8001/chat/completions}
-  llm_model: ${CREDIT_MEMO_LIVE_LLM_MODEL:-mlx-community/gemma-4-26b-a4b-it-8bit}
-  timeout_seconds: ${CREDIT_MEMO_LIVE_TIMEOUT:-240}
   max_output_tokens: ${CREDIT_MEMO_LIVE_MAX_TOKENS:-2048}
   edgar_user_agent: ${CREDIT_MEMO_EDGAR_UA:-credit-memo-drafting-live/1.0}
   edgar_cache_dir: ${CREDIT_MEMO_EDGAR_CACHE:-}      # "" => ~/.credit_memo/edgar-cache
@@ -178,7 +178,7 @@ adapters:
     gcp: credit_memo.adapters.gcp.gemini_llm:GeminiLLMAdapter
     platform: credit_memo.adapters.gcp.gemini_llm:GeminiLLMAdapter
     local: credit_memo.adapters.local.llm:LocalDeterministicLLMAdapter
-    live: credit_memo.adapters.live.llm:GemmaLocalLLMAdapter
+    live: credit_memo.adapters.gcp.gemini_llm:GeminiLLMAdapter
     onprem: credit_memo.adapters.onprem.llm:OnPremLLMAdapter
   guardrail:
     gcp: credit_memo.adapters.gcp.model_armor_guardrail:ModelArmorGuardrailAdapter
