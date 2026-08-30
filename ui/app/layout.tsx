@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+
+import { ProvenanceBanner } from "../components/ProvenanceBanner";
 import "./globals.css";
 
 // Required by the nonce CSP, not a performance preference. `proxy.ts` mints a per-request script
@@ -23,9 +25,15 @@ export default function RootLayout({
   // EMBED mode: the host page owns the chrome, so render children without our own
   // app header/branding wrapper. Standalone (unset/"0") keeps the full-page shell.
   const embed = process.env.NEXT_PUBLIC_EMBED === "1";
+  // The banner renders in BOTH modes, and embedded is the mode that needs it most: a panel
+  // inside somebody else's portal is where a viewer has least context about where the answer
+  // came from. It is mounted in the LAYOUT rather than in a page because "at the top of every
+  // page" is a property of the console, and a page that forgot it would be the one page a
+  // screenshot came from.
   return (
     <html lang="en">
       <body className="min-h-screen">
+        <ProvenanceBanner />
         {embed ? (
           <main className="p-4">{children}</main>
         ) : (

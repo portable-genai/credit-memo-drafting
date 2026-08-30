@@ -5,7 +5,7 @@
  *   POST /v1/credit-memo  -> CreditMemo  (or a blocked envelope)
  *   POST /v1/covenants    -> { borrower_id, covenants: Covenant[] }
  *   POST /v1/risk-flags   -> { borrower_id, risk_flags: RiskFlag[] }
- *   GET  /healthz         -> { status, profile, region }
+ *   GET  /healthz         -> { status, profile, runtime, generator_model, region }
  */
 
 import type {
