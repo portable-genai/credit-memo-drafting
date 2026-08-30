@@ -55,6 +55,8 @@ gcp = [
   "google-cloud-bigquery>=3.25",
   "google-cloud-dlp>=3.20",
   "google-cloud-logging>=3.11",
+  # GuardrailPort on the gcp profile (model_armor_guardrail.py).
+  "google-cloud-modelarmor>=0.7",
   "opentelemetry-sdk>=1.27",
   "opentelemetry-exporter-gcp-trace>=1.7",
   "a2a-sdk[http-server]>=1.1",
