@@ -11,6 +11,8 @@ This adapter imports no Google Cloud SDK; it is a thin in-process catalog.
 
 from __future__ import annotations
 
+from typing import Any
+
 from ...config import Settings
 from ...domain.models import ToolSpec
 
@@ -18,17 +20,31 @@ from ...domain.models import ToolSpec
 # handshake this catalog once assumed was removed in this revision.
 MCP_PROTOCOL_VERSION = "2026-07-28"
 
+
+# The FULL input every tool here consumes, declared once because every tool consumes all of it.
+#
+# All four handlers call `_memo(arguments, actor)`, which builds ONE credit memo from a
+# `Borrower` carrying name, sector and jurisdiction, then return a slice of it: the whole memo,
+# `.covenants`, `.risk_flags` or `.peer_comparison`. The projection is the only difference.
+#
+# Until 2026-08-31 only `build_credit_memo` declared the sector and the jurisdiction. The
+# sharpest consequence was `peer_compare`, which selects peers BY SECTOR: a peer agent could not
+# name one, `_memo` read it as the empty string, and the tool answered with the peer set of no
+# sector at all. Found mechanically by tests/unit/test_mcp_schema_matches_its_handler.py, which
+# compares each declaration against the keys its handler actually reads.
+_BORROWER_INPUT_SCHEMA: dict[str, Any] = {
+    "borrower_name": {"type": "string"},
+    "sector": {"type": "string"},
+    "jurisdiction": {"type": "string"},
+}
+
 _TOOLS: tuple[ToolSpec, ...] = (
     ToolSpec(
         name="build_credit_memo",
         description="Build a full cited credit memo for a borrower and its filings.",
         input_schema={
             "type": "object",
-            "properties": {
-                "borrower_name": {"type": "string"},
-                "sector": {"type": "string"},
-                "jurisdiction": {"type": "string"},
-            },
+            "properties": dict(_BORROWER_INPUT_SCHEMA),
             "required": ["borrower_name"],
         },
     ),
@@ -37,7 +53,7 @@ _TOOLS: tuple[ToolSpec, ...] = (
         description="Extract financial covenants (with tested status) for a borrower.",
         input_schema={
             "type": "object",
-            "properties": {"borrower_name": {"type": "string"}},
+            "properties": dict(_BORROWER_INPUT_SCHEMA),
             "required": ["borrower_name"],
         },
     ),
@@ -46,7 +62,7 @@ _TOOLS: tuple[ToolSpec, ...] = (
         description="Identify credit risk flags for a borrower.",
         input_schema={
             "type": "object",
-            "properties": {"borrower_name": {"type": "string"}},
+            "properties": dict(_BORROWER_INPUT_SCHEMA),
             "required": ["borrower_name"],
         },
     ),
@@ -55,7 +71,7 @@ _TOOLS: tuple[ToolSpec, ...] = (
         description="Compare a borrower's financial metrics against a peer set.",
         input_schema={
             "type": "object",
-            "properties": {"borrower_name": {"type": "string"}},
+            "properties": dict(_BORROWER_INPUT_SCHEMA),
             "required": ["borrower_name"],
         },
     ),
