@@ -1,7 +1,7 @@
 """Generation port — LLM text/reasoning for memo synthesis and normalisation.
 
 Primary GCP adapter: Gemini models on the Gemini Enterprise Agent Platform
-(``gemini-3.5-flash`` for reasoning, ``gemini-3.1-flash-lite`` for triage). The LLM
+(``gemini-3.5-flash`` for reasoning, ``gemini-3.5-flash`` for triage). The LLM
 drafts the memo prose, normalises financial metrics, and extracts covenant terms and
 risk flags; it never sets a covenant's compliance status (that is deterministic).
 """

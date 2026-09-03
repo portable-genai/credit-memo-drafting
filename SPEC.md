@@ -30,7 +30,7 @@ autonomous action on a facility.
     the google client is imported lazily, only on that branch).
   - `onprem`: fail-fast Google Distributed Cloud migration placeholders (every method
     raises; the CLI exits 2 with the migration message).
-- Models: reasoning `gemini-3.5-flash` (thinking=high), triage `gemini-3.1-flash-lite`.
+- Models: reasoning `gemini-3.5-flash` (thinking=high), triage `gemini-3.5-flash`.
   Never a floating default model and never `gemini-2.0-flash`.
 - Public-web grounding is off by default (`grounding_enabled=false`).
 
