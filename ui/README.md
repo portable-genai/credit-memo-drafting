@@ -1,6 +1,6 @@
-# Doc2 UI: Credit-Memo / Underwriting Assistant console
+# `credit-memo-drafting` UI: Credit-Memo / Underwriting Assistant console
 
-A small React / Next.js console that renders the Doc2 credit memo with inline citation
+A small React / Next.js console that renders the `credit-memo-drafting` credit memo with inline citation
 chips, a covenant table, risk flags and peer comparisons.
 
 ## Run locally
@@ -11,7 +11,7 @@ npm install
 npm run dev                        # http://localhost:3000
 ```
 
-Point it at a running Doc2 API (`make run-api` in the repo root, FastAPI on :8093). The
+Point it at a running `credit-memo-drafting` API (`make run-api` in the repo root, FastAPI on :8093). The
 console submits a borrower to `POST /v1/credit-memo` and renders the returned
 `CreditMemo`: the summary, normalised financial metrics, covenants with a deterministic
 tested status, risk flags, peer comparisons and the recommendation rationale - each with

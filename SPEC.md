@@ -1,15 +1,15 @@
-# SPEC: Doc2 Credit-Memo / Underwriting Assistant
+# SPEC: `credit-memo-drafting` Credit-Memo / Underwriting Assistant
 
-Catalog id **Doc2** · group `doc` · priority **P1** · buyer Credit / Commercial Banking.
+Catalog id `credit-memo-drafting` · group `doc` · priority **P1** · buyer Credit / Commercial Banking.
 Python package `credit_memo` · CLI `credit-memo` · service port `8093`.
 
 ## 1. Purpose and scope
 
-Doc2 is a grounded underwriting assistant. From a borrower's financial statements and
+`credit-memo-drafting` is a grounded underwriting assistant. From a borrower's financial statements and
 filings it produces a cited **credit memo**, extracts **covenants** (with a deterministic
 compliance status), raises **risk flags**, and assembles **peer comparisons**. It is
 decision SUPPORT for a credit officer, not a credit decision. It handles borrower
-financial and PII data, so rule R1 (full Hrz1 redaction + guardrail pipeline) applies, and
+financial and PII data, so rule R1 (full `agent-guardrail-gateway` redaction + guardrail pipeline) applies, and
 every memo is maker-checker gated (P-06).
 
 Out of scope: making or communicating a credit decision; pricing; limit setting; any
@@ -73,8 +73,8 @@ where compliance is decided. The LLM drafts prose and never overrides a breach.
 Pipeline (R1 full safety; each step in `tracer.span`; audited at the end):
 
 ```
-redact -> guardrail(INPUT) -> per-doc extract + ingest (Hrz2, borrower ACL)
--> Hrz2 retrieve (filings + credit-policy/sector context)
+redact -> guardrail(INPUT) -> per-doc extract + ingest (`enterprise-knowledge-base`, borrower ACL)
+-> `enterprise-knowledge-base` retrieve (filings + credit-policy/sector context)
 -> llm normalise financials + draft memo
 -> deterministic covenant status + risk flags -> peer comps
 -> assemble CreditMemo -> guardrail(OUTPUT) -> review (always) -> audit
@@ -103,15 +103,15 @@ secure profiles resolve it from the IAP assertion. Agent skills: `build_credit_m
 
 ### 6.2 Endpoints this repo CONSUMES (existing siblings)
 
-- **Hrz1 guardrail** (`GUARDRAIL_GATEWAY_URL`): `POST /v1/guardrail/screen`, `POST /v1/redact`.
-- **Hrz2 enterprise KB** (`KNOWLEDGE_BASE_URL`): `POST /v1/ingest`, `POST /v1/search` (Doc2's RAG store).
-- **Hrz3 registry** (`AGENT_REGISTRY_URL`): `POST /v1/agents`, `GET /v1/agents/{name}`, `GET /v1/agents`.
-- **Hrz4 AI quality** (`QUALITY_GATE_URL`): `POST /v1/evaluations` and `POST /v1/gate`, both with a
+- **`agent-guardrail-gateway`** (`GUARDRAIL_GATEWAY_URL`): `POST /v1/guardrail/screen`, `POST /v1/redact`.
+- **`enterprise-knowledge-base`** (`KNOWLEDGE_BASE_URL`): `POST /v1/ingest`, `POST /v1/search` (`credit-memo-drafting`'s RAG store).
+- **`agent-registry`** (`AGENT_REGISTRY_URL`): `POST /v1/agents`, `GET /v1/agents/{name}`, `GET /v1/agents`.
+- **`model-quality-gate` AI quality** (`QUALITY_GATE_URL`): `POST /v1/evaluations` and `POST /v1/gate`, both with a
   structured body `{target: {model, prompt_version, dataset_id, system}, dataset_id, bundle: "doc2-credit-memo"}`
-  (the top-level `dataset_id` must equal `target.dataset_id`, else Hrz4 returns `422`). Metric selection is
+  (the top-level `dataset_id` must equal `target.dataset_id`, else `model-quality-gate` returns `422`). Metric selection is
   by the registered bundle name `doc2-credit-memo` (no bare metric names); the eval response is parsed from
   `results[]` and the gate returns `{passed}`.
-- **Hrz5 observability/audit** (`OBSERVABILITY_URL`): `POST /v1/audit`.
+- **`agent-observability`/audit** (`OBSERVABILITY_URL`): `POST /v1/audit`.
 
 Peer data is internal (BigQuery): no platform HTTP adapter.
 
@@ -120,15 +120,15 @@ Peer data is internal (BigQuery): no platform HTTP adapter.
 | Port | gcp | local | platform | onprem |
 | --- | --- | --- | --- | --- |
 | DocumentExtractionPort | Document AI | local parser (pypdf/text) | n/a | stub |
-| KnowledgeBaseClientPort | Agent Search | SQLite FTS5 (BM25) | Hrz2 `/v1/*` | stub |
+| KnowledgeBaseClientPort | Agent Search | SQLite FTS5 (BM25) | `enterprise-knowledge-base` `/v1/*` | stub |
 | PeerDataPort | BigQuery | in-process peer table | n/a | stub |
 | LLMPort | Gemini | deterministic schema-driven | n/a | stub |
-| GuardrailPort | Model Armor | heuristic injection screen | Hrz1 | stub |
-| PIIRedactionPort | DLP | regex de-identify | Hrz1 | stub |
-| AuditSinkPort | Cloud Logging WORM | append-only SQLite | Hrz5 | stub |
+| GuardrailPort | Model Armor | heuristic injection screen | `agent-guardrail-gateway` | stub |
+| PIIRedactionPort | DLP | regex de-identify | `agent-guardrail-gateway` | stub |
+| AuditSinkPort | Cloud Logging WORM | append-only SQLite | `agent-observability` | stub |
 | ObservabilityTracerPort | Cloud Trace | no-op spans | n/a | stub |
-| EvaluationGatePort | Gen AI eval | in-repo offline gate | Hrz4 | stub |
-| AgentRegistryPort | A2A card | in-process registry | Hrz3 | stub |
+| EvaluationGatePort | Gen AI eval | in-repo offline gate | `model-quality-gate` | stub |
+| AgentRegistryPort | A2A card | in-process registry | `agent-registry` | stub |
 | ToolCatalogPort | MCP catalog | in-process catalog | n/a | stub |
 
 Under `local`, the platform-client ports (knowledge base, guardrail, redaction, audit,
@@ -137,7 +137,7 @@ runs one app, not the whole platform. There is no Google emulator for Agent Sear
 Gemini, Model Armor, DLP, Document AI or BigQuery, so those local adapters are
 unconditionally SDK-free; the registry can opt into the Firestore emulator.
 
-## 8. Eval gate (Hrz4 / P-08)
+## 8. Eval gate (`model-quality-gate` / P-08)
 
 `eval/run_eval.py` drives the real `CreditMemoService` against the offline local adapters
 over a golden JSONL set and scores: `groundedness` (>= 0.80), `covenant_accuracy`

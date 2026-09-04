@@ -1,6 +1,6 @@
-# Runbook: Doc2 Credit-Memo / Underwriting Assistant
+# Runbook: `credit-memo-drafting` Credit-Memo / Underwriting Assistant
 
-Operational notes for running, deploying and triaging Doc2. The region is chosen at deploy
+Operational notes for running, deploying and triaging `credit-memo-drafting`. The region is chosen at deploy
 time and validated against the `allowed_regions` residency allowlist; it defaults to
 `asia-southeast1`.
 
@@ -10,7 +10,7 @@ time and validated against the `allowed_regions` residency allowlist; it default
 | --- | --- | --- |
 | `local` | Local dev, CI, the test/eval gate (SDK-free offline stack) | No |
 | `onprem` | Fail-fast Google Distributed Cloud migration placeholders | No |
-| `platform` | Inside the full platform (Hrz1..Hrz5 over HTTP) | No (uses httpx) |
+| `platform` | Inside the full platform (`agent-guardrail-gateway`..`agent-observability` over HTTP) | No (uses httpx) |
 | `gcp` | Standalone managed deployment | Yes (`pip install -e ".[gcp]"`) |
 
 Set with `CREDIT_MEMO_PROFILE`, or write a `profile:` into `config/settings.yaml`. Production deploys set `CREDIT_MEMO_PROFILE=gcp` explicitly (see `Dockerfile`). CI and tests run on `local`.
@@ -38,7 +38,7 @@ for a live build.
    Document AI, BigQuery peer dataset, DLP, Model Armor, KMS, the WORM log bucket, IAM and
    VPC-SC, all in `asia-southeast1`).
 3. Build and push the image (`Dockerfile`), deploy to Agent Runtime / Cloud Run.
-4. Register the agent card with Hrz3 and confirm Hrz4 eval gate is green before promotion.
+4. Register the agent card with `agent-registry` and confirm `model-quality-gate` is green before promotion.
 
 ## Health and observability
 
@@ -52,8 +52,8 @@ for a live build.
 | Symptom | Likely cause | Action |
 | --- | --- | --- |
 | `NotImplementedError` from a method | Running `onprem` | Switch to `gcp`/`platform` or implement the on-prem adapter. |
-| `RetrievalEmptyError` | No evidence in Hrz2 for the borrower | Ingest the borrower's filings; check ACL tags. |
-| Memo returns a blocked envelope | Guardrail blocked input/output | Inspect the Hrz1 finding; the request is audited as BLOCKED. |
+| `RetrievalEmptyError` | No evidence in `enterprise-knowledge-base` for the borrower | Ingest the borrower's filings; check ACL tags. |
+| Memo returns a blocked envelope | Guardrail blocked input/output | Inspect the `agent-guardrail-gateway` finding; the request is audited as BLOCKED. |
 | Covenant status looks wrong | Bad extracted threshold/operator/value | Status is deterministic; check the extracted terms and their citations. |
 | Eval gate fails | A metric below threshold | Inspect `python eval/run_eval.py` output; fix groundedness/citation discipline. |
 

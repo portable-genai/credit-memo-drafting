@@ -49,7 +49,7 @@ The `onprem` adapters are deliberate fail-fast placeholders that nonetheless sat
 Protocol and construct with a single `Settings` arg, so the *interface contract* for a sovereign
 migration is proven and enforced by CI today. The actual on-prem implementations are the
 migration work, scoped in [`docs/onprem-migration.md`](../onprem-migration.md). This repo is not
-the sovereign-exit *planner* (that is the sibling **Rgc9** `operational-resilience-mapping`,
+the sovereign-exit *planner* (that is the sibling `operational-resilience-mapping`,
 module `domain/concentration_exit/`: APRA CPS 230, MAS / HKMA outsourcing); this repo is one of
 the systems whose exit that planner reasons about.
 
@@ -59,7 +59,7 @@ No: residency is a deploy-time pin (the region, CMEK, VPC-SC), and portability i
 change *where* the stack runs by configuration. They are orthogonal. `infra/terraform/*` pins
 `var.region` (default `asia-southeast1`, Singapore) across the agent runtime, BigQuery, Document
 AI, DLP and KMS, and a second enterprise or region is a tfvars change, not a fork. Residency
-enforcement infra overlaps with the sibling **Rsk3** `architecture-validator`
+enforcement infra overlaps with the sibling `architecture-validator`
 (`domain/residency/`, a CI gate for region violations), which a fork should run rather than
 re-implement.
 

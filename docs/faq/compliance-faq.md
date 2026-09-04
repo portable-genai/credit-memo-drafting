@@ -21,7 +21,7 @@ prompt and response. National-identifier detection is **jurisdiction-driven** (`
 in `config/settings.yaml`, `CREDIT_MEMO_PII_JURISDICTIONS`), reading the shared, versioned
 `pii-kit` package so a deployment scrubs, and gates on, its own identifiers across
 SG / HK / JP / AU rather than a single market. The runtime guardrail / DLP itself is the sibling
-**Hrz1** gateway; this repo consumes it rather than re-implementing it.
+`agent-guardrail-gateway`; this repo consumes it rather than re-implementing it.
 
 ### How is the work auditable / reproducible?
 
@@ -29,9 +29,9 @@ Every run writes an immutable, already-redacted `AuditEvent` with the decision a
 set (P-07), and every memo statement carries a source-and-page `Citation` (P-10). The
 consequential math (covenant status, peer median / percentile) is deterministic, so an auditor
 can recompute any figure or decision from the same inputs. The enterprise WORM audit system is
-**Hrz5**; the in-repo hash-chained store is the offline / local stand-in (see
+`agent-observability`; the in-repo hash-chained store is the offline / local stand-in (see
 [security-faq.md](security-faq.md) for its exact tamper-evidence limits). Escalations route to
-the **Hrz7** maker-checker console (rule R8) via the shared `review-kit`.
+the `human-review-console` maker-checker console (rule R8) via the shared `review-kit`.
 
 ### What is the model-risk story?
 
@@ -39,7 +39,7 @@ An offline eval gate (`eval/run_eval.py`) scores groundedness, covenant-status a
 accuracy, and PII safety against a golden set, failing the build below threshold (P-08). It has a
 `--mode smoke|gate` split: smoke guards every merge locally, and gate mode (which refuses to run
 outside `CREDIT_MEMO_PROFILE=platform|gcp`) speaks to the enterprise promotion gate. That
-promotion gate, the model documentation and the red-team harness are the sibling **Hrz4** system
+promotion gate, the model documentation and the red-team harness are the sibling `model-quality-gate` system
 (registered bundle `doc2-credit-memo`); this repo's gate mirrors its thresholds so merges are
 guarded locally. A fork must rebuild the golden set for its own vertical, or the gate measures
 the wrong thing.
@@ -56,13 +56,12 @@ in [`docs/practices-audit.md`](../practices-audit.md).
 
 ### Which regulators does this map to?
 
-`COMPLIANCE.md` maps the internal P-01..P-12 and R1..R6 (plus R8, the Hrz7 review routing)
+`COMPLIANCE.md` maps the internal P-01..P-12 and R1..R6 (plus R8, the `human-review-console` review routing)
 controls to concrete code. The build is region-pinned to `asia-southeast1` (Singapore, MAS) with
 HKMA / APRA / FSA also in view for residency. The practices audit records one gap here (G2):
 there is not yet a per-regulator crosswalk appendix marked adopter-owned. When you add
-FCA / RBI / OJK / HKMA / APRA mappings, keep the Doc2-control column stable and swap only the
-regulator-reference column, and re-review with local counsel. At scale the sibling **Rsk1**
-`compliance-advisory` and its control-mapping module (`domain/control_mapping/`) generate and
+FCA / RBI / OJK / HKMA / APRA mappings, keep the `credit-memo-drafting`-control column stable and swap only the
+regulator-reference column, and re-review with local counsel. At scale the sibling `compliance-advisory` and its control-mapping module (`domain/control_mapping/`) generate and
 maintain these crosswalks; a large estate should integrate them rather than hand-maintain the
 table.
 
@@ -76,9 +75,7 @@ multi-region until Google grants single-region access, and Agent Search serves o
 `us` / `eu`. Widening the location policy to permit them (`resource_location_values`) is a
 jurisdiction statement, not plumbing — state the residency claim at that width. The remaining
 open gap (check D5) is that there is no CI Terraform validate job, so close that before you rely
-on the pin in automation. The residency-violation CI gate is the sibling **Rsk3**
-`architecture-validator` (`domain/residency/`); the exit / concentration-risk plan is **Rgc9**
-`operational-resilience-mapping` (`domain/concentration_exit/`). This repo enforces residency in
+on the pin in automation. The residency-violation CI gate is the sibling `architecture-validator` (`domain/residency/`); the exit / concentration-risk plan is `operational-resilience-mapping` (`domain/concentration_exit/`). This repo enforces residency in
 its own infra and is one of the systems those tools reason about.
 
 ### Can we run it against real borrower data today?

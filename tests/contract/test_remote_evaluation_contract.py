@@ -1,14 +1,14 @@
-"""Hrz4 wire-contract test for the platform ``RemoteEvaluationAdapter``.
+"""model-quality-gate wire-contract test for the platform ``RemoteEvaluationAdapter``.
 
 This adapter is the ``platform``-profile implementation of :class:`EvaluationGatePort`: a
-thin httpx client to the shared **Hrz4 AI Quality / model-risk** service
+thin httpx client to the shared **model-quality-gate AI Quality / model-risk** service
 (``model-quality-gate``). The service's contract was hardened, and this suite pins
 the client to the corrected wire shape so a regression to the old (silently-broken) shape
 fails CI:
 
 * ``POST /v1/evaluations`` sends a structured ``target`` object plus a top-level
   ``dataset_id`` that MUST equal ``target.dataset_id`` and a registered ``bundle`` name;
-  it must NOT send an explicit ``metrics`` list (Hrz4 now 422s on unknown metrics).
+  it must NOT send an explicit ``metrics`` list (model-quality-gate now 422s on unknown metrics).
 * the response is parsed from ``results[]`` (not the old, always-empty ``metrics[]``), and
   only when it also carries the evidence that lets somebody re-derive the scores later.
 * ``gate`` is a ``POST /v1/gate`` (not a ``GET``) carrying the same body, and returns a
@@ -23,8 +23,8 @@ equal (quality AND attested AND red team). The refusal tests at the bottom are a
 contract as the happy path, because the shape they reject, ``{"passed": true}`` with nothing
 behind it, is a promotion certified by nothing.
 
-Runs fully offline: the Hrz4 endpoint is mocked with respx and never actually served. The
-localhost default below MUST match ``QUALITY_GATE_URL``'s default in the adapter.
+Runs fully offline: the model-quality-gate endpoint is mocked with respx and never actually served.
+The localhost default below MUST match ``QUALITY_GATE_URL``'s default in the adapter.
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ QUALITY_GATE = "http://localhost:8084"
 DATASET_PATH = "eval/datasets/golden_cases.jsonl"
 DATASET_ID = "golden_cases"
 
-# The registered bundle Hrz4 resolves the metric set from.
+# The registered bundle model-quality-gate resolves the metric set from.
 BUNDLE = "doc2-credit-memo"
 
 #: Obviously fictional durable identifiers. Every one is REQUIRED by the hardened parse: a
@@ -143,7 +143,7 @@ def test_evaluate_sends_structured_target_and_matching_dataset_id():
     assert target["dataset_id"] == DATASET_ID
     assert set(target) == {"model", "prompt_version", "dataset_id", "system"}
 
-    # Top-level dataset_id equals target.dataset_id (Hrz4 422s on divergence).
+    # Top-level dataset_id equals target.dataset_id (model-quality-gate 422s on divergence).
     assert body["dataset_id"] == DATASET_ID == target["dataset_id"]
 
     # The registered bundle name is sent...

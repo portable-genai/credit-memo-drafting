@@ -1,6 +1,6 @@
-# Embedding and identity: client integration guide (Doc2 credit-memo-drafting)
+# Embedding and identity: client integration guide (`credit-memo-drafting` credit-memo-drafting)
 
-This guide shows how an enterprise client runs the Doc2 Credit-Memo / Underwriting
+This guide shows how an enterprise client runs the `credit-memo-drafting` Credit-Memo / Underwriting
 Assistant and, when desired, embeds its UI inside an existing web application with secure
 single sign-on (SSO) so users never see a second login. Everything described here is backed
 by code on the current `main`: the FastAPI backend (`src/credit_memo/api/`), the
@@ -281,7 +281,7 @@ Identity options by profile (all implemented):
 | `gcp` / `platform` | Verifies the ES256-signed `x-goog-iap-jwt-assertion` (signature, `iss`, `exp`/`iat`, and the structured `aud` from `CREDIT_MEMO_IAP_AUDIENCE`) against Google's IAP public keys; `tenant` from the `hd` claim. | `adapters/gcp/iap_identity.py` |
 | `onprem` | Fail-closed placeholder: raises `NotImplementedError` rather than trusting an unverified caller. Fill it in to verify your enterprise IdP (OIDC/SAML) and map claims to a `Principal`. | `adapters/onprem/identity.py` |
 
-Defense-in-depth PEP: edge IAP/Apigee authenticates at ingress, the Hrz1 guardrail applies
+Defense-in-depth PEP: edge IAP/Apigee authenticates at ingress, the `agent-guardrail-gateway` applies
 central policy, and this backend re-validates the assertion and derives identity itself
 (`api/security.py` plus the active adapter), then enforces per-user ACLs in governed
 retrieval. Each layer assumes the others may be bypassed. This is the seam that defeats actor

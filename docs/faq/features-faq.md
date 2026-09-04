@@ -5,7 +5,7 @@ LLM, and, importantly, where its responsibilities **stop** and a sibling catalog
 takes over. Cross-references: [`README.md`](../../README.md), [`DEMO.md`](../../DEMO.md),
 [`SPEC.md`](../../SPEC.md).
 
-### What does Doc2 actually produce?
+### What does `credit-memo-drafting` actually produce?
 
 Four cited artifacts from a borrower's financial statements and filings:
 
@@ -46,19 +46,19 @@ underwriting domain logic and its four artifacts. It **integrates** (via the `pl
 profile's thin HTTP adapters) several cross-cutting concerns owned by sibling platform
 systems, do not rebuild these in a fork:
 
-| Concern | Owned by (catalog id / repo) | Doc2's role |
+| Concern | Owned by (catalog id / repo) | `credit-memo-drafting`'s role |
 |---|---|---|
-| Runtime guardrail: PII redaction, prompt-injection / jailbreak defense | **Hrz1** `agent-guardrail-gateway` | consumes it on every run (input + output screen, rule R1) |
-| Governed RAG / ACL-aware knowledge base with citations | **Hrz2** `enterprise-knowledge-base` | ingests filings into it, retrieves grounded passages from it |
-| Agent registry, versioning, identity, entitlements | **Hrz3** `agent-registry` | publishes its A2A AgentCard for discovery |
-| AI-quality / eval / model-risk promotion gate | **Hrz4** `model-quality-gate` | its eval metrics gate promotion; the offline gate mirrors it |
-| Observability + immutable WORM prompt/response audit | **Hrz5** `agent-observability` | writes audit events to it; traces spans through it |
-| Maker-checker review console for escalations | **Hrz7** (review console, rule R8) | routes a `requires_human_review` memo to it via `review-kit` |
-| Regulatory Q&A / lending control checklists | **Rsk1** `compliance-advisory` | consumes it for regulatory compliance checks |
-| On-prem, CPU-only DLP scrub before egress | **Rsk6** `onprem-dlp` | the sovereign-DLP option behind the redaction port |
+| Runtime guardrail: PII redaction, prompt-injection / jailbreak defense | `agent-guardrail-gateway` | consumes it on every run (input + output screen, rule R1) |
+| Governed RAG / ACL-aware knowledge base with citations | `enterprise-knowledge-base` | ingests filings into it, retrieves grounded passages from it |
+| Agent registry, versioning, identity, entitlements | `agent-registry` | publishes its A2A AgentCard for discovery |
+| AI-quality / eval / model-risk promotion gate | `model-quality-gate` | its eval metrics gate promotion; the offline gate mirrors it |
+| Observability + immutable WORM prompt/response audit | `agent-observability` | writes audit events to it; traces spans through it |
+| Maker-checker review console for escalations | `human-review-console` (review console, rule R8) | routes a `requires_human_review` memo to it via `review-kit` |
+| Regulatory Q&A / lending control checklists | `compliance-advisory` | consumes it for regulatory compliance checks |
+| On-prem, CPU-only DLP scrub before egress | `onprem-dlp` | the sovereign-DLP option behind the redaction port |
 
 So the guardrail, knowledge base, audit sink, eval platform and review console are
-*dependencies*, not features of this repo. Doc2's own covenant / risk / peer logic is the
+*dependencies*, not features of this repo. `credit-memo-drafting`'s own covenant / risk / peer logic is the
 underwriting slice, distinct from the platform's runtime controls.
 
 ### Can I use this for a non-credit document-diligence product?

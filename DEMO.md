@@ -1,6 +1,6 @@
-# Demo guide - Doc2 Credit-Memo / Underwriting Assistant
+# Demo guide - `credit-memo-drafting` Credit-Memo / Underwriting Assistant
 
-Step-by-step scripts for demoing Doc2 two ways:
+Step-by-step scripts for demoing `credit-memo-drafting` two ways:
 
 - **Demo A - A cited credit memo, fully offline** (the headline flow): for a synthetic
   borrower the assistant runs the whole build pipeline - redact, guardrail, grounded

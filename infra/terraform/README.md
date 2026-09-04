@@ -1,14 +1,14 @@
-# Terraform: Doc2 Credit-Memo / Underwriting Assistant infrastructure
+# Terraform: `credit-memo-drafting` Credit-Memo / Underwriting Assistant infrastructure
 
-Managed-stack infrastructure for Doc2, defaulting to `asia-southeast1` (Singapore). Only
+Managed-stack infrastructure for `credit-memo-drafting`, defaulting to `asia-southeast1` (Singapore). Only
 `project_id`, the residency values and a few genuinely per-tenant values (org/billing ids,
 the VPC-SC toggle) are variables; every service identifier and template name is concrete and
 every location derives from `var.region`, which is chosen at deploy time and validated against
 the `allowed_regions` allowlist (default `["asia-southeast1"]`), because residency is a
 control, not a preference.
 
-The governed RAG store (Agent Search data stores) lives in **Hrz2**, not here. This stack
-provisions Doc2's own resources: extraction, peer data, redaction, guardrail, audit, keys
+The governed RAG store (Agent Search data stores) lives in `enterprise-knowledge-base`, not here. This stack
+provisions `credit-memo-drafting`'s own resources: extraction, peer data, redaction, guardrail, audit, keys
 and the serving identity.
 
 ## Files
@@ -17,7 +17,7 @@ and the serving identity.
 | --- | --- |
 | `providers.tf` | google + google-beta providers, pinned to the project and region |
 | `variables.tf` | the only knobs (project_id, org_id, retention_days, VPC-SC toggle) |
-| `apis.tf` | the managed services Doc2 uses (nothing speculative) |
+| `apis.tf` | the managed services `credit-memo-drafting` uses (nothing speculative) |
 | `kms.tf` | one regional CMEK key ring + per-service-agent key bindings |
 | `document_ai.tf` | the Document AI form-parser processor (extraction) |
 | `bigquery.tf` | the CMEK-encrypted peer-financials dataset + table |

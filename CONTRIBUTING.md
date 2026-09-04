@@ -1,4 +1,4 @@
-# Contributing to Doc2 Credit-Memo / Underwriting Assistant
+# Contributing to `credit-memo-drafting` Credit-Memo / Underwriting Assistant
 
 Thanks for your interest. This is an engineering-portfolio reference repo; contributions
 that keep the hexagonal discipline intact are welcome.
@@ -27,7 +27,7 @@ export CREDIT_MEMO_PROFILE=onprem
 make fmt      # ruff format + ruff check --fix
 make lint     # ruff check + ruff format --check + mypy
 make test     # pytest -m 'not integration'
-make eval     # the Hrz4 promotion gate
+make eval     # the `model-quality-gate` promotion gate
 ```
 
 The mandatory gate (must be green before a PR):

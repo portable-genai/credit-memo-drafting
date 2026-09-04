@@ -1,6 +1,6 @@
-# Architecture: Doc2 Credit-Memo / Underwriting Assistant
+# Architecture: `credit-memo-drafting` Credit-Memo / Underwriting Assistant
 
-Doc2 is a hexagonal (ports-and-adapters) application. A pure-stdlib domain core orchestrates
+`credit-memo-drafting` is a hexagonal (ports-and-adapters) application. A pure-stdlib domain core orchestrates
 the credit-memo build; every external capability is reached through a `Protocol` port bound
 to one of four adapter families (`gcp`, `local`, `platform`, `onprem`) by a single profile
 switch. This document covers the layering, the safety pipeline, the deterministic covenant
@@ -36,7 +36,7 @@ flowchart TB
   subgraph adapters["Adapters (one profile active)"]
     gcp["gcp: Document AI · Agent Search · BigQuery · Gemini · Model Armor · DLP · Cloud Logging · Cloud Trace"]
     local["local: SQLite FTS5 · deterministic LLM · regex DLP · heuristic guardrail · append-only audit"]
-    platform["platform: Hrz1 · Hrz2 · Hrz3 · Hrz4 · Hrz5 HTTP clients"]
+    platform["platform: `agent-guardrail-gateway` · `enterprise-knowledge-base` · `agent-registry` · `model-quality-gate` · `agent-observability` HTTP clients"]
     onprem["onprem: placeholder stubs"]
   end
   wiring --> core
@@ -59,11 +59,11 @@ sequenceDiagram
   participant Officer
   participant API as API (verifies identity)
   participant Service as CreditMemoService
-  participant Safety as Hrz1 redact plus guardrail
-  participant KB as Hrz2 Enterprise KB
+  participant Safety as `agent-guardrail-gateway` redact plus guardrail
+  participant KB as `enterprise-knowledge-base`
   participant LLM as Gemini
   participant Peer as BigQuery peer data
-  participant Audit as Hrz5 WORM audit
+  participant Audit as `agent-observability`
   Officer->>API: POST borrower, documents (no actor)
   API->>Service: build(memo_input, actor, principals) from verified Principal
   Service->>Safety: redact(case inputs)
@@ -106,13 +106,13 @@ covenant met or breached. A BREACH escalates the memo to enhanced review.
 | Concern | gcp | local | platform | onprem |
 | --- | --- | --- | --- | --- |
 | Extraction | Document AI | local parser (pypdf/text) | n/a | placeholder |
-| Governed RAG | Agent Search | SQLite FTS5 (BM25) | Hrz2 KB | placeholder |
+| Governed RAG | Agent Search | SQLite FTS5 (BM25) | `enterprise-knowledge-base` | placeholder |
 | Peer data | BigQuery | in-process peer table | n/a | placeholder |
 | LLM | Gemini | deterministic schema-driven | n/a | placeholder |
-| Guardrail + redaction | Model Armor + DLP | heuristic + regex | Hrz1 gateway | placeholder |
-| Audit + tracing | Cloud Logging + Cloud Trace | append-only SQLite + no-op | Hrz5 | placeholder |
-| Eval gate | Gen AI eval | in-repo offline gate | Hrz4 | placeholder |
-| Registry + tools | A2A card + MCP | in-process | Hrz3 | placeholder |
+| Guardrail + redaction | Model Armor + DLP | heuristic + regex | `agent-guardrail-gateway` | placeholder |
+| Audit + tracing | Cloud Logging + Cloud Trace | append-only SQLite + no-op | `agent-observability` | placeholder |
+| Eval gate | Gen AI eval | in-repo offline gate | `model-quality-gate` | placeholder |
+| Registry + tools | A2A card + MCP | in-process | `agent-registry` | placeholder |
 | Identity | IAP assertion verify | seeded dev personas | IAP assertion verify | placeholder |
 
 The `local` family is a set of real, deterministic, SDK-free adapters: it proves the domain
@@ -148,7 +148,7 @@ PYTHONPATH=src CREDIT_MEMO_PROFILE=local python scripts/portability_demo.py    #
 ```
 
 Not applicable in this repo (stated here so the catalogue cross-references cleanly with the
-[Doc1 reference](../cdd-sow-research/ARCHITECTURE.md)): **PT-10** (the local audit sink is
+[`cdd-sow-research` reference](../cdd-sow-research/ARCHITECTURE.md)): **PT-10** (the local audit sink is
 an append-only WORM stand-in serialized to open JSON, but it does not implement a per-record
 cryptographic hash chain or a `verify`/`export`/`restore` CLI, so there is no tamper-evidence
 proof to show); **PT-13** (the infra is deliberately single-tenant: [`variables.tf`](infra/terraform/variables.tf)
@@ -206,7 +206,7 @@ convention: every control is enforced in code or infra and has a test or a fail-
 so a regression is a red build rather than a policy violation discovered later.
 
 Not applicable in this repo (stated so the numbering cross-references the
-[Doc1 reference](../cdd-sow-research/ARCHITECTURE.md)): **SC-9** (this repo has no
+[`cdd-sow-research` reference](../cdd-sow-research/ARCHITECTURE.md)): **SC-9** (this repo has no
 self-hosted OIDC/JWKS token verifier: the `gcp` identity adapter delegates assertion
 verification to Google's `id_token.verify_token`, so there is no in-repo algorithm-pinning
 routine to prove); **SC-12** (there is no `monitoring.tf`: log-based security metrics and
@@ -227,7 +227,7 @@ alert policies are not provisioned in this repo's Terraform).
 |---|---------------------|------------------------|-------|
 | SC-5 | **Deterministic hard signals the model cannot soften.** The consequential decision (here, covenant compliance) is computed after the LLM by pure code, so no prompt or model change can change a breach into a pass. | `covenant_status(current_value, threshold, operator)` in [`domain/_grounded.py`](src/credit_memo/domain/_grounded.py) is the single place compliance is decided; the LLM only extracts terms, and a computed `BREACH` escalates the memo ([`covenant_service.py`](src/credit_memo/domain/covenant_service.py), [`review_policy.py`](src/credit_memo/domain/review_policy.py)). | `pytest tests/unit/test_sub_services.py -q` (covenant-status cases) and `tests/unit/test_serialization_config_policy.py::test_breach_covenant_escalates`. |
 | SC-6 | **Maker-checker on every consequential output.** The system never auto-actions: the memo always requires human review, and the audit decision is ESCALATED, so four-eyes is structural (P-06). | `CreditReviewPolicy.requires_review()` returns `True` unconditionally ([`review_policy.py`](src/credit_memo/domain/review_policy.py)); the normal path audits as `ESCALATED`. | `pytest "tests/unit/test_serialization_config_policy.py::test_memo_always_requires_review" "tests/unit/test_memo_service.py::test_normal_path_audited_as_escalated" -q` |
-| SC-7 | **Quality is a promotion gate, not a dashboard.** Groundedness, covenant accuracy, citation accuracy and PII safety are scored against thresholds and a failing score blocks the build/promotion. | [`eval/run_eval.py`](eval/run_eval.py) (`pii_safety >= 0.99`, covenant/citation `>= 0.90`); CI enforces it; at promotion the Hrz4 service is the authority (R5). | `python eval/run_eval.py` exits non-zero on any miss. |
+| SC-7 | **Quality is a promotion gate, not a dashboard.** Groundedness, covenant accuracy, citation accuracy and PII safety are scored against thresholds and a failing score blocks the build/promotion. | [`eval/run_eval.py`](eval/run_eval.py) (`pii_safety >= 0.99`, covenant/citation `>= 0.90`); CI enforces it; at promotion the `model-quality-gate` service is the authority (R5). | `python eval/run_eval.py` exits non-zero on any miss. |
 
 ### 7.3 Identity and secrets
 

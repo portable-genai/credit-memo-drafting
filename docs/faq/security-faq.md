@@ -91,7 +91,7 @@ The `local` audit store (`LocalAppendOnlyAuditAdapter`) wraps the shared
 a `verify_chain()` method. The module docstring states exactly which tamper classes are and are
 not caught (a hash chain with no external anchor cannot detect a full-rewrite by itself). In
 production the `gcp` profile uses a locked WORM bucket, which provides non-rewritability itself.
-This repo does not *replace* the platform audit system (Hrz5); see
+This repo does not *replace* the platform audit system (`agent-observability`); see
 [features-faq.md](features-faq.md). Proven by `tests/unit/test_audit_chain.py`.
 
 ### Supply chain: are dependencies pinned and scanned?

@@ -1,14 +1,14 @@
 # Common-base practices audit
 
 - **Repo:** `credit-memo-drafting`
-- **Catalog id:** Doc2 (package `credit_memo`, env prefix `CREDIT_MEMO`)
+- **Catalog id:** `credit-memo-drafting` (package `credit_memo`, env prefix `CREDIT_MEMO`)
 - **Catalogue reference:** [`common-base-practices.md`](https://github.com/portable-genai/.github/blob/main/common-base-practices.md) (checks A1..G7)
 - **Authoritative source:** reconciled to the maintainer's cross-repository audit matrix, authoritative on verdicts.
 - **Note:** Each check below was re-run against the current tree (greps + file inspection) with
   this repo's names substituted for the reference repo's (`credit_memo` for `cdd_sow_research`,
-  `CREDIT_MEMO` for `CDD`), not assumed from the Doc1 scorecard.
+  `CREDIT_MEMO` for `CDD`), not assumed from the `cdd-sow-research` scorecard.
 
-Applicability: Doc2 ships a UI (`ui/`) and Terraform (`infra/terraform/`), so `[ui]` and
+Applicability: `credit-memo-drafting` ships a UI (`ui/`) and Terraform (`infra/terraform/`), so `[ui]` and
 `[infra]` checks apply. The repo does **not** own a web login (identity is an IAP-injected
 assertion via `adapters/gcp/iap_identity.py`; there is no `api/auth.py` / OIDC adapter), so the
 `[ui]` login-hardening check **C8 is N-A**. **Load-bearing** checks (a FAIL breaks a shared
@@ -45,7 +45,7 @@ FAIL remains. Each row carries its own evidence.
 | **D3** Whole gate runs offline, zero org secrets `[all]` **(load-bearing)** | PASS | `ci.yaml` (ruff check + ruff format --check + mypy + `pytest -m 'not integration'`) and `eval-gate.yaml` (`python eval/run_eval.py`) both set `CREDIT_MEMO_PROFILE: local` and reference no `secrets.*`. |
 | **D4** Non-root, minimal, healthchecked container `[infra]` | PASS | `Dockerfile`: multi-stage (builder + slim runtime), `USER appuser` (uid 10001), `HEALTHCHECK`, `EXPOSE 8093`, `CREDIT_MEMO_PROFILE=gcp` selected in the image; the runtime stage carries only the copied venv, no build toolchain. |
 | **D5** Deploy-time residency/sovereignty, parameterised `[infra]` | PASS | Singapore pinning, CMEK, VPC-SC and WORM controls now include project Org Policy for resource locations and service-account keys; CI runs Terraform fmt/init/validate offline. Live enforcement still needs a named apply and evidence. |
-| **E1** Offline eval smoke guards merge; Hrz4 owns promotion `[agentic]` **(load-bearing)** | PASS | `eval/run_eval.py` has the `--mode smoke|gate` split via the shared `agent-eval-kit` scaffold; `remote_evaluation.py` re-based on the shared `PromotionGateClient` (registered bundle `doc2-credit-memo` unchanged, pinned by the respx contract test; S2S headers now attached); gate mode refuses to run outside `CREDIT_MEMO_PROFILE=platform|gcp`. `--use-gcp` kept as an alias. |
+| **E1** Offline eval smoke guards merge; `model-quality-gate` owns promotion `[agentic]` **(load-bearing)** | PASS | `eval/run_eval.py` has the `--mode smoke|gate` split via the shared `agent-eval-kit` scaffold; `remote_evaluation.py` re-based on the shared `PromotionGateClient` (registered bundle `doc2-credit-memo` unchanged, pinned by the respx contract test; S2S headers now attached); gate mode refuses to run outside `CREDIT_MEMO_PROFILE=platform|gcp`. `--use-gcp` kept as an alias. |
 | **E2** Safety metric with strictest threshold, no false green `[agentic]` | PASS | `pii_safety >= 0.99` remains the strictest threshold, and all three false-green paths are closed. *Detector drift:* the leak check reads the same shared `pii-kit` rows as the runtime redactor, so a leak means the pipeline re-introduced PII, not that two bespoke implementations disagreed. *A faked subject:* the gate runs the production `LocalRegexRedactionAdapter` (pure regex, no SDK), not a `FakeRedaction` that could pass while the real redactor was broken. *A blind pack:* scoring only off the pack the redactor masks with is a closed loop (a narrowed row can neither mask nor detect, scoring a vacuous 1.0 with the raw id in the audit), so the gate now also runs `pii_kit.planted_leak` (a pack-independent literal check of each case's planted identifier) ALONGSIDE `pack_leak`. Proven able to fail: with redaction disabled every PII-bearing case drops 1.0 -> 0.0 and the gate goes RED. The shared jurisdiction list is itself guarded: a golden case whose market is absent from the configured pack **raises** rather than scoring a vacuous 1.0. |
 | **E3** Fixtures and golden data obviously fictional `[all]` | PASS | `eval/datasets/golden_cases.jsonl` header says "ALL data is fictional" with "Acme Manufacturing (FICTIONAL)"; DEMO.md carries the live-data sign-off warning and COMPLIANCE.md states the corpus "must not be used for real". |
 | **F1** Demo is code, offline, one command, presenter-paced `[all]` | PASS | `make demo` runs `scripts/credit_memo_demo.py` + `render_credit_memo_ui.py` offline; `make demo-server` is the live presenter-controlled server (`credit_memo_demo_server.py`); no cloud or API key. |
@@ -55,7 +55,7 @@ FAIL remains. Each row carries its own evidence.
 | **G2** Compliance mapping table + adopter-owned crosswalk `[all]` | PASS | COMPLIANCE maps catalog principles and now includes an explicitly adopter-owned MAS reference crosswalk with applicability, owner and evidence fields. |
 | **G3** Documented, mechanised fork path `[all]` | PASS | `docs/ADOPTING.md` gives the kernel/vertical boundary (neutral types vs the `Borrower`/`Covenant`/`RiskFlag`/`CreditMemo`/`PeerComparison` artifacts), the core-vs-adopter-owned file list, and the human-decision checklist; `scripts/rename_fork.py` is the one-pass, dry-run-first rename of the package (`credit_memo`), CLI (`credit-memo`), env prefix (`CREDIT_MEMO_`) and resource ids (`credit-memo-drafting`), verified via `--dry-run` to plan 467 replacements across 77 files and write nothing (git clean). |
 | **G4** Retired `[all]` | N-A (retired) | Retired practice. Releases are tracked by git tag and the `pyproject.toml` version. |
-| **G5** Role-specific FAQs referencing sibling systems `[all]` | PASS | `docs/faq/` carries `README.md` + five role FAQs (security, portability, features, adoption, compliance), each naming the owning sibling systems (Hrz1 guardrail, Hrz2 KB, Hrz3 registry, Hrz4 eval, Hrz5 audit, Hrz7 review, Rsk1/Rsk3/Rsk6/Rgc9) and explaining the boundary rather than duplicating them. |
+| **G5** Role-specific FAQs referencing sibling systems `[all]` | PASS | `docs/faq/` carries `README.md` + five role FAQs (security, portability, features, adoption, compliance), each naming the owning sibling systems (`agent-guardrail-gateway`, `enterprise-knowledge-base`, `agent-registry`, `model-quality-gate` eval, `agent-observability`, `human-review-console` review, `compliance-advisory`, `architecture-validator`, `onprem-dlp`, `operational-resilience-mapping`) and explaining the boundary rather than duplicating them. |
 | **G6** Contribution docs cover full extension touch list `[all]` | PASS | `CONTRIBUTING.md` "Adding a port or adapter" lists the full touch list (add Protocol + re-export, gcp/platform/local/onprem adapters, extend `PORT_PROTOCOLS`, add unit tests) and is enforced by the parity test. |
 | **G7** Markdown discipline: minimise em-dashes, validate mermaid `[all]` | PASS | Root docs (README, SPEC, ARCHITECTURE, COMPLIANCE, DEMO, CONTRIBUTING) and `docs/*.md` are all at 0 em-dashes. |
 
@@ -65,7 +65,7 @@ external deployment evidence, not a code-practice verdict.
 
 ## Gaps carried to systems/
 
-Recommended `Capability gaps` entries for the Doc2 row of
+Recommended `Capability gaps` entries for the `credit-memo-drafting` row of
 the maintainer's per-system register.
 
 **Load-bearing set: none open.** Every load-bearing check (A1-A6, C1-C5, D1-D3, E1) PASSes.

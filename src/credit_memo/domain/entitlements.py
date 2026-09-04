@@ -13,7 +13,7 @@ cannot cross a tenant boundary. What that alone does NOT give is least privilege
 tenant: any authenticated caller could name any borrower id in their own tenant and have
 ``borrower:<id>`` minted for them on the spot, because the tag was built from the request
 body rather than checked against the caller. This module makes that grant conditional, which
-is the parity ``cdd-sow-research`` (Doc1) already had via ``domain/entitlements.py``.
+is the parity ``cdd-sow-research`` (cdd-sow-research) already had via ``domain/entitlements.py``.
 
 Access model (deliberately simple, override per deployment):
 

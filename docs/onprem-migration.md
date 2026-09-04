@@ -1,6 +1,6 @@
 # On-prem migration guide
 
-Doc2's `onprem` profile is a sovereign migration target: the same domain core, the same port
+`credit-memo-drafting`'s `onprem` profile is a sovereign migration target: the same domain core, the same port
 Protocols, with the managed Google Cloud adapters swapped for on-premise implementations.
 This guide is the checklist for that swap. The domain orchestration and the four artifacts
 do not change.

@@ -8,7 +8,7 @@ tenant gets ZERO passages for a borrower id they merely guessed
 What it does NOT close, and what these tests cover, is least privilege WITHIN a tenant: minting
 the ``borrower:<id>`` principal from the request body for anyone who asks lets any authenticated
 in-tenant caller name any borrower. ``domain/entitlements.py`` makes that grant conditional on
-the VERIFIED principal, which is the parity ``cdd-sow-research`` (Doc1) holds.
+the VERIFIED principal, which is the parity ``cdd-sow-research`` (cdd-sow-research) holds.
 """
 
 from __future__ import annotations
