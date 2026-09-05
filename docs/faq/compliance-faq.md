@@ -87,8 +87,10 @@ its own infra and is one of the systems those tools reason about.
 
 ### Can we run it against real borrower data today?
 
-Not without your own legal, security, and model-risk sign-off. Every fixture and figure is
-obviously fictional (`Acme Manufacturing (FICTIONAL)`), and the docs state throughout that this
-is a reference build. The adoption checklist ([`docs/ADOPTING.md`](../ADOPTING.md)) lists the
+Not without your own legal, security, and model-risk sign-off. No borrower of yours is in
+this repo: the fixtures, the built-in offline corpus and every eval case but one are
+obviously fictional (`Acme Manufacturing (FICTIONAL)`), and the demo, the peer table and
+`case-flowserve-real` use a listed company's own published SEC filings — public data, used
+so the output can be checked. The docs state throughout that this is a reference build. The adoption checklist ([`docs/ADOPTING.md`](../ADOPTING.md)) lists the
 steps, replace reference data, own the risk policy, wire your IdP, rebuild the eval golden set,
 that must precede any live-data use.

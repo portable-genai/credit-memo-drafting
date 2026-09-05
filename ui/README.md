@@ -3,6 +3,12 @@
 A small React / Next.js console that renders the Doc2 credit memo with inline citation
 chips, a covenant table, risk flags and peer comparisons.
 
+It also carries a **public-context panel**, deliberately outside the memo. Grounded web
+results may be shown only to the person who ran the query, so they are never posted back,
+never written into the memo and never exported; the panel says so on its face and renders
+Google's suggestion chips verbatim, as the licence requires. It appears only where the
+deployment set `CREDIT_MEMO_RESEARCH_ENABLED`.
+
 ## Run locally
 
 ```bash
@@ -17,8 +23,9 @@ console submits a borrower to `POST /v1/credit-memo` and renders the returned
 tested status, risk flags, peer comparisons and the recommendation rationale - each with
 citations, under a maker-checker (human-review) banner.
 
-The synthetic data is fictional; do not use this against live borrower data without your
-own legal, security and model-risk sign-off.
+The synthetic data is fictional and the demo's borrower is a listed company, grounded on
+its own published SEC filings. Neither is a real borrower of yours: do not use this against
+live borrower data without your own legal, security and model-risk sign-off.
 
 ## Source map
 

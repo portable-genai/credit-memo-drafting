@@ -108,7 +108,7 @@ covenant met or breached. A BREACH escalates the memo to enhanced review.
 | Extraction | local parser (pypdf/text) | local parser (pypdf/text) | n/a | placeholder |
 | Governed RAG | per-request SQLite FTS5 | SQLite FTS5 (BM25) | Hrz2 KB | placeholder |
 | Analysis custody | regional CMEK bucket (15-day lifecycle) | directory | regional CMEK bucket | placeholder |
-| Peer data | SEC EDGAR | in-process peer table | n/a | placeholder |
+| Peer data | SEC EDGAR | in-process table of real same-industry filers | n/a | placeholder |
 | LLM | Gemini | deterministic schema-driven | n/a | placeholder |
 | Guardrail + redaction | Model Armor + DLP | heuristic + regex | Hrz1 gateway | placeholder |
 | Audit + tracing | Cloud Logging + Cloud Trace | append-only SQLite + no-op | Hrz5 | placeholder |
