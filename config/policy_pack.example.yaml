@@ -1,0 +1,126 @@
+# EXAMPLE credit policy pack. The word "example" is load-bearing.
+#
+# Every limit below is plausible and made up. No bank chose these numbers, and a
+# deployment that leaves this file in place is reporting borrowers against a policy
+# nobody wrote. Replace it with your own pack before the first real memo; the version
+# string is printed on every memo so a reader can tell which policy was applied.
+#
+# The separation matters more than the contents. A policy exception is credible because
+# it says "YOUR policy requires <= 3.0x and this request measures 4.1x, waivable by the
+# Regional Credit Committee". It stops being credible the moment the limits come from the
+# software rather than from the bank.
+#
+# metric names one of three things, resolved in this order:
+#   - a ratio formula id from domain/ratio_catalogue.py  (leverage.v1, dscr.v1, ...)
+#   - a line item code from domain/models.LineItemCode   (total_debt, ebitda, ...)
+#   - a request attribute                                (tenor_months, total_amount)
+# A rule whose metric none of these supply is SKIPPED, not failed: "we could not test
+# this" and "this breached policy" are different sentences.
+
+version: example-2026.09
+effective_from: "2026-09-01"
+
+rules:
+  - id: LEV-01
+    description: Maximum senior leverage
+    metric: leverage.v1
+    operator: "<="
+    limit: 3.0
+    severity: high
+    waiver_authority: Regional Credit Committee
+    citation: Credit Policy section 4.2
+
+  - id: DSCR-01
+    description: Minimum debt-service coverage
+    metric: dscr.v1
+    operator: ">="
+    limit: 1.25
+    severity: high
+    waiver_authority: Regional Credit Committee
+    citation: Credit Policy section 4.3
+
+  - id: ICR-01
+    description: Minimum interest cover
+    metric: interest_cover.v1
+    operator: ">="
+    limit: 2.0
+    severity: medium
+    waiver_authority: Head of Credit
+    citation: Credit Policy section 4.4
+
+  - id: LIQ-01
+    description: Minimum current ratio
+    metric: current_ratio.v1
+    operator: ">="
+    limit: 1.0
+    severity: medium
+    waiver_authority: Head of Credit
+    citation: Credit Policy section 5.1
+
+  # A knockout stops a pre-screen dead rather than being logged for a committee. Banks
+  # reserve these for the handful of rules no amount of appetite overrides, which is why
+  # there is exactly one here and it is about tenor rather than about pricing appetite.
+  - id: TEN-01
+    description: Maximum tenor for a term facility
+    metric: tenor_months
+    operator: "<="
+    limit: 84
+    severity: high
+    knockout: true
+    waiver_authority: Board Credit Committee
+    citation: Credit Policy section 3.1
+    applies_to_loan_types: [ci_term, sme]
+
+  - id: LEV-CRE-01
+    description: Maximum leverage on investor CRE
+    metric: leverage.v1
+    operator: "<="
+    limit: 4.5
+    severity: high
+    waiver_authority: Regional Credit Committee
+    citation: CRE Policy Addendum section 2
+    applies_to_loan_types: [cre_investor]
+
+# The rating scorecard. Same principle: the bands and the grade map are the bank's.
+# Factors are scored against the CONFIRMED spread and the COMPUTED ratios, never against
+# anything a model asserted, and the grade this produces is a PROPOSAL an officer accepts
+# or overrides with a reason.
+scorecard:
+  version: example-scorecard-2026.09
+  definitions_url: https://example.internal/credit/rating-definitions
+  factors:
+    - name: Leverage
+      metric: leverage.v1
+      weight: 2.0
+      bands:
+        - {up_to: 1.5, points: 1.0}
+        - {up_to: 2.5, points: 2.0}
+        - {up_to: 3.5, points: 3.0}
+        - {up_to: 5.0, points: 5.0}
+        - {up_to: 999.0, points: 7.0}
+    - name: Debt-service coverage
+      metric: dscr.v1
+      weight: 2.0
+      bands:
+        # Lower coverage is worse, so the bands run the other way: the first band a value
+        # falls into is the weakest one. Read in the order written, not sorted.
+        - {up_to: 1.0, points: 7.0}
+        - {up_to: 1.25, points: 5.0}
+        - {up_to: 1.75, points: 3.0}
+        - {up_to: 2.5, points: 2.0}
+        - {up_to: 999.0, points: 1.0}
+    - name: Interest cover
+      metric: interest_cover.v1
+      weight: 1.0
+      bands:
+        - {up_to: 1.5, points: 7.0}
+        - {up_to: 3.0, points: 4.0}
+        - {up_to: 6.0, points: 2.0}
+        - {up_to: 999.0, points: 1.0}
+  grades:
+    - {up_to: 1.5, grade: "1 - Strong"}
+    - {up_to: 2.5, grade: "2 - Good"}
+    - {up_to: 3.5, grade: "3 - Satisfactory"}
+    - {up_to: 4.5, grade: "4 - Acceptable"}
+    - {up_to: 5.5, grade: "5 - Watch"}
+    - {up_to: 999.0, grade: "6 - Substandard"}

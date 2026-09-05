@@ -47,6 +47,11 @@ models:
   use_hard_reasoning: false
 
 
+policy_pack:
+  # The EXAMPLE pack ships so the demo has rules to test against. Every limit in it is
+  # made up; replace it before the first real memo. Empty selects the example.
+  path: ${CREDIT_MEMO_POLICY_PACK:-}
+
 analysis_bundle:
   # The retention window the console states to the user. On gcp/platform the bucket's own
   # lifecycle rule is what enforces it, so this number and the Terraform rule must agree;
@@ -160,6 +165,14 @@ adapters:
   # spread does this number belong to, for which period, and on which page. gcp sends the
   # PDF itself to Gemini in region; local reads a CSV the analyst supplies. Both return a
   # CANDIDATE that no engine will accept until a person confirms it.
+  # The bank's own credit policy and rating scorecard. Nothing in this repo decides what
+  # a prudent leverage cap is; the pack is uploaded, versioned, and printed on the memo.
+  policy_pack:
+    gcp: credit_memo.adapters.local.policy_pack:LocalYamlPolicyPackAdapter
+    platform: credit_memo.adapters.local.policy_pack:LocalYamlPolicyPackAdapter
+    local: credit_memo.adapters.local.policy_pack:LocalYamlPolicyPackAdapter
+    live: credit_memo.adapters.local.policy_pack:LocalYamlPolicyPackAdapter
+    onprem: credit_memo.adapters.onprem.policy_pack:OnPremPolicyPackAdapter
   spread_extraction:
     gcp: credit_memo.adapters.gcp.gemini_spread_extraction:GeminiSpreadExtractionAdapter
     platform: credit_memo.adapters.gcp.gemini_spread_extraction:GeminiSpreadExtractionAdapter

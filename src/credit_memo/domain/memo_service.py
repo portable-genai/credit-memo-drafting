@@ -45,6 +45,7 @@ from .errors import (
     SpreadNotConfirmedError,
 )
 from .memo_synth_service import MemoSynthService
+from .memo_templates import template_for
 from .models import (
     AnalysisManifest,
     AuditEvent,
@@ -59,16 +60,20 @@ from .models import (
     GuardrailVerdict,
     MemoInput,
     PeerComparison,
+    PolicyException,
     Ratio,
     RetrievedPassage,
     RiskFlag,
+    RiskRatingProposal,
     TieOutFinding,
 )
 from .peer_comp_service import PeerCompService
+from .policy_exception_service import PolicyExceptionService
 from .ratio_catalogue import catalogue_version
 from .ratio_service import RatioService
 from .review_policy import CreditReviewPolicy
 from .risk_flag_service import RiskFlagService
+from .risk_rating_service import RiskRatingService
 from .serialization import to_jsonable
 from .spread_service import SpreadService
 from .tie_out_service import TieOutService
@@ -91,6 +96,7 @@ class CreditMemoService:
         review_router: Any = None,
         covenant_at_risk_band: float = 0.05,
         analysis_bundle: Any = None,
+        policy_pack: Any = None,
     ) -> None:
         self._extraction = extraction
         self._knowledge_base = knowledge_base
@@ -109,6 +115,11 @@ class CreditMemoService:
         # and unit tests can build a memo from filings they already hold; when it is
         # bound, extraction receives the real bytes instead of b"".
         self._analysis_bundle = analysis_bundle
+        # The bank's own policy and scorecard. Optional: with no pack bound, no exception
+        # can be raised and no grade proposed, which is the honest outcome for a
+        # deployment that has not supplied one. The alternative is inventing limits and
+        # reporting the borrower against them.
+        self._policy_pack = policy_pack
 
         # Sub-services compose the same ports (explicit-DI per SPEC §5).
         self._synth = MemoSynthService(llm=llm, tracer=tracer)
@@ -122,6 +133,8 @@ class CreditMemoService:
         self._ratios = RatioService()
         self._spreads = SpreadService()
         self._tie_out = TieOutService()
+        self._policy = PolicyExceptionService()
+        self._rating = RiskRatingService()
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -222,18 +235,26 @@ class CreditMemoService:
         )
         risk_flags: tuple[RiskFlag, ...] = self._risk.flag(borrower, passages, actor)
 
-        # 8) Reconcile. Every check here is one an analyst does by hand and an examiner
+        # 8) Test the request against the bank's own policy, and score its own scorecard.
+        #    Both are arithmetic over figures a person confirmed, and both run BEFORE the
+        #    memo is assembled so the drafter's rationale explains drivers it did not pick.
+        policy_exceptions, policy_version = self._policy_exceptions(
+            memo_input.request, ratios, spread
+        )
+        rating = self._rating_proposal(memo_input.request, ratios, spread)
+
+        # 9) Reconcile. Every check here is one an analyst does by hand and an examiner
         #    asks about, and none of them needs a model.
         tie_out: tuple[TieOutFinding, ...] = self._reconcile(
             spread, memo_input.request, covenants, draft
         )
 
-        # 9) Peer comparisons (BigQuery peer dataset; arithmetic only).
+        # 10) Peer comparisons (BigQuery peer dataset; arithmetic only).
         peer_comparison: tuple[PeerComparison, ...] = self._peers.compare(
             borrower, draft.financial_metrics, actor
         )
 
-        # 10) Assemble the memo. The draft's confidence, caveats and questions were
+        # 11) Assemble the memo. The draft's confidence, caveats and questions were
         #    computed and then dropped on the floor before this: a reader could not see
         #    how sure the drafter was, nor what it had said it could not support.
         citations = self._memo_citations(draft.citations, covenants, risk_flags)
@@ -251,27 +272,30 @@ class CreditMemoService:
             spreads=memo_input.spreads,
             ratios=ratios,
             tie_out=tie_out,
+            policy_exceptions=policy_exceptions,
+            policy_version=policy_version,
+            rating=rating,
             confidence=draft.confidence,
             caveats=draft.caveats,
             questions_for_client=draft.questions_for_client,
             manifest=manifest,
         )
 
-        # 11) Guardrail screen (OUTPUT) on the assembled prose.
+        # 12) Guardrail screen (OUTPUT) on the assembled prose.
         out_text = f"{memo.summary}\n{memo.recommendation_rationale}"
         out_verdict: GuardrailVerdict = self._guardrail.screen(out_text, Direction.OUTPUT)
         if not out_verdict.allowed:
             self._write_audit(actor, redacted_summary, "", Decision.BLOCKED, direction="output")
             raise GuardrailBlockedError(out_verdict.reason or "credit memo blocked by guardrail")
 
-        # 12) Review policy: a memo is consequential, so it is always routed to a human
+        # 13) Review policy: a memo is consequential, so it is always routed to a human
         #     checker (audit decision ESCALATED); a breach/high-severity flag escalates.
         escalated = self._review.escalates(covenants, risk_flags)
 
-        # 13) Audit (already-redacted prompt + a redacted response summary).
+        # 14) Audit (already-redacted prompt + a redacted response summary).
         self._audit_memo(actor, redacted_summary, memo, Decision.ESCALATED, escalated)
 
-        # 14) Route the escalation to Hrz7 (rule R8). A memo always requires human review, so it is
+        # 15) Route the escalation to Hrz7 (rule R8). A memo always requires human review, so it is
         #     handed to the maker-checker console rather than terminating in a boolean; the adapter
         #     redacts before the wire. Best-effort: a console outage must not fail an already-
         #     assembled, already-audited memo (the audit ESCALATED record is the durable escalation
@@ -389,6 +413,53 @@ class CreditMemoService:
     # ------------------------------------------------------------------ #
     # Helpers
     # ------------------------------------------------------------------ #
+    def _policy_exceptions(
+        self, request: Any, ratios: tuple[Ratio, ...], spread: FinancialSpread | None
+    ) -> tuple[tuple[PolicyException, ...], str]:
+        """Where this request sits against the bank's uploaded policy, and which policy.
+
+        The version travels with the exceptions because "within policy" without a version
+        is a claim nobody can check a year later, when the pack has moved on twice.
+        """
+        if self._policy_pack is None or request is None:
+            return (), ""
+        try:
+            pack = self._policy_pack.current()
+            return self._policy.evaluate(pack, request, ratios, spread), pack.version
+        except Exception:  # noqa: BLE001 - an unreadable pack must not fail a memo
+            return (), ""
+
+    def _rating_proposal(
+        self,
+        request: Any,
+        ratios: tuple[Ratio, ...],
+        spread: FinancialSpread | None,
+    ) -> RiskRatingProposal | None:
+        """The grade the bank's own scorecard produces. Proposed, never assigned.
+
+        Skipped for the kinds whose template says so: grading a borrower from the
+        two-document package a pre-screen runs on would put a number in front of a
+        committee that the package cannot support.
+
+        ``rationale`` is left empty here, and that is a decision rather than an omission.
+        Supervisors ask for a rating to be justified in the memo; the drivers do that
+        better than a paragraph about them, because each one names the factor, the
+        measured value, the band it fell into and what it contributed. A drafted narrative
+        would restate that less precisely, and would be the one part of the rating a model
+        wrote. It belongs with the memo editor, where an analyst can own the words.
+        """
+        if self._policy_pack is None or request is None:
+            return None
+        if not template_for(request.kind).proposes_rating:
+            return None
+        try:
+            scorecard = self._policy_pack.scorecard()
+            if scorecard is None:
+                return None
+            return self._rating.propose(scorecard, ratios=ratios, spread=spread)
+        except Exception:  # noqa: BLE001 - a missing scorecard must not fail a memo
+            return None
+
     def _reconcile(
         self,
         spread: FinancialSpread | None,

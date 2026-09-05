@@ -644,6 +644,187 @@ class Ratio:
 
 
 # --------------------------------------------------------------------------- #
+# 0c. The bank's own credit policy, and what it says about this request
+# --------------------------------------------------------------------------- #
+class PolicyOperator(StrEnum):
+    """How a policy rule compares the measured value against its limit."""
+
+    LE = "<="
+    LT = "<"
+    GE = ">="
+    GT = ">"
+    EQ = "=="
+    IN = "in"  # the value must be one of the listed options
+    NOT_IN = "not_in"
+
+
+@dataclass(frozen=True, slots=True)
+class PolicyRule:
+    """One line of the bank's credit policy, in a form an engine can test.
+
+    The policy is the bank's, not this service's. It arrives as an uploaded, versioned
+    pack and is evaluated here; nothing in this repo decides what a prudent leverage cap
+    is, and the shipped example pack is explicitly an example. That separation is the
+    whole reason exceptions are credible: an exception means "your policy says X and this
+    deal is Y", not "our software disapproves".
+
+    ``waiver_authority`` names who can approve a breach of THIS rule. It is the field
+    that turns a flag into an action: an exception nobody is named to waive is an
+    observation, and observations do not get memos approved.
+    """
+
+    id: str  # "LEV-01", stable across pack versions so an exception can be tracked
+    description: str
+    metric: str  # a LineItemCode value, a RatioFormula id, or a request attribute
+    operator: PolicyOperator
+    limit: float | None = None
+    options: tuple[str, ...] = ()  # for IN / NOT_IN
+    severity: Severity = Severity.MEDIUM
+    waiver_authority: str = ""
+    #: Which memo kinds and loan types this rule applies to. Empty means all: a policy
+    #: that only bites on CRE should say so rather than firing on every C&I memo.
+    applies_to_kinds: tuple[MemoKind, ...] = ()
+    applies_to_loan_types: tuple[LoanType, ...] = ()
+    #: A knockout stops a pre-screen dead rather than being logged as an exception. Banks
+    #: reserve these for the handful of rules no amount of committee appetite overrides.
+    knockout: bool = False
+    citation: str = ""  # where in the policy document this rule lives
+
+
+@dataclass(frozen=True, slots=True)
+class PolicyPack:
+    """A versioned set of policy rules, as the bank uploaded them.
+
+    ``version`` and ``digest`` are printed at the point of use. A memo that says "within
+    policy" without saying which policy is a claim nobody can check a year later, when
+    the pack has moved on twice.
+    """
+
+    version: str
+    rules: tuple[PolicyRule, ...] = ()
+    source_document_id: str = ""
+    digest: str = ""
+    effective_from: str = ""
+
+    def applicable(self, kind: MemoKind, loan_type: LoanType) -> tuple[PolicyRule, ...]:
+        return tuple(
+            rule
+            for rule in self.rules
+            if (not rule.applies_to_kinds or kind in rule.applies_to_kinds)
+            and (not rule.applies_to_loan_types or loan_type in rule.applies_to_loan_types)
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class PolicyException:
+    """A policy rule this request does not meet, and who can waive it.
+
+    Not a refusal. A bank lends outside its own guidelines constantly and on purpose;
+    what supervisors ask is that it knows when it is doing so, at what level that was
+    approved, and how many such exceptions are outstanding. So this carries the measured
+    value, the limit, and the authority — everything a committee needs to decide, and
+    everything a reviewer needs to count.
+    """
+
+    rule_id: str
+    description: str
+    measured: float | None
+    limit: float | None
+    operator: PolicyOperator
+    severity: Severity
+    waiver_authority: str = ""
+    period: str = ""
+    provenance: Provenance = Provenance.COMPUTED
+    detail: str = ""
+    citation: str = ""
+
+    def __post_init__(self) -> None:
+        if self.provenance is not Provenance.COMPUTED:
+            raise ValueError(
+                "a policy exception is the result of testing a rule, not an opinion about "
+                f"one; refusing provenance {self.provenance.value!r}"
+            )
+
+
+# --------------------------------------------------------------------------- #
+# 0d. The risk rating, proposed and never assigned
+# --------------------------------------------------------------------------- #
+@dataclass(frozen=True, slots=True)
+class RatingDriver:
+    """One scorecard factor and what it contributed."""
+
+    name: str
+    measured: float | None
+    band: str  # the band label the measured value fell into
+    points: float
+    weight: float = 1.0
+    detail: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class RatingScorecard:
+    """The bank's own rating scorecard, uploaded like the policy pack.
+
+    Bands are (upper_bound, points) pairs per factor. The grade map turns a total score
+    into a grade label. Both are the bank's; this service arithmetic-only applies them.
+    """
+
+    version: str
+    factors: tuple[tuple[str, str, float, tuple[tuple[float, float], ...]], ...] = ()
+    grade_bands: tuple[tuple[float, str], ...] = ()  # (max score, grade)
+    source_document_id: str = ""
+    digest: str = ""
+    definitions_url: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class RiskRatingProposal:
+    """A grade this service PROPOSES. It never assigns one.
+
+    The distinction is the whole design. Supervisors expect a rating to be the bank's
+    judgement, arrived at by its own methodology, owned by a named officer and justified
+    in the memo. What this produces is arithmetic over the bank's own scorecard plus a
+    drafted rationale, offered to that officer. The grade of record lives in the bank's
+    rating system and is read-only from here.
+
+    ``rationale`` is the one part a model writes, and it explains drivers that were
+    computed before it saw them. It cannot move the grade.
+    """
+
+    obligor_grade: str
+    score: float
+    drivers: tuple[RatingDriver, ...] = ()
+    scorecard_version: str = ""
+    definitions_url: str = ""
+    rationale: str = ""
+    facility_grade: str = ""
+    provenance: Provenance = Provenance.COMPUTED
+    #: Set when an officer overrides the proposed grade. Both halves are required: a
+    #: silent override is the failure supervisors name explicitly.
+    override_grade: str = ""
+    override_reason: str = ""
+    override_by: str = ""
+
+    def __post_init__(self) -> None:
+        if self.provenance is not Provenance.COMPUTED:
+            raise ValueError(
+                "a rating proposal is scorecard arithmetic, not a model's opinion; "
+                f"refusing provenance {self.provenance.value!r}"
+            )
+        if self.override_grade and not (self.override_reason.strip() and self.override_by.strip()):
+            raise ValueError(
+                "an override must name the officer and the reason. A grade changed with "
+                "neither is the exact finding supervisors write up: a scorecard overridden "
+                "silently is a scorecard that was never really used."
+            )
+
+    @property
+    def grade(self) -> str:
+        """The grade a reader should act on: the override where one was made."""
+        return self.override_grade or self.obligor_grade
+
+
+# --------------------------------------------------------------------------- #
 # 1. Covenants
 # --------------------------------------------------------------------------- #
 class CovenantType(StrEnum):
@@ -722,13 +903,98 @@ class RiskCategory(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class Mitigant:
+    """What answers a risk, and whether anybody has confirmed it does.
+
+    A risk with no mitigant is a reason to decline; a risk with an unconfirmed mitigant is
+    a question for the borrower. Those are different memos, so ``confirmed_by`` is a field
+    rather than an assumption: an LLM may propose "the sponsor has covered shortfalls
+    before", and until an analyst says that is true it stays a proposal.
+    """
+
+    detail: str
+    confirmed_by: str = ""
+    citations: tuple[Citation, ...] = ()
+    provenance: Provenance = Provenance.MODEL_DRAFTED
+
+
+@dataclass(frozen=True, slots=True)
 class RiskFlag:
-    """An identified credit risk with a category, severity and cited detail."""
+    """An identified credit risk with a category, severity, cited detail and mitigants.
+
+    The memo raised risks it could not pair with a support until ``mitigants`` existed,
+    which is half a risk section: every credit memo template in the industry puts the two
+    in the same row, because a committee reads them together or not at all.
+    """
 
     category: RiskCategory
     severity: Severity
     detail: str
     citations: tuple[Citation, ...] = ()
+    mitigants: tuple[Mitigant, ...] = ()
+
+
+# --------------------------------------------------------------------------- #
+# 2b. What the memo asks the approver to agree to
+# --------------------------------------------------------------------------- #
+class ConditionKind(StrEnum):
+    """When a condition has to be satisfied, which is what makes it trackable."""
+
+    PRECEDENT = "precedent"  # before drawdown
+    SUBSEQUENT = "subsequent"  # after drawdown, by a date
+    ONGOING = "ongoing"  # for the life of the facility
+    COVENANT = "covenant"  # to be written into the agreement
+
+
+@dataclass(frozen=True, slots=True)
+class Condition:
+    """One thing that must be true for this credit to proceed.
+
+    Free prose could say all of this, and did. The reason it is a record is what happens
+    afterwards: conditions are the memo's only output that outlives the decision, and a
+    condition nobody can list is a condition nobody tracks. ``owner`` and ``due`` are what
+    a monitoring system needs; ``kind`` is what tells it when to start asking.
+    """
+
+    kind: ConditionKind
+    detail: str
+    owner: str = ""
+    due: str = ""  # ISO date or a relative phrase the bank uses ("at each quarter end")
+    provenance: Provenance = Provenance.MODEL_DRAFTED
+
+
+@dataclass(frozen=True, slots=True)
+class DeclineReason:
+    """Why a request was not supported, tied to the rule it failed.
+
+    Structured first and prose second, deliberately. Where a decline has to be explained
+    to an applicant, the explanation must be specific and accurate about the actual
+    reason (ECOA and Regulation B, which reach business credit at 12 CFR 1002.9(a)(3)),
+    and "the model recommended against it" is neither. A reason that names the policy rule
+    and the measured value is both.
+    """
+
+    detail: str
+    rule_id: str = ""
+    measured: float | None = None
+    limit: float | None = None
+    provenance: Provenance = Provenance.COMPUTED
+
+
+@dataclass(frozen=True, slots=True)
+class Recommendation:
+    """The memo's ask, its conditions, and the authority it needs.
+
+    ``action`` is deliberately not an approval. SPEC section 1 excludes making or
+    communicating a credit decision, so this states what is being put to the approver
+    ("support, subject to the conditions below") rather than deciding it.
+    """
+
+    action: str = ""
+    conditions: tuple[Condition, ...] = ()
+    decline_reasons: tuple[DeclineReason, ...] = ()
+    required_authority: str = ""
+    provenance: Provenance = Provenance.MODEL_DRAFTED
 
 
 # --------------------------------------------------------------------------- #
@@ -810,6 +1076,17 @@ class CreditMemo:
     #: Reconciliations that did not hold. Not failures: sentences in the reviewer's
     #: gutter saying "these two numbers should agree and they do not", with both numbers.
     tie_out: tuple[TieOutFinding, ...] = ()
+    #: Where this request sits against the bank's own uploaded policy, and who can waive
+    #: what. An exception is not a refusal: banks lend outside their guidelines on purpose,
+    #: and what supervisors ask is that they know when, at what level it was approved, and
+    #: how many are outstanding.
+    policy_exceptions: tuple[PolicyException, ...] = ()
+    policy_version: str = ""
+    #: A grade this service PROPOSES from the bank's scorecard. It never assigns one.
+    rating: RiskRatingProposal | None = None
+    #: The ask, its conditions and the authority it needs; or the structured reasons it
+    #: was not supported.
+    recommendation: Recommendation | None = None
     #: Exactly which uploaded files this memo was assessed on, and when they expire.
     manifest: AnalysisManifest | None = None
     #: The synthesis service's self-critique. Both were computed and then dropped on the

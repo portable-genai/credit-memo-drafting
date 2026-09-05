@@ -38,6 +38,7 @@ from credit_memo.adapters.local.guardrail import LocalHeuristicGuardrailAdapter
 from credit_memo.adapters.local.knowledge_base import LocalFtsKnowledgeBaseAdapter
 from credit_memo.adapters.local.llm import LocalDeterministicLLMAdapter, _schema_properties
 from credit_memo.adapters.local.peer_data import LocalPeerDataAdapter
+from credit_memo.adapters.local.policy_pack import LocalYamlPolicyPackAdapter
 from credit_memo.adapters.local.redaction import LocalRegexRedactionAdapter
 from credit_memo.adapters.local.registry import LocalAgentRegistryAdapter
 from credit_memo.adapters.local.tool_catalog import LocalToolCatalogAdapter
@@ -420,6 +421,7 @@ def credit_memo_service(
     tracer,
     audit,
     analysis_bundle,
+    policy_pack,
 ):
     """CreditMemoService(extraction, knowledge_base, peer_data, llm, guardrail, redaction,
     tracer, audit, analysis_bundle)."""
@@ -434,7 +436,14 @@ def credit_memo_service(
         tracer,
         audit,
         analysis_bundle=analysis_bundle,
+        policy_pack=policy_pack,
     )
+
+
+@pytest.fixture
+def policy_pack() -> LocalYamlPolicyPackAdapter:
+    """The shipped EXAMPLE pack, whose limits are made up and say so."""
+    return LocalYamlPolicyPackAdapter(_settings())
 
 
 @pytest.fixture
