@@ -158,6 +158,45 @@ export interface FinancialSpread {
   confirmed_by: string;
 }
 
+/**
+ * One figure extraction proposed, with where it says it read it.
+ *
+ * Never a `LineItem`: its provenance is `extracted`, which the backend's spread type
+ * refuses, so nothing on this shape can reach a ratio. Turning it into a figure the
+ * engines compute from is what the confirm step does, and it needs a person.
+ */
+export interface CandidateLineItem {
+  code: LineItemCode;
+  period: string;
+  value: number;
+  currency: string;
+  document_id: string;
+  page: number | null;
+  quote: string;
+  confidence: number;
+  provenance: Provenance;
+}
+
+export interface SpreadCandidate {
+  borrower_id: string;
+  periods: Period[];
+  items: CandidateLineItem[];
+  currency: string;
+  unit: string;
+  extractor: string;
+  extractor_version: string;
+  extracted_at: string;
+}
+
+/** The analyst's verdict on one proposed figure. */
+export interface SpreadDecision {
+  /** `keep` accepts it as read, `reject` throws it out, `adjust` replaces the value. */
+  verdict: "keep" | "reject" | "adjust";
+  /** Only for `adjust`, and required then: the record a committee asks about. */
+  value?: string;
+  reason?: string;
+}
+
 export interface RatioInput {
   code: LineItemCode;
   period: string;

@@ -17,7 +17,10 @@ import type {
   CreditRequest,
   FinancialSpread,
   HealthStatus,
+  LineItemCode,
+  Period,
   RiskFlag,
+  SpreadCandidate,
 } from "./types";
 import { ConfiguredEmptyError, readEnvValue } from "./env-setting.mjs";
 
@@ -213,6 +216,52 @@ export async function buildAnalysisMemo(
   return (await parseJsonOrThrow(res)) as CreditMemo | BlockedEnvelope;
 }
 
+/**
+ * Ask the extractor to read the figures off the documents already in this analysis.
+ *
+ * What comes back is a PROPOSAL. Every item is `extracted`, which the backend's spread
+ * type refuses, so no ratio can be computed from any of it until a person confirms.
+ */
+export async function extractSpread(
+  analysisId: string,
+  body: { document_ids?: string[]; periods?: Period[]; currency?: string; unit?: string } = {},
+  signal?: AbortSignal,
+): Promise<SpreadCandidate> {
+  const res = await fetch(
+    `${API_BASE}/v1/analyses/${encodeURIComponent(analysisId)}/spreads/extract`,
+    { method: "POST", headers: jsonHeaders(), body: JSON.stringify(body), signal },
+  );
+  return (await parseJsonOrThrow(res)) as SpreadCandidate;
+}
+
+/**
+ * Accept the candidate this analysis holds, and become the person who stands behind it.
+ *
+ * There is no actor in the body and no spread in it either: the backend confirms the
+ * candidate it already stored, attributed to the verified principal. A console that could
+ * post its own table could produce a "confirmed" spread nobody saw beside a document.
+ */
+export async function confirmSpread(
+  analysisId: string,
+  body: {
+    rejected?: { code: LineItemCode; period: string }[];
+    adjustments?: {
+      code: LineItemCode;
+      period: string;
+      before: number | null;
+      after: number;
+      reason: string;
+    }[];
+  },
+  signal?: AbortSignal,
+): Promise<FinancialSpread> {
+  const res = await fetch(
+    `${API_BASE}/v1/analyses/${encodeURIComponent(analysisId)}/spreads/confirm`,
+    { method: "POST", headers: jsonHeaders(), body: JSON.stringify(body), signal },
+  );
+  return (await parseJsonOrThrow(res)) as FinancialSpread;
+}
+
 /** Where one uploaded file can be read back, so a citation can open its page. */
 export function analysisDocumentUrl(
   analysisId: string,
@@ -274,6 +323,8 @@ export async function uploadBorrowerDocument(
 
 export const api = {
   openAnalysis,
+  extractSpread,
+  confirmSpread,
   buildAnalysisMemo,
   analysisDocumentUrl,
   buildCreditMemo,
