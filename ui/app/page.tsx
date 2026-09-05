@@ -9,10 +9,13 @@ import {
   type CreditMemo,
   type CreditRequest,
   type FinancialSpread,
+  type SpreadCandidate,
+  type SpreadDecision,
 } from "@/lib/types";
 import { MemoView } from "@/components/MemoView";
 import { emptyRequest, FacilityForm } from "@/components/FacilityForm";
 import { emptySpread, SpreadGrid } from "@/components/SpreadGrid";
+import { confirmBody, SpreadReview } from "@/components/SpreadReview";
 import { DocumentPanel, type PendingDocument } from "@/components/DocumentPanel";
 
 const IS_EMBEDDED = process.env.NEXT_PUBLIC_EMBED === "1";
@@ -44,6 +47,13 @@ export default function Home() {
   const [spread, setSpread] = useState<FinancialSpread>(() =>
     emptySpread("acme-manufacturing-pte-ltd-fictional"),
   );
+  // The extract -> review -> confirm path. `analysisId` is what makes it a path rather
+  // than three unrelated calls: the analysis is opened once, and every later step names
+  // it, so the figures confirmed are provably the ones read from the files uploaded.
+  const [analysisId, setAnalysisId] = useState("");
+  const [candidate, setCandidate] = useState<SpreadCandidate | null>(null);
+  const [decisions, setDecisions] = useState<Record<string, SpreadDecision>>({});
+  const [busy, setBusy] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -77,6 +87,63 @@ export default function Home() {
     api.setDevPersona(id);
   }
 
+  function borrowerId(): string {
+    return name.toLowerCase().replace(/\s+/g, "-");
+  }
+
+  /** Open the analysis once, and reuse it for every later step. */
+  async function ensureAnalysis(): Promise<string> {
+    if (analysisId) return analysisId;
+    const opened = await api.openAnalysis(borrowerId(), documents);
+    setManifest(opened);
+    setAnalysisId(opened.analysis_id);
+    return opened.analysis_id;
+  }
+
+  async function onExtract() {
+    if (!documents.length) {
+      setError(
+        "Add the borrower's financial statements to the credit file first: there is " +
+          "nothing to read the figures off.",
+      );
+      return;
+    }
+    setError(null);
+    setBusy("Reading the figures off your documents");
+    try {
+      const id = await ensureAnalysis();
+      const proposed = await api.extractSpread(id, { periods: spread.periods });
+      setCandidate(proposed);
+      setDecisions({});
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function onConfirm() {
+    if (!candidate || !analysisId) return;
+    const { body, error: invalid } = confirmBody(candidate, decisions);
+    if (invalid) {
+      setError(invalid);
+      return;
+    }
+    setError(null);
+    setBusy("Recording your confirmation");
+    try {
+      // The confirmed spread comes BACK from the service rather than being assembled
+      // here. The copy the service returns is the one with a named confirmer on it, and
+      // a console that assembled its own would be asserting figures nobody attributed.
+      setSpread(await api.confirmSpread(analysisId, body));
+      setCandidate(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy("");
+    }
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!documents.length) {
@@ -90,21 +157,20 @@ export default function Home() {
     setError(null);
     setMemo(null);
     setBlocked(null);
-    setManifest(null);
     try {
-      const borrowerId = name.toLowerCase().replace(/\s+/g, "-");
-
-      setStage("Uploading the credit file");
-      const opened = await api.openAnalysis(borrowerId, documents);
-      setManifest(opened);
+      const id = analysisId ? analysisId : (setStage("Uploading the credit file"), await ensureAnalysis());
 
       setStage("Reading the documents, computing the ratios, drafting the memo");
-      const result = await api.buildAnalysisMemo(opened.analysis_id, {
+      const result = await api.buildAnalysisMemo(id, {
         request,
         // Only send a spread that has figures in it. An empty grid computes nothing and
         // would read as though the engine failed rather than as though nobody typed
-        // anything.
-        spreads: spread.items.length ? [{ ...spread, borrower_id: borrowerId }] : [],
+        // anything. A spread confirmed through the panel above is already stored against
+        // this analysis, so sending nothing is what makes the service use that one.
+        spreads:
+          spread.items.length && !spread.confirmed_by
+            ? [{ ...spread, borrower_id: borrowerId() }]
+            : [],
       });
       if (isBlocked(result)) {
         setBlocked(result);
@@ -191,10 +257,61 @@ export default function Home() {
         </div>
 
         <div className="xl:col-span-3">
-          <span className="mb-2 block text-sm font-semibold text-ink-900">
-            Financial spread
-          </span>
-          <SpreadGrid spread={spread} onChange={setSpread} />
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <span className="text-sm font-semibold text-ink-900">Financial spread</span>
+            <button
+              type="button"
+              onClick={onExtract}
+              disabled={loading || busy !== "" || !documents.length}
+              className="rounded border border-regblue-600 px-3 py-1 text-xs font-semibold text-regblue-600 disabled:opacity-40"
+            >
+              Extract from the documents
+            </button>
+          </div>
+
+          {spread.confirmed_by ? (
+            <p className="mb-2 rounded border border-green-300 bg-green-50 p-2 text-xs text-green-900">
+              Confirmed by <strong>{spread.confirmed_by}</strong>. These are the figures the
+              engines will compute from. Extract again to start over.
+            </p>
+          ) : null}
+
+          {candidate ? (
+            <div className="mb-3 rounded border border-amber-300 bg-amber-50 p-3">
+              <p className="mb-2 text-sm font-semibold text-amber-900">
+                Not yet anybody&apos;s figures
+              </p>
+              <SpreadReview
+                analysisId={analysisId}
+                candidate={candidate}
+                decisions={decisions}
+                onChange={setDecisions}
+              />
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onConfirm}
+                  disabled={busy !== ""}
+                  className="rounded bg-regblue-600 px-3 py-1 text-xs font-semibold text-white disabled:opacity-50"
+                >
+                  Confirm these figures
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCandidate(null)}
+                  className="text-xs text-ink-500 underline"
+                >
+                  Discard and type them myself
+                </button>
+              </div>
+            </div>
+          ) : (
+            <SpreadGrid
+              spread={spread}
+              onChange={setSpread}
+              readOnly={spread.confirmed_by !== ""}
+            />
+          )}
         </div>
 
         <button
@@ -208,8 +325,8 @@ export default function Home() {
 
 
       <div aria-live="polite" aria-atomic="true">
-        {loading ? (
-          <p className="mb-4 text-sm text-ink-500">{stage || "Working"}…</p>
+        {loading || busy ? (
+          <p className="mb-4 text-sm text-ink-500">{busy || stage || "Working"}…</p>
         ) : null}
 
         {error ? (

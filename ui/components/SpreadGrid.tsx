@@ -58,9 +58,17 @@ export function emptySpread(borrowerId: string): FinancialSpread {
 export function SpreadGrid({
   spread,
   onChange,
+  readOnly = false,
 }: {
   spread: FinancialSpread;
   onChange: (next: FinancialSpread) => void;
+  /**
+   * A confirmed spread is not editable here, and the cells say so rather than accepting
+   * keystrokes that go nowhere. The build sends the copy the service already holds — the
+   * one with a named confirmer on it — so a hand edit at this point would be silently
+   * discarded, which is worse than a disabled field.
+   */
+  readOnly?: boolean;
 }) {
   const periods = spread.periods;
 
@@ -94,8 +102,18 @@ export function SpreadGrid({
   return (
     <div className="space-y-2">
       <p className="text-xs text-ink-500">
-        Figures in {spread.unit} of {spread.currency}. Leave a cell blank if you do not
-        have it: the ratio that needs it will say so rather than assume a zero.
+        Figures in {spread.unit} of {spread.currency}.{" "}
+        {readOnly ? (
+          <>
+            These were confirmed against the documents and are no longer editable here.
+            Extract again to review them afresh.
+          </>
+        ) : (
+          <>
+            Leave a cell blank if you do not have it: the ratio that needs it will say so
+            rather than assume a zero.
+          </>
+        )}
       </p>
       <div className="overflow-x-auto scroll-thin">
         <table className="w-full min-w-[34rem] text-sm">
@@ -146,7 +164,8 @@ export function SpreadGrid({
                         aria-label={`${row.label}, ${p.label}`}
                         value={valueFor(row.code, p.label)}
                         onChange={(e) => setCell(row.code, p.label, e.target.value)}
-                        className="w-24 rounded border border-ink-300 px-1.5 py-1 text-right font-mono tabular-nums"
+                        readOnly={readOnly}
+                        className={`w-24 rounded border border-ink-300 px-1.5 py-1 text-right font-mono tabular-nums ${readOnly ? "bg-ink-50 text-ink-500" : ""}`}
                       />
                     </td>
                   ))}
