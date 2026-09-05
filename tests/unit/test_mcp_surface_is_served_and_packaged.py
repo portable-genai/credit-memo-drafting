@@ -78,6 +78,43 @@ def test_the_handler_roster_matches_the_catalog_exactly(
     assert set(mcp_server.HANDLER_NAMES) == {spec.name for spec in catalog.list_tools()}
 
 
+def test_the_adk_agent_can_call_every_tool_the_catalog_declares(
+    catalog: McpToolCatalogAdapter,
+) -> None:
+    """The two surfaces answer the same roster, or one of them is lying.
+
+    MCP is already held to the catalog above. The ADK agent was not, and drifted: the
+    catalog declared ``extract_covenants`` while the agent had no such tool, so a promise
+    the fleet published was one this repo did not keep — and nothing failed, in either
+    direction.
+    """
+    from credit_memo.agent import tools as adk_tools
+
+    assert {fn.__name__ for fn in adk_tools.TOOL_FUNCTIONS} == {
+        spec.name for spec in catalog.list_tools()
+    }
+
+
+def test_no_adk_tool_invents_a_borrower_figure() -> None:
+    """The section tools return sections of a memo; they do not assemble their own inputs.
+
+    ``peer_compare`` used to construct ``FinancialMetric(name="leverage", value=0.0)`` and
+    compare that against the peer median, reporting the borrower at the bottom percentile
+    of every cohort. It was indistinguishable in the output from a real position, which is
+    what makes a fabricated input worse than a missing one.
+    """
+    import inspect
+
+    from credit_memo.agent import tools as adk_tools
+
+    source = inspect.getsource(adk_tools)
+    assert "FinancialMetric(" not in source, (
+        "an ADK tool is building a borrower metric of its own. The memo owns the "
+        "borrower's normalised metrics; a tool that assembles its own is a second answer "
+        "to one question."
+    )
+
+
 def _render(tmp_path: pathlib.Path) -> pathlib.Path:
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "scripts"))
     import render_plugin

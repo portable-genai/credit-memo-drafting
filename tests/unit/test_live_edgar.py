@@ -156,6 +156,119 @@ def test_live_peer_adapter_returns_empty_for_unsupported_metric() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Peer ratios: the same catalogue formula, over the peer's own filed figures
+# --------------------------------------------------------------------------- #
+_END = "2025-01-31"
+
+
+def _fact(value: float, end: str = _END, tag: str = "Tag") -> dict:
+    return {"value": value, "end": end, "fy": 2025, "tag": tag}
+
+
+#: One peer's 10-K, in whole USD as EDGAR reports them. EBITDA (25,000m) is derived from
+#: operating income plus D&A, and total debt (100,000m) from the non-current balance plus
+#: the current portion, so a formula reading either exercises the derivations.
+_RICH_FACTS: dict[str, dict] = {
+    "revenue": _fact(125e9),
+    "operating_income": _fact(20e9),
+    "depreciation_amortisation": _fact(5e9),
+    "interest_expense": _fact(5e9),
+    "long_term_debt": _fact(80e9, tag="LongTermDebtNoncurrent"),
+    "current_debt": _fact(20e9, tag="LongTermDebtCurrent"),
+    "current_assets": _fact(60e9),
+    "current_liabilities": _fact(30e9),
+    "inventory": _fact(6e9),
+    "equity": _fact(50e9),
+    "intangible_assets": _fact(4e9),
+    "goodwill": _fact(10e9),
+}
+
+
+class _FakeRatioEdgar(_FakeEdgar):
+    """One peer, with whatever fact set a test hands it."""
+
+    def __init__(self, facts: dict[str, dict]) -> None:
+        super().__init__()
+        self._facts = facts
+
+    def peer_ciks(self, sic: str, exclude_cik: str, limit: int) -> list[str]:
+        return ["0000000001"]
+
+    def latest_annual_facts(self, cik: str) -> dict:
+        return self._facts
+
+    def entity_name(self, cik: str) -> str:
+        return "Peer One"
+
+
+def _peer_value(metric: str, facts: dict[str, dict] | None = None) -> float | None:
+    adapter = LiveEdgarPeerDataAdapter(_settings())
+    adapter._edgar = _FakeRatioEdgar(facts if facts is not None else _RICH_FACTS)  # type: ignore[assignment]
+    peers = adapter.peers_for(Borrower(id="apple-inc", name="Apple Inc"), metric)
+    return peers[0].value if peers else None
+
+
+@pytest.mark.parametrize(
+    ("metric", "expected"),
+    [
+        pytest.param("leverage", 4.0, id="leverage: 100,000 debt / 25,000 derived EBITDA"),
+        pytest.param("Interest cover", 5.0, id="interest cover, named as the memo labels it"),
+        pytest.param("current_ratio", 2.0, id="current ratio"),
+        pytest.param("quick_ratio", 1.8, id="quick ratio nets inventory off"),
+        pytest.param("gearing", 2.0, id="gearing"),
+        pytest.param("ebitda_margin", 0.2, id="EBITDA margin"),
+    ],
+)
+def test_a_peer_ratio_is_computed_by_the_catalogue_formula(metric: str, expected: float) -> None:
+    """The only way the comparison means anything.
+
+    A peer median assembled from a vendor's definition of leverage and a borrower figure
+    from the bank's own compares two different quantities that share a name. Here both
+    come from the same versioned formula id.
+    """
+    assert _peer_value(metric) == pytest.approx(expected)
+
+
+def test_tangible_net_worth_treats_goodwill_as_an_intangible() -> None:
+    """Goodwill is tagged apart from other intangibles and is usually the larger.
+
+    Ignoring it overstates tangible net worth by the size of the peer's acquisitions.
+    """
+    assert _peer_value("tangible_net_worth") == pytest.approx(50_000 - 4_000 - 10_000)
+
+
+def test_debt_that_already_includes_the_current_portion_is_not_counted_twice() -> None:
+    """``LongTermDebt`` is the inclusive tag; adding the current portion double-counts."""
+    facts = {**_RICH_FACTS, "long_term_debt": _fact(100e9, tag="LongTermDebt")}
+    assert _peer_value("gearing", facts) == pytest.approx(2.0)  # 100,000 / 50,000, not 120,000
+
+
+def test_only_facts_from_one_fiscal_year_end_reach_a_spread() -> None:
+    """A ratio whose numerator and denominator are from different years is wrong quietly.
+
+    The peer is skipped rather than reported on a mixed-period basis, so the peer set
+    shrinks instead of silently gaining a wrong member.
+    """
+    facts = {**_RICH_FACTS, "current_liabilities": _fact(30e9, end="2024-01-31")}
+    assert _peer_value("current_ratio", facts) is None
+
+
+def test_a_peer_missing_an_operand_contributes_nothing_rather_than_a_guess() -> None:
+    facts = {k: v for k, v in _RICH_FACTS.items() if k != "interest_expense"}
+    assert _peer_value("interest_cover", facts) is None
+
+
+@pytest.mark.parametrize("metric", ["dscr", "fccr", "fixed-charge coverage"])
+def test_coverage_ratios_needing_debt_service_are_not_offered_at_all(metric: str) -> None:
+    """No filer tags scheduled debt service, and EDGAR carries no substitute for it.
+
+    A coverage ratio built on a guessed denominator would look exactly like one built on
+    a filed figure, so these metrics are absent from the map rather than approximated.
+    """
+    assert _peer_value(metric) is None
+
+
+# --------------------------------------------------------------------------- #
 # Borrower document upload (audience data)
 # --------------------------------------------------------------------------- #
 @pytest.fixture
