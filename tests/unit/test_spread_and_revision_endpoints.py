@@ -559,3 +559,42 @@ def test_the_export_carries_the_edited_memo_not_the_draft(client: TestClient) ->
     export = client.post(f"/v1/analyses/{analysis_id}/export?fmt=html", headers=ANALYST)
     assert export.status_code == 200, export.text
     assert edited in export.content.decode("utf-8")
+
+
+def test_a_group_nobody_filed_for_is_named_rather_than_producing_no_cash_flow(
+    client: TestClient,
+) -> None:
+    """A declared group with no statements for any member still consolidates.
+
+    This used to return no global cash flow at all, on the reasoning that a consolidation
+    listing only the borrower asserts the borrower IS the whole group. But the analyst has
+    just said otherwise by declaring the group, and the case where nobody supplied a single
+    set of accounts is the one where naming the entities is the entire answer. Silence
+    there reads as "no group", which is the claim the analyst explicitly did not make.
+
+    A lender to a listed parent is in exactly this position: the subsidiaries are real and
+    named in the filing, and none of them files separately.
+    """
+    analysis_id = _open_analysis(client)
+    _extract(client, analysis_id)
+    _confirm(client, analysis_id)
+    response = client.post(
+        f"/v1/analyses/{analysis_id}/build",
+        headers=ANALYST,
+        json={
+            "related_entities": [
+                {"id": "sub", "name": "A Subsidiary", "role": "subsidiary"},
+                {"id": "affil", "name": "An Affiliate", "role": "affiliate"},
+            ],
+            "entity_spreads": {},
+        },
+    )
+    assert response.status_code == 200, response.text
+    gcf = response.json()["global_cash_flow"]
+    assert gcf is not None, "a declared group produced no consolidation at all"
+    assert gcf["complete"] is False
+    assert set(gcf["entities_without_figures"]) == {"A Subsidiary", "An Affiliate"}
+    # The borrower still contributes, so a reader sees what the figure is as well as what
+    # it is missing.
+    ebitda = next(line for line in gcf["lines"] if line["code"] == "ebitda")
+    assert [c["entity_name"] for c in ebitda["contributions"]] == ["acme-manufacturing"]

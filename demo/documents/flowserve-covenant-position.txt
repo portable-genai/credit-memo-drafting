@@ -1,0 +1,39 @@
+COVENANT POSITION AND PROPOSED TERMS — FLOWSERVE CORPORATION
+Prepared for credit committee. Period: FY2025 Q4 (quarter ended 31 December 2025).
+
+PART A — WHAT THE BORROWER REPORTS (as filed)
+
+Source: Form 10-K for the year ended 31 December 2025, accession
+0000030625-26-000003, note on long-term debt.
+
+The borrower's existing Second Amended and Restated Credit Agreement carries
+financial covenants tested quarterly. The borrower states that it is "required to
+maintain debt ratings, comply with leverage and interest coverage financial
+covenants", and that the agreement "extended net leverage ratio covenant definition
+through the maturity of the agreement" — that is, the leverage covenant is measured
+on a NET basis, after deducting cash.
+
+On that definition the borrower reports current net leverage of 1.64x, and states:
+"Financial Covenants — Our compliance with the financial covenants under the Second
+Amended and Restated Credit Agreement are tested quarterly. We were in compliance
+with all covenants as of December 31, 2025."
+
+Available borrowings under its revolving credit facility were USD 615.8m at
+31 December 2025.
+
+PART B — THE COVENANTS THIS BANK PROPOSES FOR THE NEW FACILITY
+
+These are our own proposed terms for the facility under consideration. They are not
+the borrower's existing covenants and the borrower has not agreed them. They are
+measured on GROSS debt, before deducting cash, which is this bank's standing
+definition:
+
+  Maximum net leverage covenant of 3.00x, tested quarterly.
+  Minimum debt-service coverage ratio (DSCR) of 1.25x, tested quarterly.
+  Minimum current ratio of 2.00x, tested quarterly.
+
+Note for the file: the borrower measures leverage after netting cash of USD 760.2m
+and after adding back realignment charges of USD 58.3m. This bank does neither. The
+difference between the two definitions, and not any difference in the underlying
+figures, is what any disagreement between this memo and the borrower's own
+certificate will reflect.

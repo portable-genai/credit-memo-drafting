@@ -58,7 +58,16 @@ _CURRENT_LEVERAGE_RE = re.compile(
     r"current\s+(?:net\s+)?leverage[^0-9\n]{0,30}([0-9]+(?:\.[0-9]+)?)\s*x", re.I
 )
 _CURRENT_DSCR_RE = re.compile(r"current\s+DSCR[^0-9\n]{0,30}([0-9]+(?:\.[0-9]+)?)\s*x", re.I)
+_MIN_CURRENT_RATIO_RE = re.compile(
+    r"minimum\s+current\s+ratio[^0-9\n]{0,40}([0-9]+(?:\.[0-9]+)?)\s*x", re.I
+)
 _CONCENTRATION_RE = re.compile(r"concentration", re.I)
+
+
+def _first_group(pattern: re.Pattern[str], text: str, default: str) -> str:
+    """The pattern's first capture, stripped, or ``default`` when it does not match."""
+    found = pattern.search(text)
+    return found.group(1).strip() if found else default
 
 
 def _schema_properties(schema: dict | None) -> dict[str, Any]:
@@ -179,8 +188,8 @@ class LocalDeterministicLLMAdapter:
         return out
 
     def _memo_body(self, prompt: str, sid: list[str]) -> dict[str, Any]:
-        name = (_NAME_RE.search(prompt) or [None, "the borrower"])[1].strip()
-        sector = (_SECTOR_RE.search(prompt) or [None, ""])[1].strip()
+        name = _first_group(_NAME_RE, prompt, "the borrower")
+        sector = _first_group(_SECTOR_RE, prompt, "")
         figures = self._figures(prompt)
         computed = self._computed(prompt)
         period = next((p for _, p, _ in computed.values() if p), "")
@@ -258,6 +267,21 @@ class LocalDeterministicLLMAdapter:
                     "threshold": self._number(max_leverage.group(1)),
                     "operator": "<=",
                     "current_value": self._number(reported.group(1)) if reported else None,
+                    "period": "Q4",
+                    "used_source_ids": sid,
+                }
+            )
+        min_current_ratio = _MIN_CURRENT_RATIO_RE.search(prompt)
+        if min_current_ratio is not None:
+            items.append(
+                {
+                    "type": "current_ratio",
+                    "description": "Minimum current ratio.",
+                    "threshold": self._number(min_current_ratio.group(1)),
+                    "operator": ">=",
+                    # The evidence states the limit, not a current reading: a liquidity
+                    # covenant is tested from the spread, and there is nothing to report.
+                    "current_value": None,
                     "period": "Q4",
                     "used_source_ids": sid,
                 }

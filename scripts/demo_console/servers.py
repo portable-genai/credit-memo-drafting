@@ -104,6 +104,10 @@ def api_env(analysis_root: Path) -> dict[str, str]:
             "CREDIT_MEMO_LOCAL_AUDIT": ":memory:",
             "CREDIT_MEMO_ANALYSIS_ROOT": str(analysis_root),
             "CREDIT_MEMO_POLICY_PACK": str(POLICY_PACK),
+            # The public-context act needs the port bound. Under `local` that is the
+            # fixture adapter, which answers on SECTOR and labels every row a fixture on
+            # its face; under `live` the same switch reaches real Google Search grounding.
+            "CREDIT_MEMO_RESEARCH_ENABLED": "1",
             "PYTHONPATH": str(REPO_ROOT / "src"),
             "PYTHONUNBUFFERED": "1",
         }

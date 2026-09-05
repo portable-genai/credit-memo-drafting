@@ -30,11 +30,13 @@ APPROVER = "approver"
 AUDITOR = "auditor"
 OTHER_TENANT = "other-tenant"
 
-#: The ask this memo answers. Facility amounts are in millions, matching the spread.
-FACILITY_AMOUNT = 25.0
+#: The ask this memo answers, in millions to match the spread. The bank's hypothetical,
+#: not anything the borrower has sought: ``demo/documents/SOURCES.md`` says so plainly, and
+#: it is the only part of the deal that is not read off a filing.
+FACILITY_AMOUNT = 400.0
 FACILITY_TENOR = 60
-FACILITY_PURPOSE = "Refinance existing term debt and fund plant expansion"
-FACILITY_SECURITY = "First charge over plant and equipment"
+FACILITY_PURPOSE = "Refinance the existing term loan and fund working capital"
+FACILITY_SECURITY = "Unsecured, ranking pari passu with the existing senior facilities"
 REPAYMENT_SOURCE = "Operating cash flow"
 
 #: The tenor that trips the policy pack's one knockout rule (TEN-01, maximum 84 months).
@@ -129,28 +131,32 @@ def _upload_files(stage: Stage) -> None:
     stage.page.get_by_label(loc.DOCUMENTS_INPUT, exact=True).set_input_files(
         [
             {
-                "name": "audited-fs-2025.pdf",
+                "name": "flowserve-fy2025-financial-extract.pdf",
                 "mimeType": "application/pdf",
                 "buffer": fx.audited_financials(),
             },
-            {"name": "spread.csv", "mimeType": "text/csv", "buffer": fx.spread_csv()},
             {
-                "name": "covenant-certificate.txt",
+                "name": "flowserve-fy2025-spread.csv",
+                "mimeType": "text/csv",
+                "buffer": fx.spread_csv(),
+            },
+            {
+                "name": "flowserve-covenant-position.txt",
                 "mimeType": "text/plain",
-                "buffer": fx.covenant_certificate(),
+                "buffer": fx.covenant_position(),
             },
         ]
     )
     kinds = {
-        "audited-fs-2025.pdf": "Audited financial statements",
-        "spread.csv": "Your own spread",
-        "covenant-certificate.txt": "Covenant compliance certificate",
+        "flowserve-fy2025-financial-extract.pdf": "Audited financial statements",
+        "flowserve-fy2025-spread.csv": "Your own spread",
+        "flowserve-covenant-position.txt": "Covenant compliance certificate",
     }
     for filename, label in kinds.items():
         stage.page.get_by_label(f"Document kind for {filename}", exact=True).select_option(
             label=label
         )
-        stage.page.get_by_label(f"Date {filename} speaks to", exact=True).fill("2025-12-31")
+        stage.page.get_by_label(f"Date {filename} speaks to", exact=True).fill(fx.PERIOD_ENDED)
 
 
 def _fill_request(stage: Stage, kind: str = "New facility", tenor: int = FACILITY_TENOR) -> None:
@@ -218,14 +224,15 @@ def act_identity(stage: Stage) -> None:
 def act_credit_file(stage: Stage) -> None:
     page = stage.page
     page.get_by_label(loc.BORROWER, exact=True).fill(fx.BORROWER_NAME)
-    page.get_by_label(loc.SECTOR, exact=True).fill("manufacturing")
-    page.get_by_label(loc.JURISDICTION, exact=True).fill("SG")
+    page.get_by_label(loc.SECTOR, exact=True).fill(fx.SECTOR)
+    page.get_by_label(loc.JURISDICTION, exact=True).fill(fx.JURISDICTION)
     _upload_files(stage)
     stage.cue(
-        "Three documents: the audited statements, the analyst's own spread, and last "
-        "quarter's covenant certificate. Each one is labelled with what it is and the date "
-        "it speaks to. The service cannot tell last year's management accounts from "
-        "yesterday's, and it will not guess — so the person who brought the file says.",
+        "Three documents, and everything in them is checkable: an extract of Flowserve's "
+        "FY2025 Form 10-K, the analyst's own spread of it, and the covenant position. Each "
+        "is labelled with what it is and the date it speaks to, because the service cannot "
+        "tell last year's management accounts from yesterday's and will not guess. The "
+        "accession number is on every page, so anyone in the room can open the filing.",
         "the three rows, each with its own kind and as-of date, before anything is read",
     )
 
@@ -245,7 +252,11 @@ def act_credit_file(stage: Stage) -> None:
 
     manifest = _ok(stage.get(f"/v1/analyses/{analysis_id}"), "read the manifest").json()
     filenames = [d["filename"] for d in manifest["documents"]]
-    if sorted(filenames) != ["audited-fs-2025.pdf", "covenant-certificate.txt", "spread.csv"]:
+    if sorted(filenames) != [
+        "flowserve-covenant-position.txt",
+        "flowserve-fy2025-financial-extract.pdf",
+        "flowserve-fy2025-spread.csv",
+    ]:
         raise ActFailed(f"the manifest does not name every file: {filenames}")
     if not all(d["sha256"] for d in manifest["documents"]):
         raise ActFailed("a document reached custody without a digest")
@@ -310,12 +321,14 @@ def act_confirm_the_spread(stage: Stage) -> None:
         fx.ADJUSTMENT_REASON
     )
     stage.cue(
-        f"The analyst rejects the {fx.REJECTED_CODE} line and adjusts capex from "
-        f"{fx.ADJUSTED_FROM} to {fx.ADJUSTED_TO}, with a reason, because the expansion "
-        "spend is funded by this very facility. The reason is required: a committee will "
-        "ask what changed and why. Both numbers are kept — the adjustment is a second "
-        "figure beside the first, never an overwrite.",
-        "the struck-through rejected row, and the adjusted value with its reason, before "
+        f"Two decisions, and both are the bank's credit policy rather than a correction. "
+        f"The analyst REJECTS the cash line of USD {fx.REJECTED_VALUE:,.1f}m, because this "
+        f"bank measures leverage on gross debt. And it ADJUSTS EBITDA from the borrower's "
+        f"USD {fx.ADJUSTED_FROM:,.1f}m to USD {fx.ADJUSTED_TO:,.1f}m, declining the "
+        f"add-back of USD {fx.REALIGNMENT_CHARGES:,.1f}m of realignment charges that have "
+        "recurred three years running. Both numbers are kept: the adjustment sits beside "
+        "the original, never over it.",
+        "the struck-through cash row, and EBITDA with the reason beside it, before "
         "anything is confirmed",
     )
 
@@ -338,6 +351,15 @@ def act_confirm_the_spread(stage: Stage) -> None:
     adjusted = codes.get(fx.ADJUSTED_CODE)
     if adjusted is None or adjusted["value"] != fx.ADJUSTED_TO:
         raise ActFailed(f"the adjustment did not take: {adjusted}")
+    # An adjusted figure is the ANALYST'S, not the document's, and the provenance says so
+    # while the citation still points at the page the original came from.
+    if adjusted.get("provenance") != "user_entered":
+        raise ActFailed(
+            f"an adjusted figure is attributed to the document rather than to the person "
+            f"who changed it: {adjusted.get('provenance')!r}"
+        )
+    if not adjusted.get("citations"):
+        raise ActFailed("the adjusted figure lost the page its original was read from")
     stage.state["spread"] = spread
     stage.cue(
         f"Confirmed by {spread['confirmed_by']}. Note where that name came from: the "
@@ -417,30 +439,54 @@ def _request_body(kind: str = "new_facility", tenor: int = FACILITY_TENOR) -> di
 # 6. The arithmetic the model cannot soften
 # --------------------------------------------------------------------------- #
 def act_the_breach_stands(stage: Stage) -> None:
-    """The single most important beat: the model read 2.5x, the engine computed 3.5x."""
+    """The beat the whole demo is built around, and every number in it is filed.
+
+    The borrower reports 1.64x and full compliance. The engine computes 3.18x and a
+    breach. Neither is wrong: the borrower nets its cash and adds back its realignment
+    charges, and this bank does neither. What the product does is refuse to pick one
+    quietly.
+    """
     memo = stage.memo
     covenants = {c["type"]: c for c in memo["covenants"]}
     leverage = covenants.get("leverage")
     if leverage is None:
         raise ActFailed("no leverage covenant was extracted")
 
-    expected = fx.SPREAD["total_debt"] / fx.SPREAD["ebitda"]
+    expected = fx.gross_leverage()
     if abs(leverage["current_value"] - expected) > 1e-9:
         raise ActFailed(
             f"the covenant was tested against {leverage['current_value']}, not against the "
-            f"{expected} the confirmed spread computes"
+            f"{expected:.4f} the confirmed spread computes"
         )
     if leverage["status"] != "breach":
-        raise ActFailed(f"leverage {expected} against <= {leverage['threshold']} is not a breach")
-    if leverage.get("reported_value") == leverage["current_value"]:
+        raise ActFailed(
+            f"leverage {expected:.2f}x against <= {leverage['threshold']}x is not a breach"
+        )
+    reported = leverage.get("reported_value")
+    if reported is None or abs(reported - leverage["current_value"]) < 1e-9:
         raise ActFailed(
             "the evidence and the engine agree, so this act proves nothing about which "
             "one the product trusts"
         )
-    # Thin headroom is its own answer, distinct from compliant.
+    if abs(reported - fx.REPORTED_NET_LEVERAGE) > 0.01:
+        raise ActFailed(
+            f"the memo reports the borrower's figure as {reported}, not the "
+            f"{fx.REPORTED_NET_LEVERAGE}x its own filing states"
+        )
+
+    # Thin headroom is its own answer, distinct from compliant — and here it falls out of
+    # the filed figures rather than being arranged: 2.03x against a 2.00x floor.
+    liquidity = covenants.get("current_ratio")
+    if liquidity is None or liquidity["status"] != "at_risk":
+        raise ActFailed(
+            f"the current ratio passes by {abs(fx.current_ratio() - fx.MIN_CURRENT_RATIO) / fx.MIN_CURRENT_RATIO:.1%} "
+            f"and should be flagged at risk, saw {liquidity}"
+        )
+    # And a covenant that is simply met, because a demo where everything fails is as
+    # untrue as one where nothing does.
     dscr = covenants.get("dscr")
-    if dscr is None or dscr["status"] != "at_risk":
-        raise ActFailed(f"DSCR should be at risk on thin headroom, saw {dscr}")
+    if dscr is None or dscr["status"] != "compliant":
+        raise ActFailed(f"DSCR of {fx.dscr():.2f}x against 1.25x should be met, saw {dscr}")
 
     body = _text(stage)
     if "breach" not in body.lower():
@@ -476,10 +522,12 @@ def act_policy_and_rating(stage: Stage) -> None:
     exceptions = {e["rule_id"]: e for e in memo["policy_exceptions"]}
     breach = exceptions.get("LEV-01")
     if breach is None:
-        raise ActFailed(f"leverage of 3.5x raised no policy exception: {list(exceptions)}")
+        raise ActFailed(
+            f"leverage of {fx.gross_leverage():.2f}x raised no policy exception: {list(exceptions)}"
+        )
     if not breach["waiver_authority"]:
         raise ActFailed("an exception nobody can waive is not actionable")
-    if breach["measured"] != fx.SPREAD["total_debt"] / fx.SPREAD["ebitda"]:
+    if abs(breach["measured"] - fx.gross_leverage()) > 1e-9:
         raise ActFailed("the exception was measured against something other than the engine")
 
     rating = memo.get("rating")
@@ -509,8 +557,8 @@ def act_reconciliation(stage: Stage) -> None:
     certificate = [f for f in findings if f["check"] == "certificate_agrees"]
     if not certificate:
         raise ActFailed(
-            "the certificate reports 2.50x where the engine computes 3.50x and nothing "
-            "flagged the disagreement"
+            f"the borrower reports {fx.REPORTED_NET_LEVERAGE}x where the engine computes "
+            f"{fx.gross_leverage():.2f}x and nothing flagged the disagreement"
         )
     for finding in certificate:
         if finding["expected"] == finding["actual"]:
@@ -523,31 +571,34 @@ def act_reconciliation(stage: Stage) -> None:
 # 10. The group, and who it could not include
 # --------------------------------------------------------------------------- #
 def act_the_group(stage: Stage) -> None:
+    """Two real subsidiaries, neither of which the bank holds statements for.
+
+    Both come from Exhibit 21.1 of the same 10-K. Neither files separately, so a lender to
+    the parent genuinely cannot consolidate them — which is the point. The memo names them
+    as entities it could not include rather than totalling without them, because "we did
+    not look" is a weaker claim than a total that quietly omits a 100%-owned subsidiary and
+    a 40%-held affiliate.
+
+    No intercompany elimination is entered, and that is deliberate. Flowserve discloses a
+    real one -- USD 10.6m of intersegment sales -- but the borrower's spread is already
+    consolidated and net of it, so recording it again would deduct it twice. Inventing a
+    different one to exercise the feature is exactly the fabrication this demo removed.
+    """
     page = stage.page
-    page.get_by_label("Entity", exact=True).fill(fx.HOLDCO_NAME)
-    loc.choose(page, "Role", "Parent")
+    page.get_by_label("Entity", exact=True).fill(fx.SUBSIDIARY_NAME)
+    loc.choose(page, "Role", "Subsidiary")
     loc.button(page, loc.ADD_TO_GROUP).click()
 
-    page.get_by_label("Entity", exact=True).fill(fx.GUARANTOR_NAME)
-    loc.choose(page, "Role", "Personal guarantor")
+    page.get_by_label("Entity", exact=True).fill(fx.AFFILIATE_NAME)
+    loc.choose(page, "Role", "Affiliate")
     loc.button(page, loc.ADD_TO_GROUP).click()
-
-    # Figures for the holdco only. The guarantor deliberately gets none.
-    for code, value in fx.HOLDCO_SPREAD.items():
-        label = loc.GROUP_LINE_LABELS[code]
-        page.get_by_label(f"{label} for {fx.HOLDCO_NAME}", exact=True).fill(str(value))
-
-    page.get_by_label("Line to eliminate from", exact=True).select_option(label="Revenue")
-    page.get_by_label("Amount to eliminate", exact=True).fill(str(fx.ELIMINATION_AMOUNT))
-    page.get_by_label("Why this is eliminated", exact=True).fill(fx.ELIMINATION_REASON)
-    loc.button(page, "Eliminate").click()
     stage.cue(
-        f"The holdco is in the group with its figures. {fx.GUARANTOR_NAME} is in the group "
-        "with none — a personal guarantor whose statements nobody has. And one "
-        f"intercompany elimination: {fx.ELIMINATION_AMOUNT} of revenue that is the group "
-        "billing itself. Watch what the consolidation does with the entity it has no "
-        "figures for.",
-        "the guarantor's row, entirely blank, before the rebuild",
+        f"Two real subsidiaries out of Exhibit 21 of the same filing: {fx.SUBSIDIARY_NAME} "
+        f"in {fx.SUBSIDIARY_JURISDICTION}, wholly owned, and {fx.AFFILIATE_NAME} in "
+        f"{fx.AFFILIATE_JURISDICTION}, 40% held. Both rows are blank, because a lender to "
+        "the parent holds no standalone statements for either. Watch what the "
+        "consolidation does with an entity it has no figures for.",
+        "the two entity rows, entirely blank, before the rebuild",
     )
 
     _build(stage)
@@ -560,60 +611,56 @@ def act_the_group(stage: Stage) -> None:
     if gcf is None:
         raise ActFailed("no global cash flow was assembled for a group")
     if gcf["complete"]:
-        raise ActFailed("the cash flow claims completeness while a guarantor filed nothing")
-    if fx.GUARANTOR_NAME not in gcf["entities_without_figures"]:
-        raise ActFailed(
-            f"the guarantor nobody filed for is not named: {gcf['entities_without_figures']}"
-        )
+        raise ActFailed("the cash flow claims completeness while two entities filed nothing")
+    missing = gcf["entities_without_figures"]
+    for name in (fx.SUBSIDIARY_NAME, fx.AFFILIATE_NAME):
+        if name not in missing:
+            raise ActFailed(f"an entity nobody filed for is not named: {name} not in {missing}")
     revenue = next((line for line in gcf["lines"] if line["code"] == "revenue"), None)
-    if revenue is None or len(revenue["contributions"]) < 2:
+    if revenue is None or not revenue["contributions"]:
         raise ActFailed("the consolidated revenue does not show who contributed it")
-    if not revenue["eliminations"]:
-        raise ActFailed("the intercompany amount was netted away rather than shown")
     stage.state["group_memo"] = memo
 
     body = _text(stage)
-    if fx.GUARANTOR_NAME not in body:
+    if fx.SUBSIDIARY_NAME not in body:
         raise ActFailed("the entity the consolidation could not include is not on screen")
     stage.cue(
-        "The cash flow does not claim to be complete, and it names who is missing. 'We did "
-        "not look at the guarantor' is a weaker claim than a total, and a truer one — the "
-        "total that quietly omits him reads as though he contributes nothing. The "
-        "intercompany revenue is shown as a deduction rather than netted away, because a "
-        "group whose revenue falls on consolidation is telling you how it trades.",
-        "the incomplete notice naming the guarantor, and the elimination line under revenue",
+        "The cash flow does not claim to be complete, and it names exactly who is missing. "
+        "'We hold no accounts for the Singapore subsidiary' is a weaker claim than a total, "
+        "and a truer one: the total that quietly omits a wholly-owned subsidiary reads as "
+        "though it contributes nothing. Note what is NOT here — no invented intercompany "
+        "elimination. Flowserve discloses a real one, USD 10.6m between its two divisions, "
+        "and it is already inside the consolidated revenue, so recording it again would "
+        "deduct it twice.",
+        "the incomplete notice naming both entities, and the borrower's own contribution",
     )
 
 
 def _group_body() -> dict:
+    """The group as the build endpoint takes it: two entities, and no figures for either.
+
+    ``entity_spreads`` is empty on purpose. The borrower's own confirmed spread is added by
+    the service, so the consolidation has something to total; these two contribute nothing
+    and are reported as entities it could not include.
+    """
     return {
         "request": _request_body(),
         "related_entities": [
-            {"id": "holdco", "name": fx.HOLDCO_NAME, "role": "parent"},
-            {"id": "director", "name": fx.GUARANTOR_NAME, "role": "guarantor_personal"},
-        ],
-        "entity_spreads": {
-            "holdco": {
-                "borrower_id": "holdco",
-                "periods": [{"label": fx.PERIOD}],
-                "items": [
-                    {"code": code, "period": fx.PERIOD, "value": value}
-                    for code, value in fx.HOLDCO_SPREAD.items()
-                ],
-                "currency": "USD",
-                "unit": "millions",
-                "confirmed_by": "demo.analyst@bank.example",
-            }
-        },
-        "eliminations": [
             {
-                "code": "revenue",
-                "period": fx.PERIOD,
-                "amount": fx.ELIMINATION_AMOUNT,
-                "reason": fx.ELIMINATION_REASON,
-                "between": f"{fx.HOLDCO_NAME} and {fx.BORROWER_NAME}",
-            }
+                "id": "flowserve-pte-ltd",
+                "name": fx.SUBSIDIARY_NAME,
+                "role": "subsidiary",
+                "jurisdiction": fx.SUBSIDIARY_JURISDICTION,
+            },
+            {
+                "id": "arabian-seals",
+                "name": fx.AFFILIATE_NAME,
+                "role": "affiliate",
+                "jurisdiction": fx.AFFILIATE_JURISDICTION,
+            },
         ],
+        "entity_spreads": {},
+        "eliminations": [],
     }
 
 
@@ -628,11 +675,17 @@ def act_stress(stage: Stage) -> None:
     for scenario in scenarios:
         if scenario["stressed_value"] is None:
             raise ActFailed(f"{scenario['scenario_id']} reports no stressed value")
-        if scenario.get("breaks_at") is None:
+        # A missing break-even is an ANSWER, not a gap: it means the borrower absorbs
+        # every severity worth modelling. What would be wrong is a scenario that fails
+        # and still reports no break-even, because then the number is missing exactly
+        # where a committee needs it.
+        if scenario.get("breaks_at") is None and not scenario["passes"]:
             raise ActFailed(
-                f"{scenario['scenario_id']} reports no break-even, which is the half a "
-                "committee can actually judge"
+                f"{scenario['scenario_id']} fails and still reports no break-even, which "
+                "is the half a committee can actually judge"
             )
+    if all(s.get("breaks_at") is None for s in scenarios):
+        raise ActFailed("no scenario reports a break-even, so there is nothing to point at")
     combined = next((s for s in scenarios if s["scenario_id"] == "combined"), None)
     single = next((s for s in scenarios if s["scenario_id"] != "combined"), None)
     if combined and single and combined["stressed_value"] > single["stressed_value"]:
@@ -650,7 +703,7 @@ def act_the_checker(stage: Stage) -> None:
             {
                 "sections": {
                     "summary": (
-                        "Revised by the analyst: leverage of 3.5x breaches the 3.0x covenant "
+                        "Revised by the analyst: leverage of 3.18x breaches the 3.00x covenant "
                         "and the exception needs Regional Credit Committee waiver."
                     )
                 },
@@ -766,7 +819,76 @@ def act_figures_are_not_prose(stage: Stage) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# 14. The committee pack
+# 14. Public context, for the analyst only
+# --------------------------------------------------------------------------- #
+SECTOR_QUERY = "manufacturing sector outlook"
+
+
+def act_public_context(stage: Stage) -> None:
+    """The one place the product reaches the open web — and the one it may not reach.
+
+    Worth showing precisely because the fence is counter-intuitive: the search runs, the
+    analyst reads it, and none of it can enter the memo. Google's Service Specific Terms
+    section 20(k) permit Grounded Results to be displayed only to the End User who
+    submitted the prompt, and a memo is read by a checker, a committee and later an
+    examiner.
+
+    Offline the adapter is a fixture that says so in every title. Under ``live`` the same
+    switch reaches real Grounding with Google Search. The act asserts the fence either way,
+    because the fence is the claim.
+    """
+    page = stage.page
+    page.get_by_label("Search the public web", exact=True).fill(SECTOR_QUERY)
+    stage.cue(
+        "An analyst wants sector context, and would otherwise open a browser for it. This "
+        "runs the search from inside the console so the question and its answer are at "
+        "least logged. Offline every row is labelled a fixture; under the live profile "
+        "this is Grounding with Google Search against Vertex.",
+        "the search box, before the query runs",
+    )
+    loc.button(page, "Search public context").click()
+    page.wait_for_selector("text=None of the above is in the memo", timeout=60_000)
+
+    found = _ok(
+        stage.get(f"/v1/analyses/{stage.analysis_id}/research?query={SECTOR_QUERY}"),
+        "search the public web",
+    ).json()
+    if found["found_nothing"] or not found["evidence"]:
+        raise ActFailed("the search returned nothing, so the fence demonstrates nothing")
+    for item in found["evidence"]:
+        if item["provenance"] != "web_grounded":
+            raise ActFailed(f"a web result is not marked as web-grounded: {item}")
+        # The fence, at the wire: no number on it for any engine to reach for.
+        numeric = [key for key, value in item.items() if isinstance(value, (int, float))]
+        if numeric:
+            raise ActFailed(f"a web result carries a figure an engine could read: {numeric}")
+    if not found["search_suggestions"]:
+        raise ActFailed(
+            "the search suggestions were dropped; Google requires them rendered verbatim "
+            "beside grounded results, so losing them is a licence breach that looks tidy"
+        )
+
+    # And now the half that matters: none of it reached the memo.
+    memo = stage.state.get("group_memo") or stage.memo
+    forbidden = {"market_context", "web_evidence", "research", "web_citations"}
+    if forbidden & set(memo):
+        raise ActFailed(f"the memo has a field web context could occupy: {forbidden & set(memo)}")
+    cited = {c["source_id"] for c in memo["citations"]}
+    uploaded = {d["id"] for d in memo["manifest"]["documents"]}
+    if not cited <= uploaded:
+        raise ActFailed(f"the memo cites something that is not an uploaded document: {cited}")
+    stage.cue(
+        f"{len(found['evidence'])} results, with the suggestion chips Google requires "
+        "rendered beside them. And not one of them is in the memo: there is no field on a "
+        "memo a search result could occupy, the export carries none, and nothing here "
+        "holds a number a ratio could read. To use one of these facts, the analyst types "
+        "the figure into the spread and cites the URL — which makes it theirs.",
+        "the results, then the line saying none of it is in the memo",
+    )
+
+
+# --------------------------------------------------------------------------- #
+# 15. The committee pack
 # --------------------------------------------------------------------------- #
 def act_committee_pack(stage: Stage) -> None:
     analysis_id = stage.analysis_id
@@ -815,7 +937,7 @@ def act_committee_pack(stage: Stage) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# 15. Is this even bankable
+# 16. Is this even bankable
 # --------------------------------------------------------------------------- #
 def act_pre_screen_knockout(stage: Stage) -> None:
     memo = _ok(
@@ -836,7 +958,7 @@ def act_pre_screen_knockout(stage: Stage) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# 16. What it will not do
+# 17. What it will not do
 # --------------------------------------------------------------------------- #
 def act_refusals(stage: Stage) -> None:
     # Back to the console: act 14 left the committee pack on screen.
@@ -879,7 +1001,7 @@ def act_refusals(stage: Stage) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# 17. The evidence goes away
+# 18. The evidence goes away
 # --------------------------------------------------------------------------- #
 def act_evidence_goes_away(stage: Stage) -> None:
     analysis_id = stage.analysis_id
@@ -971,11 +1093,14 @@ ACTS: tuple[Act, ...] = (
         point_at="the amber human-review banner, then the sections a committee reads",
     ),
     Act(
-        "The breach the model did not see",
-        "The extractor read 2.5x leverage off the certificate. The engine computes 3.5x from "
-        "the figures the analyst confirmed, and the covenant is a BREACH. The model drafts "
-        "prose; it never decides compliance. DSCR passes at 1.29x but sits inside the "
-        "thin-headroom band, so it is flagged AT RISK rather than green.",
+        "Same filing, two answers",
+        "Flowserve's own filing says it is in compliance with every covenant, and reports "
+        "net leverage of 1.64x. The engine computes 3.18x from the figures the analyst "
+        "confirmed, and the covenant BREACHES. Both are right: the borrower nets its cash "
+        "and adds back its realignment charges, and this bank does neither. The model "
+        "drafts prose; it never decides compliance. And the current ratio passes at 2.03x "
+        "against a 2.00x floor — inside the thin-headroom band, so AT RISK rather than "
+        "green. Every one of those numbers is in the 10-K.",
         act_the_breach_stands,
         point_at="the covenant table: the status pills, and the computed value beside the "
         "one the evidence reported",
@@ -992,7 +1117,7 @@ ACTS: tuple[Act, ...] = (
         "The bank's own policy",
         "The limits are the bank's, from an uploaded versioned pack, and the memo names the "
         "version. That is what makes the exception a sentence a committee can act on: your "
-        "policy requires 3.0x, this measures 3.5x, and the Regional Credit Committee can "
+        "policy requires 3.00x, this measures 3.18x, and the Regional Credit Committee can "
         "waive it. The scorecard proposes a grade and shows every driver — proposed, never "
         "assigned.",
         act_policy_and_rating,
@@ -1000,21 +1125,24 @@ ACTS: tuple[Act, ...] = (
     ),
     Act(
         "The reconciliations",
-        "The borrower's own certificate says leverage is 2.50x. The engine computes 3.50x. "
-        "The memo reports the disagreement rather than picking a winner quietly — one of the "
-        "checks an analyst would otherwise do by hand.",
+        "The borrower's filing says net leverage is 1.64x and every covenant is met. The "
+        "engine computes 3.18x. The memo reports the disagreement rather than picking a "
+        "winner quietly, and the cause is not an error in either figure: it is cash "
+        "netting and an EBITDA add-back. That is the conversation the credit officer needs "
+        "to have, surfaced instead of buried.",
         act_reconciliation,
         point_at="the reconciliation finding naming both figures",
     ),
     Act(
         "The group",
-        "Most mid-market lending is to a group. The analyst adds the holdco with its figures "
-        "and a personal guarantor without any. The consolidated cash flow shows every "
-        "contribution, shows the intercompany elimination rather than netting it away, and "
-        "NAMES the guarantor it could not include — a weaker and truer claim than leaving "
-        "them out, which reads as contributing nothing.",
+        "Lending is to a group, not a company. The analyst declares two real subsidiaries "
+        "from Exhibit 21 of the same filing — one wholly owned in Singapore, one 40% held "
+        "in Saudi Arabia. Neither files separately, so the bank has no statements for "
+        "either, which is the ordinary case rather than the awkward one. The consolidated "
+        "cash flow shows the borrower's contribution and NAMES both entities it could not "
+        "include, rather than totalling as though they contribute nothing.",
         act_the_group,
-        point_at="the 'Incomplete' notice naming the guarantor, and the elimination row",
+        point_at="the 'Incomplete' notice naming both subsidiaries",
     ),
     Act(
         "How far it can fall",
@@ -1040,6 +1168,18 @@ ACTS: tuple[Act, ...] = (
         "formula produced.",
         act_figures_are_not_prose,
         point_at="the refusal, which names the sections that ARE editable",
+    ),
+    Act(
+        "Public context, for the analyst only",
+        "The one place this product reaches the open web, and the one place its output may "
+        "not travel. The analyst searches for sector context and reads what comes back. "
+        "None of it enters the memo, the pack or the review payload — Google's licence "
+        "permits grounded results to be shown only to the person who ran the query, and a "
+        "memo is read by a checker, a committee and later an examiner. The memo has no "
+        "field one could occupy, and nothing here carries a figure an engine could read.",
+        act_public_context,
+        point_at="the results with their suggestion chips, then the line saying none of it "
+        "is in the memo",
     ),
     Act(
         "The committee pack",
