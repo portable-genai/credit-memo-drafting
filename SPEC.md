@@ -88,7 +88,7 @@ what makes "the model never supplied this number" a property rather than a promi
   `ratio_catalogue` (nine versioned formulas), `SpreadService` (the confirm gate),
   `TieOutService`, `PolicyExceptionService`, `RiskRatingService`, `PeerCompService`
   (arithmetic median/percentile), `GlobalCashFlowService`, `ScenarioService`,
-  `RenewalDiffService`, `RevisionService`.
+  `RenewalDiffService`, `RevisionService`, `CommentService`.
 - `CreditReviewPolicy`: a memo always `requires_human_review=True`; any BREACH covenant or
   HIGH/CRITICAL risk flag escalates. Routing that escalation to the Hrz7 console is
   OPT-IN (`CREDIT_MEMO_REVIEW_ENABLED`); the flag and the audit record stand either way.
@@ -144,6 +144,9 @@ carries its own documents in the body.
 | POST | `/v1/analyses/{id}/build` | `{request?, spreads[]?, related_entities[]?, guarantors[]?, entity_spreads{}?, eliminations[]?}` -> CreditMemo |
 | PATCH | `/v1/analyses/{id}/memo` | `{sections{}, reason, note}` -> MemoRevision |
 | GET | `/v1/analyses/{id}/revisions` | -> `{revisions[], chain_intact, chain_detail}` |
+| POST | `/v1/analyses/{id}/comments` | `{section, body}` -> MemoComment (anchored to the current revision) |
+| GET | `/v1/analyses/{id}/comments` | -> `{comments[], open_count, stale_count}` |
+| POST | `/v1/analyses/{id}/comments/{cid}/resolve` | `{resolution}` -> MemoComment |
 | POST | `/v1/analyses/{id}/export?fmt=` | -> the committee pack as bytes |
 | GET | `/v1/analyses/{id}/export/formats` | -> `{formats[]}` this deployment can actually produce |
 | POST | `/v1/documents` | multipart borrower evidence -> `{chunks, borrower_id}` |

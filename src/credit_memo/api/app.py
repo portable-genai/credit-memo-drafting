@@ -33,6 +33,7 @@ from ..config import end_user_auth_kind
 from ..domain import _grounded as g
 from ..domain import entitlements
 from ..domain import models as m
+from ..domain.comment_service import CommentService
 from ..domain.errors import (
     AnalysisNotFoundError,
     BorrowerAccessDeniedError,
@@ -50,6 +51,9 @@ from .schemas import (
     AgentCardModel,
     AnalysisBuildRequest,
     AnalysisManifestModel,
+    CommentCreateRequest,
+    CommentListResponse,
+    CommentResolveRequest,
     CovenantListResponse,
     CovenantRequest,
     CreditMemoRequest,
@@ -59,6 +63,7 @@ from .schemas import (
     FinancialSpreadModel,
     HealthResponse,
     MemoAmendRequest,
+    MemoCommentModel,
     MemoRevisionModel,
     RevisionListResponse,
     RiskFlagListResponse,
@@ -1063,6 +1068,166 @@ def read_revisions(
     ]
     intact, detail = RevisionService().verify(tuple(r.to_domain() for r in models))
     return RevisionListResponse(revisions=models, chain_intact=intact, chain_detail=detail)
+
+
+# --------------------------------------------------------------------------- #
+# Comments: an objection, anchored to the text the reviewer actually read
+# --------------------------------------------------------------------------- #
+_COMMENTS_ARTIFACT = "comments"
+
+
+def _stored_comments(container: Any, analysis_id: str, principals: tuple[str, ...]) -> list[dict]:
+    stored = container.analysis_bundle.get_artifact(analysis_id, _COMMENTS_ARTIFACT, principals)
+    return list(stored.get("comments", [])) if stored else []
+
+
+def _comment_view(
+    comments: tuple[m.MemoComment, ...], revisions: tuple[m.MemoRevision, ...]
+) -> CommentListResponse:
+    """The thread with staleness computed against the chain as it stands now."""
+    service = CommentService()
+    rows = [
+        MemoCommentModel.from_domain(c, stale=c.open and service.stale(c, revisions))
+        for c in comments
+    ]
+    return CommentListResponse(
+        comments=rows,
+        open_count=sum(1 for r in rows if r.open),
+        stale_count=sum(1 for r in rows if r.stale),
+    )
+
+
+@app.post(
+    "/v1/analyses/{analysis_id}/comments",
+    response_model=MemoCommentModel,
+    status_code=201,
+    tags=["analyses"],
+)
+def add_comment(
+    analysis_id: str, body: CommentCreateRequest, principal: CurrentPrincipal
+) -> MemoCommentModel | JSONResponse:
+    """Leave a note against one section of the memo as it stands right now.
+
+    Anchored to the current revision and its digest, so an edit three versions later cannot
+    silently re-point the objection at text its author never saw. The author is the
+    server-verified principal: an unattributed objection cannot be answered, and a committee
+    asks who raised it.
+    """
+    container = deps.get_container()
+    principals = _analysis_principals(principal)
+    try:
+        _read_analysis(analysis_id, principal)
+    except AnalysisNotFoundError as exc:
+        return _analysis_gone(exc)
+    except BorrowerAccessDeniedError as exc:
+        return _denied_response(exc)
+
+    revisions = tuple(
+        MemoRevisionModel.model_validate(r).to_domain()
+        for r in _stored_revisions(container, analysis_id, principals)
+    )
+    existing = tuple(
+        MemoCommentModel.model_validate(c).to_domain()
+        for c in _stored_comments(container, analysis_id, principals)
+    )
+    try:
+        comment = CommentService().add(
+            existing, body.section, body.body, principal.actor, revisions
+        )
+    except ValueError as exc:
+        return _ungrounded_response(str(exc))
+
+    updated = (*existing, comment)
+    with contextlib.suppress(Exception):
+        container.analysis_bundle.put_artifact(
+            analysis_id,
+            _COMMENTS_ARTIFACT,
+            {
+                "comments": [
+                    MemoCommentModel.from_domain(c).model_dump(mode="json") for c in updated
+                ]
+            },
+            principals,
+        )
+    return MemoCommentModel.from_domain(comment)
+
+
+@app.get(
+    "/v1/analyses/{analysis_id}/comments",
+    response_model=CommentListResponse,
+    tags=["analyses"],
+)
+def read_comments(
+    analysis_id: str, principal: CurrentPrincipal
+) -> CommentListResponse | JSONResponse:
+    """Every note, with the ones whose text has moved on flagged rather than closed."""
+    container = deps.get_container()
+    principals = _analysis_principals(principal)
+    try:
+        _read_analysis(analysis_id, principal)
+    except AnalysisNotFoundError as exc:
+        return _analysis_gone(exc)
+    except BorrowerAccessDeniedError as exc:
+        return _denied_response(exc)
+
+    revisions = tuple(
+        MemoRevisionModel.model_validate(r).to_domain()
+        for r in _stored_revisions(container, analysis_id, principals)
+    )
+    comments = tuple(
+        MemoCommentModel.model_validate(c).to_domain()
+        for c in _stored_comments(container, analysis_id, principals)
+    )
+    return _comment_view(comments, revisions)
+
+
+@app.post(
+    "/v1/analyses/{analysis_id}/comments/{comment_id}/resolve",
+    response_model=MemoCommentModel,
+    tags=["analyses"],
+)
+def resolve_comment(
+    analysis_id: str,
+    comment_id: str,
+    body: CommentResolveRequest,
+    principal: CurrentPrincipal,
+) -> MemoCommentModel | JSONResponse:
+    """Close one comment, naming who closed it and what they did about it.
+
+    Only a person closes a comment. One that lapsed because the text changed underneath it
+    was not answered, it was lost, and the two are indistinguishable in a list afterwards —
+    which is why a stale comment stays open and is flagged instead.
+    """
+    container = deps.get_container()
+    principals = _analysis_principals(principal)
+    try:
+        _read_analysis(analysis_id, principal)
+    except AnalysisNotFoundError as exc:
+        return _analysis_gone(exc)
+    except BorrowerAccessDeniedError as exc:
+        return _denied_response(exc)
+
+    existing = tuple(
+        MemoCommentModel.model_validate(c).to_domain()
+        for c in _stored_comments(container, analysis_id, principals)
+    )
+    try:
+        updated = CommentService().resolve(existing, comment_id, principal.actor, body.resolution)
+    except ValueError as exc:
+        return _ungrounded_response(str(exc))
+
+    with contextlib.suppress(Exception):
+        container.analysis_bundle.put_artifact(
+            analysis_id,
+            _COMMENTS_ARTIFACT,
+            {
+                "comments": [
+                    MemoCommentModel.from_domain(c).model_dump(mode="json") for c in updated
+                ]
+            },
+            principals,
+        )
+    return MemoCommentModel.from_domain(next(c for c in updated if c.id == comment_id))
 
 
 def _tenant_tags(principal: Any) -> tuple[str, ...]:

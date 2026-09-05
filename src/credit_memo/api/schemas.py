@@ -1712,6 +1712,80 @@ class RevisionListResponse(BaseModel):
     chain_detail: str = ""
 
 
+class MemoCommentModel(BaseModel):
+    """One reviewer's note, and whether the text it was written against has moved.
+
+    ``stale`` is computed on read against the revision chain rather than stored. A stored
+    flag says what was true when it was written, which for this field is the one moment
+    nobody is asking about.
+    """
+
+    id: str
+    section: str
+    body: str
+    author: str
+    revision: int
+    at: str = ""
+    anchor_digest: str = ""
+    resolved_by: str = ""
+    resolved_at: str | None = None
+    resolution: str = ""
+    open: bool = True
+    #: The section changed after this was written. Still open — nobody answered it — but a
+    #: reader has to re-read it against the new text rather than assume it was addressed.
+    stale: bool = False
+
+    def to_domain(self) -> m.MemoComment:
+        return m.MemoComment(
+            id=self.id,
+            section=self.section,
+            body=self.body,
+            author=self.author,
+            revision=self.revision,
+            at=datetime.fromisoformat(self.at) if self.at else m.utcnow(),
+            anchor_digest=self.anchor_digest,
+            resolved_by=self.resolved_by,
+            resolved_at=datetime.fromisoformat(self.resolved_at) if self.resolved_at else None,
+            resolution=self.resolution,
+        )
+
+    @classmethod
+    def from_domain(cls, comment: m.MemoComment, stale: bool = False) -> MemoCommentModel:
+        return cls(
+            id=comment.id,
+            section=comment.section,
+            body=comment.body,
+            author=comment.author,
+            revision=comment.revision,
+            at=comment.at.isoformat(),
+            anchor_digest=comment.anchor_digest,
+            resolved_by=comment.resolved_by,
+            resolved_at=comment.resolved_at.isoformat() if comment.resolved_at else None,
+            resolution=comment.resolution,
+            open=comment.open,
+            stale=stale,
+        )
+
+
+class CommentCreateRequest(BaseModel):
+    """A note against one section. There is no author field: it is the verified principal."""
+
+    section: str = Field(..., min_length=1)
+    body: str = Field(..., min_length=1)
+
+
+class CommentResolveRequest(BaseModel):
+    """Closing a comment says what was done about it, not merely that it is closed."""
+
+    resolution: str = ""
+
+
+class CommentListResponse(BaseModel):
+    comments: list[MemoCommentModel] = Field(default_factory=list)
+    open_count: int = 0
+    stale_count: int = 0
+
+
 class RiskFlagListResponse(BaseModel):
     borrower_id: str
     risk_flags: list[RiskFlagModel] = Field(default_factory=list)
