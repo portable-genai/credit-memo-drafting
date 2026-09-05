@@ -76,7 +76,11 @@ class GeminiLLMAdapter:
         )
         response = client.models.generate_content(
             model=self._models.triage,
-            contents=[types.Content(role="user", parts=[types.Part.from_text(text=prompt)])],
+            # One turn, passed as a Content rather than a one-element list: the SDK's
+            # `contents` union accepts either, and a list of Content is not assignable to
+            # a list of the union it declares (lists are invariant), which the newer
+            # google-genai stubs now say out loud.
+            contents=types.Content(role="user", parts=[types.Part.from_text(text=prompt)]),
             config=types.GenerateContentConfig(
                 temperature=0.0,
                 max_output_tokens=16,
