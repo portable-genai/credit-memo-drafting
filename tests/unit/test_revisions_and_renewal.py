@@ -221,7 +221,7 @@ def test_new_and_cleared_exceptions_are_both_reported() -> None:
 
 
 def test_unchanged_sections_are_named_so_a_reader_can_skip_them() -> None:
-    """"Unchanged" is information: it is what makes a renewal shorter than a new memo."""
+    """ "Unchanged" is information: it is what makes a renewal shorter than a new memo."""
     delta = RenewalDiffService().compare(_memo(), PRIOR)
     assert "Recommendation rationale" in delta.unchanged_sections
     assert "Summary" not in delta.unchanged_sections  # it did change
