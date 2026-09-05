@@ -47,7 +47,35 @@ _METRIC_TAGS: dict[str, tuple[str, ...]] = {
     "cash": ("CashAndCashEquivalentsAtCarryingValue",),
     "long_term_debt": ("LongTermDebtNoncurrent", "LongTermDebt"),
     "equity": ("StockholdersEquity",),
+    # Below: the operands a peer ratio needs. Only tags a filer actually reports on the
+    # face of a 10-K — a metric nobody tags is a metric that comes back absent, which
+    # the ratio engine states as "not supplied" rather than imputing.
+    "current_debt": ("LongTermDebtCurrent", "DebtCurrent"),
+    "current_assets": ("AssetsCurrent",),
+    "current_liabilities": ("LiabilitiesCurrent",),
+    "inventory": ("InventoryNet",),
+    "interest_expense": (
+        "InterestExpense",
+        "InterestExpenseDebt",
+        "InterestExpenseNonoperating",
+    ),
+    "tax_expense": ("IncomeTaxExpenseBenefit",),
+    "capex": ("PaymentsToAcquirePropertyPlantAndEquipment",),
+    "depreciation_amortisation": (
+        "DepreciationDepletionAndAmortization",
+        "DepreciationAmortizationAndAccretionNet",
+        "DepreciationAndAmortization",
+    ),
+    # Goodwill is tagged separately from other intangibles and is usually the larger of
+    # the two, so tangible net worth computed without it is wrong by the size of the
+    # acquisitions the peer has made.
+    "intangible_assets": ("IntangibleAssetsNetExcludingGoodwill",),
+    "goodwill": ("Goodwill",),
 }
+
+#: Tags that already include the current portion of long-term debt. When one of these is
+#: what matched, adding ``current_debt`` on top double-counts the same borrowings.
+DEBT_TAGS_INCLUDING_CURRENT: frozenset[str] = frozenset({"LongTermDebt"})
 
 _DEFAULT_CACHE_DIR = Path.home() / ".credit_memo" / "edgar-cache"
 

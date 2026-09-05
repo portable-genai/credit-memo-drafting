@@ -11,6 +11,15 @@ Design notes
   synthesise -> deterministic covenant status + risk flags -> peer comps -> guardrail ->
   audit; SPEC §5). These tools add **no** business logic of their own: the model decides
   *which* artifact to produce, the service decides *how*.
+* **Three of the four tools are sections of one memo**, exactly as the MCP surface serves
+  them. ``extract_covenants``, ``flag_risks`` and ``peer_compare`` are not cheaper paths
+  than ``build_credit_memo``; each builds the memo and returns its section. A shortcut path
+  is a second way to compute figures the memo already owns, and the peer shortcut this
+  replaced compared the borrower against the peer median at an assumed value of zero — a
+  fabricated position that was indistinguishable in the output from a real one.
+* The four tools are the governed tool catalog, and a test holds them to it. A tool the
+  catalog declares and the agent cannot call is a promise the fleet made and this repo
+  does not keep.
 * ``google.adk`` is imported lazily inside :func:`build_function_tools` so this module
   imports cleanly under the on-prem/test profile with no ADK installed (SPEC §4). The plain
   Python tool callables are importable and unit-testable without ADK at all.
@@ -77,6 +86,58 @@ def build_credit_memo(
     return to_jsonable(service.build(MemoInput(borrower=borrower), actor))
 
 
+def _memo(
+    borrower_name: str,
+    sector: str,
+    jurisdiction: str,
+    actor: str,
+    settings: Settings | None,
+) -> Any:
+    """One memo, from which the section tools return their section.
+
+    The three section tools are not cheaper paths than ``build_credit_memo``: the service
+    produces covenants, risk flags and peer comparisons while building a memo, and each
+    tool returns that part of it. A shortcut path would be a second way to compute figures
+    the memo already owns, which ends with two answers to one question — and for peer
+    comparison it ended with a borrower percentile measured against an assumed value of
+    zero, which reads exactly like a real position.
+    """
+    from ..api.deps import build_credit_memo_service
+    from ..domain.models import MemoInput
+
+    c = _container(settings)
+    service = build_credit_memo_service(c)
+    borrower = _borrower(borrower_name, sector, jurisdiction)
+    return service.build(MemoInput(borrower=borrower), actor)
+
+
+def extract_covenants(
+    borrower_name: str,
+    sector: str = "",
+    jurisdiction: str = "",
+    actor: str = _DEFAULT_ACTOR,
+    settings: Settings | None = None,
+) -> list[dict[str, Any]]:
+    """Extract a borrower's financial covenants with a deterministic compliance status.
+
+    Returns the ``Covenant`` objects from the borrower's memo, each carrying its threshold,
+    its tested status (COMPLIANT, AT_RISK, BREACH) and citations. The status is computed
+    arithmetically, never asserted by the model.
+
+    Args:
+      borrower_name: The borrower name to assess.
+      sector: The borrower's sector.
+      jurisdiction: ISO-ish country/region code.
+      actor: Authenticated identity the request is made for.
+
+    Returns:
+      A JSON-safe list of ``Covenant`` dicts.
+    """
+    from ..domain.serialization import to_jsonable
+
+    return to_jsonable(_memo(borrower_name, sector, jurisdiction, actor, settings).covenants)
+
+
 def flag_risks(
     borrower_name: str,
     sector: str = "",
@@ -98,20 +159,9 @@ def flag_risks(
     Returns:
       A JSON-safe list of ``RiskFlag`` dicts.
     """
-    from ..domain import _grounded as g
     from ..domain.serialization import to_jsonable
-    from ..domain.services import RiskFlagService
 
-    c = _container(settings)
-    borrower = _borrower(borrower_name, sector, jurisdiction)
-    passages = g.retrieve_passages(
-        c.knowledge_base,
-        f"credit risks and sector context for {borrower.name}",
-        acl_principals=(f"borrower:{borrower.id}",),
-        top_k=c.settings.knowledge_base.top_k,
-    )
-    service = RiskFlagService(llm=c.llm, tracer=c.tracer)
-    return to_jsonable(service.flag(borrower, passages, actor))
+    return to_jsonable(_memo(borrower_name, sector, jurisdiction, actor, settings).risk_flags)
 
 
 def peer_compare(
@@ -121,10 +171,11 @@ def peer_compare(
     actor: str = _DEFAULT_ACTOR,
     settings: Settings | None = None,
 ) -> list[dict[str, Any]]:
-    """Compare a borrower's leverage and EBITDA against a peer set.
+    """Compare a borrower's financial metrics against a peer set.
 
-    Returns ``PeerComparison`` objects (peer median, percentile, deltas) for the
-    borrower's key metrics, computed arithmetically from the peer dataset.
+    Returns ``PeerComparison`` objects (peer median, the borrower's percentile, deltas)
+    for the borrower's own normalised metrics, computed arithmetically from the peer
+    dataset. A metric the peer source cannot answer is skipped rather than estimated.
 
     Args:
       borrower_name: The borrower name to compare.
@@ -135,23 +186,17 @@ def peer_compare(
     Returns:
       A JSON-safe list of ``PeerComparison`` dicts.
     """
-    from ..domain.models import FinancialMetric
     from ..domain.serialization import to_jsonable
-    from ..domain.services import PeerCompService
 
-    c = _container(settings)
-    borrower = _borrower(borrower_name, sector, jurisdiction)
-    service = PeerCompService(peer_data=c.peer_data, tracer=c.tracer)
-    # The model supplies the borrower's own metrics; here we request the two core ratios.
-    metrics = (
-        FinancialMetric(name="leverage", value=0.0),
-        FinancialMetric(name="ebitda", value=0.0),
-    )
-    return to_jsonable(service.compare(borrower, metrics, actor))
+    return to_jsonable(_memo(borrower_name, sector, jurisdiction, actor, settings).peer_comparison)
 
 
+#: The ADK surface, which is the governed tool catalog and nothing else. Held to the
+#: catalog by a test: a tool the catalog declares and the agent cannot call is a promise
+#: the fleet made and this repo does not keep, and it fails silently in both directions.
 TOOL_FUNCTIONS = (
     build_credit_memo,
+    extract_covenants,
     flag_risks,
     peer_compare,
 )
