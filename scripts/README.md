@@ -61,5 +61,7 @@ Useful environment overrides for `credit_memo_demo_playwright.py`:
 | `CHROME_PATH` | - | explicit Chromium/Chrome binary |
 | `lock.py` | Compiles both lockfiles and puts the header back, because `uv pip compile` REPLACES the output file: it writes its own two-line provenance comment and destroys the `tag = commit` map the pin tests check against. `make lock` runs this rather than uv directly. |
 
-All synthetic data is fictional; do not run against live borrower data without your own
-legal, security and model-risk sign-off.
+The synthetic data is fictional and says so; the demo's credit file is a listed company's
+published SEC filings (`demo/documents/SOURCES.md`). Neither is a real borrower of yours: do
+not run against live borrower data without your own legal, security and model-risk
+sign-off.

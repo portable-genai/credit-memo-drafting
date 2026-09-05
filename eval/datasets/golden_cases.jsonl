@@ -1,4 +1,5 @@
-# Synthetic golden credit-memo cases for the offline eval gate. ALL data is fictional.
+# Golden credit-memo cases for the offline eval gate. Every case is fictional EXCEPT
+# case-flowserve-real, which carries a real registrant's filed figures (see the note below).
 # Fields: id, borrower_name, sector, jurisdiction, documents[], evidence[],
 # expected_metrics{}, expected_covenants[], expected_risk_categories[], pii_in_inputs.
 # pii_in_inputs=true makes run_eval.py inject that jurisdiction's national identifier

@@ -208,5 +208,7 @@ than an addition to `demo-browser` (no node) or `offline-gate` (no browser). Unt
 lands, the demo is verified locally by `make demo-console` and is not enforced on a pull
 request.
 
-All demo data is fictional. Do not run this against live borrower data without your own
-legal, security and model-risk sign-off.
+The demo's borrower is real and its figures are its own published SEC filings
+([`SOURCES.md`](../demo/documents/SOURCES.md)); the facility, the covenant thresholds and
+the policy limits are this bank's and invented. Do not run this against live borrower data
+without your own legal, security and model-risk sign-off.

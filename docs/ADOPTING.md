@@ -90,9 +90,14 @@ human decisions below.
    `config/settings.yaml`. The shared composition root injects it into both API and ADK memo
    services; the default is a reference, not your policy. Add further owned thresholds through the
    same typed settings seam rather than hard-coding them.
-5. **Reference data is fictional.** Every fixture and figure use obviously-fake names
-   (`Acme Manufacturing (FICTIONAL)`). Swap the fixtures for your own
-   synthetic data. **Do not run against live borrower data without your own legal, security and
+5. **Reference data is either obviously fictional or a public filing, never a real
+   borrower of yours.** The test fixtures, the built-in offline corpus and every eval case
+   but one use obviously-fake names (`Acme Manufacturing (FICTIONAL)`). The demo
+   (`demo/documents/`), the peer table and `case-flowserve-real` use a listed company's
+   published SEC figures, so the output can be checked against the filing; the limits those
+   figures are tested against are still this repo's invented example policy. Swap the
+   fixtures for your own synthetic data, and swap the demo borrower for one your audience
+   knows. **Do not run against live borrower data without your own legal, security and
    model-risk sign-off.**
 6. **Eval golden set.** Rebuild `eval/datasets/golden_cases.jsonl` and the rubrics for your
    vertical: a fork inherits a green gate that measures the WRONG thing until you do. The gate

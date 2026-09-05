@@ -18,9 +18,17 @@ Step-by-step scripts for demoing Doc2 two ways:
   API. For a private borrower, upload its financial statements (PDF or text; template
   downloadable) and the memo grounds on the uploaded evidence instead.
 
-> Demo A / B use **fictional** synthetic borrower data. Do not run against live borrower
-> data without your own legal, security and model-risk sign-off. Demo C never serves the
-> fictional corpus: the live profile grounds only on EDGAR records and uploads.
+- **The full business walkthrough** (`make walkthrough`, and the section below): one deal
+  through the real console in eighteen acts, on **Flowserve Corporation's** own filed
+  FY2025 figures. It runs offline like Demo A, but nothing in it is invented: the credit
+  file is committed under [`demo/documents/`](demo/documents/) with the accession number of
+  every figure, so an audience can open the 10-K and check the memo against it.
+
+> Demo A / B use **fictional** synthetic borrower data, and say so on every title. Do not
+> run against live borrower data without your own legal, security and model-risk sign-off.
+> Demo C and the full walkthrough use a listed company's published SEC filings — public
+> data, and neither is a borrower of yours. Demo C never serves the fictional corpus: the
+> live profile grounds only on EDGAR records and uploads.
 
 ### Demo C in three commands
 
@@ -128,12 +136,21 @@ Section 2.1 walks the original four artifacts on the presenter server. The produ
 since grown the whole credit-file lifecycle, and
 [`docs/demo-use-cases.md`](docs/demo-use-cases.md) is the walkthrough that shows it: one
 deal through the REAL console and service, in eighteen acts — upload the credit file,
-extract and confirm the spread, state the ask, build, watch the engine's arithmetic
-override what the model read off the page, add the group, run the checker's comment thread,
-export the committee pack, and delete the evidence.
+extract and confirm the spread, state the ask, build, watch the bank's arithmetic disagree
+with what the borrower reports, add the group, run the checker's comment thread, search the
+public web without any of it reaching the memo, export the committee pack, and delete the
+evidence.
+
+The borrower is **Flowserve Corporation** (NYSE: FLS) and every figure is from its FY2025
+Form 10-K, so the room can check the memo against the filing. The centre of it is a real
+disagreement: the borrower reports net leverage of 1.64x and full compliance, the engine
+computes 3.18x and breaches, and neither is wrong — it nets its cash and adds back its
+realignment charges, and this bank does neither.
 
 ```bash
-make walkthrough      # builds the console, opens a browser, waits for Enter at each act
+make walkthrough                      # builds the console, opens a browser, any key advances
+make walkthrough ACT="The checker"    # just one use case
+make walkthrough-list                 # what you can name
 ```
 
 The same acts run asserted and headless as `make demo-console`, so the demo cannot rot

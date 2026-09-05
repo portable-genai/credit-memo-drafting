@@ -32,7 +32,10 @@ autonomous action on a facility.
     raises; the CLI exits 2 with the migration message).
 - Models: reasoning `gemini-3.5-flash` (thinking=high), triage `gemini-3.5-flash`.
   Never a floating default model and never `gemini-2.0-flash`.
-- Public-web grounding is off by default (`grounding_enabled=false`).
+- Public-web grounding is off by default, behind `CREDIT_MEMO_RESEARCH_ENABLED`. Reachable
+  at `GET /v1/analyses/{id}/research` and in the console's public-context panel; results
+  are shown to the analyst who ran the query and never enter a memo, an export or a
+  review payload (Service Specific Terms 20(k), scored by `research_isolation`).
 
 ## 3. Architecture
 
@@ -141,6 +144,7 @@ carries its own documents in the body.
 | POST | `/v1/analyses/{id}/spreads/confirm` | `{rejected[], adjustments[], added[]}` -> FinancialSpread |
 | GET | `/v1/analyses/{id}/spreads` | -> `{candidate, confirmed}` |
 | GET | `/v1/analyses/{id}/group/suggestions` | `?name=&jurisdiction=` -> EntityGroup (opt-in) |
+| GET | `/v1/analyses/{id}/research` | `?query=&purpose=` -> MarketContext (opt-in; analyst only, never in the memo) |
 | POST | `/v1/analyses/{id}/build` | `{request?, spreads[]?, related_entities[]?, guarantors[]?, entity_spreads{}?, eliminations[]?}` -> CreditMemo |
 | PATCH | `/v1/analyses/{id}/memo` | `{sections{}, reason, note}` -> MemoRevision |
 | GET | `/v1/analyses/{id}/revisions` | -> `{revisions[], chain_intact, chain_detail}` |
@@ -210,6 +214,7 @@ Peer data is public filing data read over HTTPS: no platform HTTP adapter of our
 | PolicyPackPort | uploaded YAML/JSON | uploaded YAML/JSON | same as gcp | stub |
 | ExportPort | DOCX/HTML + PDF (reportlab, in process) | DOCX/HTML (stdlib) | same as gcp | stub |
 | WebResearchPort | Gemini grounding at `global`, opt-in | fixture | same as gcp | stub |
+|  | `live` uses the same Gemini grounding as `gcp`: it grounds the memo on real filings, and a fictional fixture beside those teaches an audience to trust a search that never ran. |||||
 | EntityResolutionPort | GLEIF register, opt-in | fixture register | B1 `/v1/ubo-graph` | stub |
 | PeerDataPort | SEC EDGAR | in-process peer table | same as gcp | stub |
 | LLMPort | Gemini | deterministic schema-driven | same as gcp | stub |

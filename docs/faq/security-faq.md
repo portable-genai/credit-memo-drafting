@@ -109,7 +109,8 @@ pending a breaking Next.js major bump; `pip-audit` is unaffected.
 No secret values are in the repo. `config/settings.yaml` stores only the **names** of env vars
 holding secrets (e.g. `CREDIT_MEMO_KMS_KEY`, `CREDIT_MEMO_AGENT_ENGINE`, `S2S_TOKEN`,
 `S2S_SIGNING_KEY`); values are read at construction time and never logged. A literal-secret
-scan over `src/` and `config/` is clean, and every fixture and figure is obviously fictional.
+scan over `src/` and `config/` is clean. No fixture or figure is a real borrower's: they are
+either obviously fictional or a listed company's published SEC filings.
 
 ### What is explicitly out of scope / a residual risk?
 
