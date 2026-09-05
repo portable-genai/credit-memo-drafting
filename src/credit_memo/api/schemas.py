@@ -570,6 +570,65 @@ class EntityGroupModel(BaseModel):
         )
 
 
+class WebEvidenceModel(BaseModel):
+    """One grounded result, as it reaches the analyst who ran the search.
+
+    No numeric field, matching the domain type. That is the fence, not an omission: a
+    ratio, a covenant test, a policy rule and a scorecard all read numbers, and a shape
+    with no number on it cannot supply one to any of them by accident.
+    """
+
+    title: str
+    url: str
+    snippet: str = ""
+    retrieved_at: str = ""
+    provenance: str = "web_grounded"
+
+    @classmethod
+    def from_domain(cls, evidence: m.WebEvidence) -> WebEvidenceModel:
+        return cls(
+            title=evidence.title,
+            url=evidence.url,
+            snippet=evidence.snippet,
+            retrieved_at=evidence.retrieved_at.isoformat(),
+            provenance=evidence.provenance.value,
+        )
+
+
+class MarketContextModel(BaseModel):
+    """What a search found, for the analyst who ran it and nobody else.
+
+    Never written into a memo, never exported, never persisted beyond the query log:
+    Google's Service Specific Terms section 20(k) permit Grounded Results to be shown
+    only to the End User who submitted the prompt, and a memo is read by a checker, a
+    committee and later an examiner. ``search_suggestions`` are the chips Google requires
+    be rendered verbatim; dropping them is a licence breach that looks like a tidy UI.
+    """
+
+    query: str
+    purpose: str = ""
+    evidence: list[WebEvidenceModel] = Field(default_factory=list)
+    search_suggestions: list[str] = Field(default_factory=list)
+    retrieved_at: str = ""
+    provider: str = ""
+    #: The search ran and returned nothing. Distinct from the 422 this endpoint answers
+    #: when it could not search at all, because the two lead an analyst to do different
+    #: things next.
+    found_nothing: bool = True
+
+    @classmethod
+    def from_domain(cls, context: m.MarketContext) -> MarketContextModel:
+        return cls(
+            query=context.query,
+            purpose=context.purpose,
+            evidence=[WebEvidenceModel.from_domain(e) for e in context.evidence],
+            search_suggestions=list(context.search_suggestions),
+            retrieved_at=context.retrieved_at.isoformat(),
+            provider=context.provider,
+            found_nothing=context.found_nothing,
+        )
+
+
 class AnalysisBuildRequest(BaseModel):
     """Build the memo for an analysis that already holds its uploaded evidence.
 

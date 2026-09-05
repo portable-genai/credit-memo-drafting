@@ -127,3 +127,16 @@ SEED_PEERS: dict[str, tuple[PeerMetric, ...]] = {
 
 #: Source id the deterministic LLM falls back to when a prompt carries no passage headers.
 PRIMARY_SOURCE_ID = SEED_PASSAGES[0].citation.source_id
+
+#: What each built-in document actually SAYS, keyed by the filing id that carries it.
+#:
+#: The memo pipeline can ingest a filing by reference, with no bytes: the CLI and the
+#: presenter demo both do. The extraction stand-in then had nothing to extract and
+#: synthesised a placeholder sentence with no figures in it, so the offline demo's
+#: evidence said nothing while its memo reported revenue, EBITDA and two covenants. Those
+#: numbers came from the LLM stand-in's own hardcoded body, which is exactly the failure
+#: a grounded assistant exists to prevent. Handing back the corpus's own text makes the
+#: demo report what its documents say.
+SEED_DOCUMENT_TEXT: dict[str, str] = {
+    passage.citation.source_id: passage.text for passage in SEED_PASSAGES
+}

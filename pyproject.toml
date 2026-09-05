@@ -125,6 +125,10 @@ pythonpath = ["src"]
 testpaths = ["tests"]
 markers = [
   "integration: requires live Google Cloud credentials (deselect with -m 'not integration')",
+  # The console use-case demo needs Node and a BUILT Next.js console, which the offline
+  # gate deliberately does not. Marked rather than merely slow: `make check` advertises
+  # itself as needing no node, and a suite that quietly starts npm would make that false.
+  "console: drives the built Next.js console (needs node; deselect with -m 'not console')",
 ]
 
 [tool.mypy]

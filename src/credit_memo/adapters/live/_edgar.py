@@ -60,7 +60,12 @@ _METRIC_TAGS: dict[str, tuple[str, ...]] = {
         "InterestExpenseNonoperating",
     ),
     "tax_expense": ("IncomeTaxExpenseBenefit",),
-    "capex": ("PaymentsToAcquirePropertyPlantAndEquipment",),
+    # Two tags for one concept: filers split roughly evenly between them, and a peer
+    # whose capex came back absent could not be compared on any cash-flow ratio.
+    "capex": (
+        "PaymentsToAcquirePropertyPlantAndEquipment",
+        "PaymentsToAcquireProductiveAssets",
+    ),
     "depreciation_amortisation": (
         "DepreciationDepletionAndAmortization",
         "DepreciationAmortizationAndAccretionNet",
@@ -193,41 +198,95 @@ class EdgarClient:
         return self._get_json(FACTS_URL.format(cik=cik.zfill(10)))
 
     def latest_annual_facts(self, cik: str) -> dict[str, dict[str, Any]]:
-        """The most recent annual (10-K) USD value per metric, with provenance.
+        """Every metric this registrant reports, **for one reporting period**.
 
-        Returns ``{metric: {value, end, fy, tag}}`` for every metric a tag exists
-        for; a company that does not report a tag simply omits that metric.
+        Returns ``{metric: {value, end, fy, accn, tag}}``; a metric the company does not
+        report for that period is simply absent, which the ratio engine states as "not
+        supplied" rather than imputing.
+
+        One period, and that is the whole point. Reading each metric's own latest fact
+        independently is how this produced a spread with FY2024 revenue against a FY2025
+        balance sheet — a memo that reconciles against nothing and misstates every ratio
+        that spans the two statements. So the period is chosen once, here, and every
+        figure is read at it or not at all.
+
+        Two traps, both found against real filings:
+
+        * ``fy`` on a companyfacts row is the fiscal year of the FILING the fact appeared
+          in, not the period the fact covers. A 2025 10-K carries its FY2023 comparatives
+          tagged ``fy=2025``. Only ``end`` (with ``start``) identifies the period.
+        * "first tag that exists wins" is not safe. Flowserve tags ``Revenues`` as a
+          literal 0 while reporting USD 4.7bn under
+          ``RevenueFromContractWithCustomerExcludingAssessedTax``, so the preferred tag
+          won and the memo was grounded on revenue of zero.
         """
-        facts = self.companyfacts(cik)
-        out: dict[str, dict[str, Any]] = {}
-        for metric, tags in _METRIC_TAGS.items():
-            for tag in tags:
-                latest = self._latest_annual(facts, tag)
-                if latest is not None:
-                    out[metric] = {**latest, "tag": tag}
-                    break
-        return out
+        gaap = self.companyfacts(cik).get("facts", {}).get("us-gaap", {})
+        by_metric = {
+            metric: self._annual_by_period(gaap, tags) for metric, tags in _METRIC_TAGS.items()
+        }
+        end = self._reporting_period(by_metric)
+        if end is None:
+            return {}
+        return {metric: rows[end] for metric, rows in by_metric.items() if end in rows}
 
     @staticmethod
-    def _latest_annual(facts: dict[str, Any], tag: str) -> dict[str, Any] | None:
-        node = facts.get("facts", {}).get("us-gaap", {}).get(tag, {})
-        rows = node.get("units", {}).get("USD", [])
-        annual = [r for r in rows if r.get("form") == "10-K" and "frame" not in r]
-        if not annual:
-            return None
-        # Later filings restate earlier periods; keep the latest value per period end,
-        # then take the most recent period.
-        by_end: dict[str, Any] = {}
-        for row in annual:
-            end = str(row.get("end", ""))
-            if end:
-                by_end[end] = row
-        end, row = sorted(by_end.items())[-1]
-        try:
-            value = float(row.get("val", 0.0))
-        except (TypeError, ValueError):
-            return None
-        return {"value": value, "end": end, "fy": row.get("fy"), "accn": row.get("accn")}
+    def _reporting_period(by_metric: dict[str, dict[str, dict[str, Any]]]) -> str | None:
+        """The latest period end the registrant reported a full statement for.
+
+        Both an income-statement and a balance-sheet anchor must be present, because a
+        period carrying only one of them is a filing in progress, not a spread anybody can
+        compute a leverage ratio from.
+        """
+        income = set(by_metric.get("revenue") or ()) | set(by_metric.get("net_income") or ())
+        balance = set(by_metric.get("total_assets") or ())
+        both = income & balance
+        if both:
+            return max(both)
+        every = {end for rows in by_metric.values() for end in rows}
+        return max(every) if every else None
+
+    @staticmethod
+    def _annual_by_period(gaap: dict[str, Any], tags: tuple[str, ...]) -> dict[str, dict[str, Any]]:
+        """One value per period end for a metric, best tag first.
+
+        Within a period the preferred tag wins unless it reports zero while a later
+        alternative reports a real figure: a total of zero beside a non-zero tag for the
+        same concept is a presentation artifact of how the filer split the line, not a
+        claim that the company earned nothing. A genuine zero (no current debt, say) still
+        comes through, because it only loses to a non-zero alternative.
+        """
+        candidates: dict[str, list[tuple[bool, int, str, dict[str, Any]]]] = {}
+        for rank, tag in enumerate(tags):
+            for row in gaap.get(tag, {}).get("units", {}).get("USD", []):
+                if not str(row.get("form", "")).startswith("10-K"):
+                    continue
+                end = str(row.get("end", ""))
+                if not end:
+                    continue
+                try:
+                    value = float(row.get("val", 0.0))
+                except (TypeError, ValueError):
+                    continue
+                accn = str(row.get("accn") or "")
+                candidates.setdefault(end, []).append(
+                    (
+                        value != 0.0,
+                        -rank,
+                        accn,
+                        {
+                            "value": value,
+                            "end": end,
+                            "fy": row.get("fy"),
+                            "accn": row.get("accn"),
+                            "tag": tag,
+                        },
+                    )
+                )
+        # Non-zero beats zero, then the preferred tag, then the most recently filed
+        # accession — later filings restate earlier periods, and the restatement stands.
+        return {
+            end: max(rows, key=lambda row: row[:3])[3] for end, rows in candidates.items() if rows
+        }
 
     def peer_ciks(self, sic: str, exclude_cik: str, limit: int) -> list[str]:
         """CIKs of registrants sharing a SIC code (browse-edgar atom feed).
