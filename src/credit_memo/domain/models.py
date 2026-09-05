@@ -909,6 +909,70 @@ class RelatedEntity:
     provenance: Provenance = Provenance.USER_ENTERED
 
 
+class MatchQuality(StrEnum):
+    """How sure a public register's answer is.
+
+    An enum rather than a score, deliberately. A float here is a number, and the rule this
+    whole path is built around is that nothing arriving from outside the bank's own evidence
+    supplies a number. It is also more honest: "one candidate after normalising the legal
+    form" is a statement a reader can act on, and 0.82 is not.
+    """
+
+    EXACT = "exact"  # the register's own legal name matched exactly
+    STRONG = "strong"  # one candidate after normalising the legal form
+    AMBIGUOUS = "ambiguous"  # several candidates; the analyst chooses, not this service
+
+
+@dataclass(frozen=True, slots=True)
+class EntityGroup:
+    """A public register's view of who else is in this borrower's group.
+
+    A SUGGESTION about who exists, never a figure. Every member carries
+    ``Provenance.VENDOR``, and a ``RelatedEntity`` holds no figure at all, so an entity
+    named here with no uploaded statements behind it lands in
+    ``GlobalCashFlow.entities_without_figures`` exactly like one the analyst typed. That is
+    the point: the register supplies the denominator of completeness and the analyst still
+    supplies every number.
+
+    ``register_reports_no_parent`` is not the same as an empty ``members``. The first is the
+    register saying this company reported that it has no parent; the second can also mean it
+    holds no relationship data for this company at all, and the two lead an analyst to do
+    different things next.
+    """
+
+    subject: RelatedEntity
+    members: tuple[RelatedEntity, ...] = ()
+    source: str = ""  # which register, so a reader can go and check it
+    as_of: datetime = field(default_factory=utcnow)
+    quality: MatchQuality = MatchQuality.AMBIGUOUS
+    register_reports_no_parent: bool = False
+    #: What this register cannot see. GLEIF holds relationships only for entities that have
+    #: an LEI, which most private SME borrowers do not, so an empty answer is frequently a
+    #: statement about the register rather than about the group.
+    coverage_note: str = ""
+    candidates: tuple[str, ...] = ()  # when AMBIGUOUS, the names that matched
+
+    def __post_init__(self) -> None:
+        offending = sorted(
+            {
+                e.name or e.id
+                for e in (self.subject, *self.members)
+                if e.provenance is not Provenance.VENDOR
+            }
+        )
+        if offending:
+            raise ValueError(
+                "a register's answer is vendor-supplied by definition; refusing to record "
+                f"{', '.join(offending)} under another provenance. An entity the analyst "
+                "declared belongs on the memo directly, not inside a register's answer."
+            )
+
+    @property
+    def found_nothing(self) -> bool:
+        """The register answered and knows of no related entity."""
+        return not self.members
+
+
 @dataclass(frozen=True, slots=True)
 class Guarantor:
     """Someone who has agreed to stand behind the facility, and how far.

@@ -140,7 +140,8 @@ carries its own documents in the body.
 | POST | `/v1/analyses/{id}/spreads/extract` | `{document_ids[], periods[], currency, unit}` -> SpreadCandidate |
 | POST | `/v1/analyses/{id}/spreads/confirm` | `{rejected[], adjustments[], added[]}` -> FinancialSpread |
 | GET | `/v1/analyses/{id}/spreads` | -> `{candidate, confirmed}` |
-| POST | `/v1/analyses/{id}/build` | `{request?, spreads[]?}` -> CreditMemo |
+| GET | `/v1/analyses/{id}/group/suggestions` | `?name=&jurisdiction=` -> EntityGroup (opt-in) |
+| POST | `/v1/analyses/{id}/build` | `{request?, spreads[]?, related_entities[]?, guarantors[]?, entity_spreads{}?, eliminations[]?}` -> CreditMemo |
 | PATCH | `/v1/analyses/{id}/memo` | `{sections{}, reason, note}` -> MemoRevision |
 | GET | `/v1/analyses/{id}/revisions` | -> `{revisions[], chain_intact, chain_detail}` |
 | POST | `/v1/analyses/{id}/export?fmt=` | -> the committee pack as bytes |
@@ -154,10 +155,19 @@ carries its own documents in the body.
 | GET | `/healthz` | -> `{status, profile, region}` |
 | GET | `/.well-known/agent-card.json` | -> AgentCard |
 
-Two rules the analysis routes enforce and the table cannot show. Confirmation applies to
+Three rules the analysis routes enforce and the table cannot show. Confirmation applies to
 the candidate the analysis already holds, never to a table the caller composes, so a
-"confirmed" spread cannot hold figures nobody saw beside a document. And `PATCH .../memo`
-accepts the prose sections only: the figures belong to the deterministic engines.
+"confirmed" spread cannot hold figures nobody saw beside a document. `PATCH .../memo`
+accepts the prose sections only: the figures belong to the deterministic engines. And the
+group route SUGGESTS entities and never figures — every entity it returns is `VENDOR`,
+which is not `ENGINE_READABLE`, and one the analyst does not then supply statements for is
+reported on the memo as an entity the consolidation could not include.
+
+Two ports are off unless a deployment switches them on, both for a residency reason rather
+than a cautious one: `CREDIT_MEMO_RESEARCH_ENABLED` (the search leg is served only from the
+`global` endpoint) and `CREDIT_MEMO_ENTITY_RESOLUTION_ENABLED` (a register lookup sends the
+borrower's registered legal name outside the region). Both deviations are recorded in
+org-metadata's region alignment record rather than inherited.
 
 There is no `actor` in any request body: identity is server-verified (Section 10). In the
 `local` profile a demo/test selects a seeded persona with the `X-Dev-Persona` header;
@@ -189,6 +199,7 @@ Peer data is public filing data read over HTTPS: no platform HTTP adapter of our
 | PolicyPackPort | uploaded YAML/JSON | uploaded YAML/JSON | same as gcp | stub |
 | ExportPort | DOCX/HTML + PDF (reportlab, in process) | DOCX/HTML (stdlib) | same as gcp | stub |
 | WebResearchPort | Gemini grounding at `global`, opt-in | fixture | same as gcp | stub |
+| EntityResolutionPort | GLEIF register, opt-in | fixture register | same as gcp | stub |
 | PeerDataPort | SEC EDGAR | in-process peer table | same as gcp | stub |
 | LLMPort | Gemini | deterministic schema-driven | same as gcp | stub |
 | GuardrailPort | Model Armor | heuristic injection screen | Hrz1 | stub |

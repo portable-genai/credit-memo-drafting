@@ -55,6 +55,7 @@ from .schemas import (
     CreditMemoRequest,
     CreditMemoResponse,
     DocumentUploadResponse,
+    EntityGroupModel,
     FinancialSpreadModel,
     HealthResponse,
     MemoAmendRequest,
@@ -918,6 +919,56 @@ def _candidate_from_stored(stored: dict) -> m.SpreadCandidate:
         extractor=model.extractor,
         extractor_version=model.extractor_version,
     )
+
+
+@app.get(
+    "/v1/analyses/{analysis_id}/group/suggestions",
+    response_model=EntityGroupModel,
+    tags=["analyses"],
+)
+def suggest_group(
+    analysis_id: str, principal: CurrentPrincipal, name: str = "", jurisdiction: str = ""
+) -> EntityGroupModel | JSONResponse:
+    """Who else a public register says is in this borrower's group.
+
+    A suggestion, and only a suggestion. The analyst still uploads each entity's statements,
+    and an entity named here that nobody supplies figures for is reported on the memo as one
+    the consolidation could not include. That is the whole value: the register supplies the
+    denominator of completeness, and every number still comes from a document a person
+    uploaded and confirmed.
+
+    Off unless the deployment switched it on, because the lookup sends the borrower's
+    registered legal name outside the deploy region.
+    """
+    container = deps.get_container()
+    try:
+        manifest = _read_analysis(analysis_id, principal)
+    except AnalysisNotFoundError as exc:
+        return _analysis_gone(exc)
+    except BorrowerAccessDeniedError as exc:
+        return _denied_response(exc)
+
+    resolver = container.entity_resolution
+    if resolver is None:
+        return _ungrounded_response(
+            "group suggestions are switched off in this deployment. The lookup sends the "
+            "borrower's registered name outside the deploy region, so it is a deviation a "
+            "deployment enables deliberately (CREDIT_MEMO_ENTITY_RESOLUTION_ENABLED)."
+        )
+
+    try:
+        group = resolver.resolve_group(name or manifest.borrower_id, jurisdiction)
+    except NotImplementedError as exc:
+        return _ungrounded_response(str(exc))
+    if group is None:
+        # "We could not look" and "we looked and the register knows of nobody" lead an
+        # analyst to do different things next, so they are different answers here.
+        return _ungrounded_response(
+            "the register returned nothing for that name. Most private companies hold no "
+            "LEI and are invisible to it, so this is not evidence that the group is empty: "
+            "declare the entities yourself and upload their statements."
+        )
+    return EntityGroupModel.from_domain(group)
 
 
 # --------------------------------------------------------------------------- #

@@ -521,6 +521,20 @@ class Container:
         return self._bind("web_research")
 
     @cached_property
+    def entity_resolution(self) -> Any:
+        """A public register's view of the borrower's group, when switched on.
+
+        None unless ``CREDIT_MEMO_ENTITY_RESOLUTION_ENABLED`` is set. Off by default for a
+        residency reason rather than a cautious one: a register lookup sends the borrower's
+        registered legal name outside the deploy region, which is weaker than the peer leg
+        (that sends no borrower identity at all), so it is a deviation a deployment takes
+        deliberately rather than inherits.
+        """
+        if not boolean_setting("CREDIT_MEMO_ENTITY_RESOLUTION_ENABLED"):
+            return None
+        return self._bind("entity_resolution")
+
+    @cached_property
     def export(self) -> Any:
         return self._bind("export")
 
