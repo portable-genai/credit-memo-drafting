@@ -1,0 +1,39 @@
+FLOWSERVE CORPORATION — EXTRACT OF AUDITED ANNUAL FINANCIAL STATEMENTS
+Fiscal year ended 31 December 2025 (FY2025)
+
+Source: Form 10-K filed with the U.S. Securities and Exchange Commission on
+17 February 2026, accession 0000030625-26-000003 (fls-20251231.htm), and the XBRL
+company facts published at data.sec.gov for CIK 0000030625. Every figure below is
+as filed. Amounts in millions of U.S. dollars.
+
+INCOME STATEMENT
+For FY2025 the group reports revenue of USD 4,729.3m, operating income of USD 399.9m
+and depreciation and amortisation of USD 95.5m, giving EBITDA of USD 495.4m on the
+statutory definition (operating income plus depreciation and amortisation).
+Interest expense of USD 77.7m and a tax expense of USD 155.6m give net income of
+USD 346.2m.
+
+The group separately discloses realignment charges of USD 58.3m for FY2025, and
+USD 49.5m for FY2024. Adding those charges back gives an adjusted EBITDA of
+USD 553.7m, which is the basis on which the group presents its own performance.
+
+BALANCE SHEET AT 31 DECEMBER 2025
+Total assets of USD 5,708.2m. Current assets of USD 3,042.9m against current
+liabilities of USD 1,501.9m. Inventory of USD 789.9m. Cash and cash equivalents of
+USD 760.2m. Long-term debt of USD 1,525.2m with a current portion of USD 49.9m,
+giving total debt of USD 1,575.1m and net debt of USD 814.9m. Total equity of
+USD 2,191.4m.
+
+CASH FLOW AND DEBT SERVICE
+Capital expenditure of USD 70.9m. Scheduled repayments of long-term debt principal
+falling due within twelve months are USD 49.6m. The group states in its Form 10-K
+that it has "scheduled repayments of $9.4 million in each of the next three quarters
+and a $12.5 million repayment on December 31, 2026, under our Term Loan".
+
+SEGMENTS
+The group reports two segments. For FY2025 the Flowserve Pump Division reports sales
+to external customers of USD 3,230.2m and intersegment sales of USD 5.1m; the Flow
+Control Division reports sales to external customers of USD 1,499.0m and intersegment
+sales of USD 5.5m. Intersegment sales of USD 10.6m are eliminated on consolidation,
+which is why the two divisions' external sales total exactly the consolidated
+revenue of USD 4,729.3m.

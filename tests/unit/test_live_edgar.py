@@ -430,7 +430,7 @@ def test_a_tag_reporting_zero_loses_to_one_reporting_the_figure(
 
 
 def test_a_genuine_zero_still_comes_through(monkeypatch: pytest.MonkeyPatch) -> None:
-    """"No current debt" is a fact about the borrower, not a tagging artifact.
+    """A genuine zero is a fact about the borrower, not a tagging artifact.
 
     Zero only loses to a non-zero alternative for the SAME concept; with no alternative
     it is the answer, and must not be dropped into "not supplied".

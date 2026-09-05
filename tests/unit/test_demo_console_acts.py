@@ -24,7 +24,7 @@ from demo_console.acts import ACTS, Stage  # noqa: E402
 def test_every_act_is_distinct_and_says_what_to_look_at() -> None:
     titles = [act.title for act in ACTS]
     assert len(set(titles)) == len(titles), "two acts share a title, so --act cannot pick one"
-    assert len(ACTS) >= 17
+    assert len(ACTS) >= 18
     for act in ACTS:
         assert act.narration.strip(), f"{act.title} has nothing for the presenter to say"
         assert act.point_at.strip(), f"{act.title} does not say what to look at"

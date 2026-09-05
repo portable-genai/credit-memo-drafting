@@ -10,6 +10,13 @@
 # Regional Credit Committee". It stops being credible the moment the limits come from the
 # software rather than from the bank.
 #
+# That separation is load-bearing in the demo, which now runs against a real listed
+# company's filed figures. The MEASUREMENTS there are Flowserve Corporation's, out of its
+# FY2025 Form 10-K. The LIMITS they are tested against are the ones below, which nobody
+# chose. So an exception the demo raises is a statement about this example appetite, never
+# an allegation about the company: on its own covenants, measured its own way, that
+# borrower reports full compliance.
+#
 # metric names one of three things, resolved in this order:
 #   - a ratio formula id from domain/ratio_catalogue.py  (leverage.v1, dscr.v1, ...)
 #   - a line item code from domain/models.LineItemCode   (total_debt, ebitda, ...)

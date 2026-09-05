@@ -518,18 +518,25 @@ class CreditMemoService:
     def _consolidate(
         self, memo_input: MemoInput, borrower_spread: FinancialSpread | None
     ) -> GlobalCashFlow | None:
-        """The group's combined position, or None when there is no group to combine.
+        """The group's combined position, or None when no group was declared.
 
-        Absent rather than a one-entity consolidation: a "global cash flow" listing only
+        Absent when the analyst declared no group at all: a "global cash flow" listing only
         the borrower asserts that the borrower IS the whole group, which is a stronger
         claim than the analyst made by uploading one set of statements.
+
+        Present, though, as soon as a group IS declared — even when nobody has supplied
+        statements for a single other entity. That case used to return None too, which
+        meant an analyst who named a parent and two guarantors and held accounts for none
+        of them saw no consolidation and no warning: the promise to name the entities it
+        could not include was silently not kept in exactly the situation that most needed
+        it. The consolidation is now built, marked incomplete, and names them.
 
         The borrower is added to the group here rather than left to the caller. A
         consolidation that omitted it would total the parent and the affiliates and call
         the result the group's cash — a figure that is wrong by the whole of the operating
         company, and wrong in the direction that looks conservative.
         """
-        if not memo_input.related_entities or not memo_input.entity_spreads:
+        if not memo_input.related_entities:
             return None
 
         borrower_id = memo_input.borrower.id
@@ -551,6 +558,11 @@ class CreditMemoService:
             )
         if not declared_borrower and borrower_id not in spreads and borrower_spread is not None:
             spreads[borrower_id] = borrower_spread
+
+        if not spreads:
+            # A group was declared and nobody, not even the borrower, has a confirmed
+            # spread. There is no arithmetic to show and nothing to be incomplete about.
+            return None
 
         unconfirmed = sorted(
             entity_id
