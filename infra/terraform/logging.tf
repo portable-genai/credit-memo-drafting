@@ -26,7 +26,14 @@
 # Data-access logging stays on: it is what shows who read whose evidence, which is the
 # question a reviewer actually asks of a service that holds borrower documents.
 
+# Authoritative for the service it names, which is the whole point and also the hazard: it
+# REPLACES the project's audit config for `allServices` rather than adding to it. In a
+# project where another stack already enables ADMIN_READ, applying this silently drops it,
+# and Terraform reports the whole thing as a harmless create because this stack has no prior
+# state for a resource that is nonetheless already live. Audit coverage going backwards is
+# not something a deployment should be able to do by saying nothing.
 resource "google_project_iam_audit_config" "data_access" {
+  count   = var.manage_audit_config ? 1 : 0
   project = var.project_id
   service = "allServices"
 
