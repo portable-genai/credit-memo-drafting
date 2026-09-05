@@ -511,6 +511,19 @@ class Container:
         return self._bind("analysis_bundle")
 
     @cached_property
+    def web_research(self) -> Any:
+        """Public-web context, when this deployment has switched it on.
+
+        None unless ``CREDIT_MEMO_RESEARCH_ENABLED`` is set, and off by default for two
+        reasons that are not about caution. The search leg leaves the deploy region, which
+        is a deviation a deployment should take deliberately rather than inherit; and
+        grounding is billed per query with no free allowance on this account.
+        """
+        if not boolean_setting("CREDIT_MEMO_RESEARCH_ENABLED"):
+            return None
+        return self._bind("web_research")
+
+    @cached_property
     def export(self) -> Any:
         return self._bind("export")
 

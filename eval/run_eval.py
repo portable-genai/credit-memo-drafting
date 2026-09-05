@@ -120,6 +120,9 @@ THRESHOLDS: dict[str, float] = {
     # read", and a chain that verifies 99% of the time answers it 99% of the time, which
     # is the same as not answering it.
     "revision_integrity": 1.0,
+    # Exactly 1.0. The fence between the public web and the bank's arithmetic either holds
+    # or it does not; "held 99% of the time" describes a fence with a hole in it.
+    "research_isolation": 1.0,
 }
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -696,6 +699,43 @@ def score_spread_accuracy(memo: CreditMemo, expected: dict) -> float:
     return round(hits / total, 4) if total else 1.0
 
 
+def score_research_isolation(memo: CreditMemo) -> float:
+    """Can anything retrieved from the public web reach a calculation, a memo or a pack?
+
+    Three checks, because the fence has three sides and each fails differently:
+
+    1. ``WebEvidence`` carries no numeric field, so there is no operand on it for a ratio,
+       a covenant test, a policy rule or a scorecard to reach for.
+    2. ``CreditMemo`` has no field a MarketContext could occupy. Not filtered out — absent,
+       which a future edit cannot forget to apply.
+    3. Nothing web-shaped appears in the built committee pack.
+
+    Scored on the gate rather than left to the unit tests because the obligation is a
+    licence term (Service Specific Terms 20(k)) rather than a style preference, and a
+    promotion that breached it should not be certifiable.
+    """
+    import dataclasses
+
+    from credit_memo.domain.memo_document import build_document
+    from credit_memo.domain.models import WebEvidence
+
+    numeric = {"float", "int", "float | None", "int | None"}
+    if any(f.type in numeric for f in dataclasses.fields(WebEvidence)):
+        return 0.0
+
+    memo_fields = {f.name for f in dataclasses.fields(CreditMemo)}
+    if memo_fields & {"market_context", "web_evidence", "research", "web_citations"}:
+        return 0.0
+
+    rendered = " ".join(
+        block.text + " ".join(block.items) + " ".join(" ".join(r) for r in block.rows)
+        for block in build_document(memo).blocks
+    ).lower()
+    if any(term in rendered for term in ("web_grounded", "web-grounded", "grounded result")):
+        return 0.0
+    return 1.0
+
+
 def score_revision_integrity(memo: CreditMemo, actor: str = "eval-bot") -> float:
     """Does a memo's revision chain survive being built, extended and verified?
 
@@ -872,6 +912,7 @@ def run_offline(
             score_tie_out_precision(memo, example.expected_tie_out)
         )
         agg["revision_integrity"].scores.append(score_revision_integrity(memo))
+        agg["research_isolation"].scores.append(score_research_isolation(memo))
 
     results = tuple(
         EvalMetricResult(
@@ -889,6 +930,7 @@ def run_offline(
             "spread_accuracy",
             "tie_out_precision",
             "revision_integrity",
+            "research_isolation",
         )
     )
     return EvalReport(dataset=str(dataset), results=results, n_examples=len(examples))

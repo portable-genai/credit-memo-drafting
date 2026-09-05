@@ -1106,6 +1106,69 @@ class RenewalDelta:
 
 
 # --------------------------------------------------------------------------- #
+# 2d. Public-web context: analyst-only, ephemeral, and numerically inert
+# --------------------------------------------------------------------------- #
+@dataclass(frozen=True, slots=True)
+class WebEvidence:
+    """One thing found on the public web, with where and when it was found.
+
+    **This type carries no numeric field, deliberately.** Not an oversight and not a
+    simplification: it is the mechanism. A ratio, a covenant test, a policy rule and a
+    scorecard all read numbers, and a type with no number on it cannot supply one to any
+    of them even by accident. An analyst who wants a figure from the web in the memo
+    types it, which makes it USER_ENTERED and theirs to stand behind.
+
+    ``retrieved_at`` is on every item because web context goes stale in a way a filed
+    statement does not, and a reader six weeks later needs to know how old this is.
+    """
+
+    title: str
+    url: str
+    snippet: str = ""
+    retrieved_at: datetime = field(default_factory=utcnow)
+    provenance: Provenance = Provenance.WEB_GROUNDED
+
+    def __post_init__(self) -> None:
+        if self.provenance is not Provenance.WEB_GROUNDED:
+            raise ValueError(
+                "web evidence is web-grounded by definition; refusing provenance "
+                f"{self.provenance.value!r}. A figure an analyst took from the web and "
+                "typed into the memo is USER_ENTERED and belongs in the spread."
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class MarketContext:
+    """What a search found, for the analyst who ran it and nobody else.
+
+    Never written into a memo, never exported, never persisted beyond the query log.
+    Google's Service Specific Terms section 20(k) permit Grounded Results to be shown
+    only to the End User who submitted the prompt, and a credit memo is read by a
+    checker, a committee and an examiner — none of whom did.
+
+    ``search_suggestions`` are the chips Google requires be rendered verbatim alongside
+    grounded results. Dropping them is a licence breach that looks like a tidy UI.
+    """
+
+    query: str
+    purpose: str = ""
+    evidence: tuple[WebEvidence, ...] = ()
+    search_suggestions: tuple[str, ...] = ()
+    retrieved_at: datetime = field(default_factory=utcnow)
+    provider: str = ""
+
+    @property
+    def found_nothing(self) -> bool:
+        """True when the search ran and returned nothing.
+
+        Distinct from the port returning None, which means the search could not run at
+        all. An analyst deciding whether to go and check themselves needs to know which
+        of the two they got.
+        """
+        return not self.evidence
+
+
+# --------------------------------------------------------------------------- #
 # 3. Peer comparison
 # --------------------------------------------------------------------------- #
 @dataclass(frozen=True, slots=True)
