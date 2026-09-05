@@ -1444,6 +1444,18 @@ class MemoInput:
     #: bytes out of it rather than extracting from nothing, and the manifest of what it
     #: actually used is carried onto the memo.
     analysis_id: str = ""
+    #: The group, as the analyst declared it for THIS analysis. There is no standing
+    #: ownership graph to consult, which is why an entity here with no spread below is
+    #: named on the memo as one the consolidation could not include rather than quietly
+    #: contributing nothing.
+    related_entities: tuple[RelatedEntity, ...] = ()
+    guarantors: tuple[Guarantor, ...] = ()
+    #: Confirmed figures per entity id, for the entities whose statements were uploaded.
+    entity_spreads: dict[str, FinancialSpread] = field(default_factory=dict)
+    #: Intercompany amounts to remove on consolidation, each saying what it is and
+    #: between whom. Shown rather than netted: a group whose revenue halves on
+    #: consolidation is telling the reader something about how it trades with itself.
+    eliminations: tuple[Elimination, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

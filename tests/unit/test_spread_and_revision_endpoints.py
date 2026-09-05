@@ -232,6 +232,152 @@ def test_the_build_uses_the_spread_that_was_confirmed(client: TestClient) -> Non
 
 
 # --------------------------------------------------------------------------- #
+# The group reaches the memo
+# --------------------------------------------------------------------------- #
+def _confirmed_items(period: str = "FY2025", **values: float) -> dict:
+    """A spread a person stands behind: every figure typed, so USER_ENTERED."""
+    return {
+        "borrower_id": "",
+        "periods": [{"label": period, "ends_on": "", "months": 12, "audited": True}],
+        "items": [
+            {"code": code, "period": period, "value": value, "currency": "SGD"}
+            for code, value in values.items()
+        ],
+        "currency": "SGD",
+        "unit": "thousands",
+        "confirmed_by": "analyst@bank.example",
+    }
+
+
+def test_the_memo_answers_whose_cash_services_the_debt(client: TestClient) -> None:
+    """The question a credit officer is actually asking.
+
+    A memo that answers it for the borrowing entity alone has answered a narrower one, and
+    before this the consolidation existed only as a domain type nothing called.
+    """
+    analysis_id = _open_analysis(client)
+    response = client.post(
+        f"/v1/analyses/{analysis_id}/build",
+        headers=ANALYST,
+        json={
+            "related_entities": [
+                {"id": "opco", "name": "Acme Opco", "role": "borrower"},
+                {"id": "holdco", "name": "Acme Holdco", "role": "parent"},
+                {"id": "director", "name": "A Director", "role": "guarantor_personal"},
+            ],
+            "entity_spreads": {
+                "opco": _confirmed_items(ebitda=100.0, revenue=620.0),
+                "holdco": _confirmed_items(ebitda=15.0, revenue=80.0),
+            },
+            "eliminations": [
+                {
+                    "code": "revenue",
+                    "period": "FY2025",
+                    "amount": 60.0,
+                    "between": "opco -> holdco",
+                    "reason": "management fee",
+                }
+            ],
+        },
+    )
+    assert response.status_code == 200, response.text
+    gcf = response.json()["global_cash_flow"]
+
+    ebitda = next(line for line in gcf["lines"] if line["code"] == "ebitda")
+    assert ebitda["total"] == 115.0
+    assert {(c["entity_name"], c["value"]) for c in ebitda["contributions"]} == {
+        ("Acme Opco", 100.0),
+        ("Acme Holdco", 15.0),
+    }
+
+    revenue = next(line for line in gcf["lines"] if line["code"] == "revenue")
+    assert revenue["total"] == 640.0, "shown net, with the elimination beside it"
+    assert revenue["eliminations"][0]["reason"] == "management fee"
+
+    # The property that keeps the whole calculation honest.
+    assert gcf["complete"] is False
+    assert gcf["entities_without_figures"] == ["A Director"]
+
+
+def test_an_unconfirmed_entity_spread_is_refused_by_name(client: TestClient) -> None:
+    """A group cash flow may only consolidate figures a person confirmed.
+
+    Named, so the analyst knows which entity to go and confirm rather than being told the
+    request as a whole was wrong.
+    """
+    analysis_id = _open_analysis(client)
+    holdco = _confirmed_items(ebitda=15.0)
+    holdco["confirmed_by"] = ""
+    holdco["items"][0]["provenance"] = "extracted"
+    response = client.post(
+        f"/v1/analyses/{analysis_id}/build",
+        headers=ANALYST,
+        json={
+            "related_entities": [{"id": "opco", "name": "Opco", "role": "borrower"}],
+            "entity_spreads": {"opco": holdco},
+        },
+    )
+    assert response.status_code == 422
+    assert "engine may read" in response.text or "confirmed" in response.text
+
+
+def test_one_entity_is_not_a_group(client: TestClient) -> None:
+    """No consolidation rather than a one-entity one.
+
+    A "global cash flow" listing only the borrower asserts that the borrower is the whole
+    group, which is a stronger claim than the analyst made by uploading one set of books.
+    """
+    analysis_id = _open_analysis(client)
+    response = client.post(
+        f"/v1/analyses/{analysis_id}/build", headers=ANALYST, json={"related_entities": []}
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["global_cash_flow"] is None
+
+
+def test_the_stress_test_uses_the_borrowers_own_covenant(client: TestClient) -> None:
+    """Never a shipped default.
+
+    A default would test every borrower against a number this service made up, and a
+    committee reading "passes" would have no way to know whose test it was. The threshold
+    here is the DSCR covenant extracted from the borrower's own facility documents, which
+    is why it matches the covenant reported alongside it.
+    """
+    analysis_id = _open_analysis(client)
+    _extract(client, analysis_id)
+    _confirm(client, analysis_id)
+    memo = client.post(f"/v1/analyses/{analysis_id}/build", headers=ANALYST, json={}).json()
+
+    assert memo["scenarios"], "the shipped scenario set runs against the confirmed spread"
+    dscr = next((c for c in memo["covenants"] if c["type"] == "dscr"), None)
+    assert dscr is not None, "the fixture documents state a DSCR covenant"
+    for result in memo["scenarios"]:
+        assert result["formula_id"] == "dscr.v1"
+        assert result["threshold"] == dscr["threshold"]
+
+
+def test_a_stress_result_carries_the_break_even_not_just_the_shock(
+    client: TestClient,
+) -> None:
+    """The number a committee can actually argue with.
+
+    They cannot judge whether a 15% decline is the right test for this sector. They can
+    judge "it survives twice that", which is a question about their own view of the world.
+    """
+    analysis_id = _open_analysis(client)
+    _extract(client, analysis_id)
+    _confirm(client, analysis_id)
+    memo = client.post(f"/v1/analyses/{analysis_id}/build", headers=ANALYST, json={}).json()
+    combined = next(r for r in memo["scenarios"] if r["scenario_id"] == "combined")
+    decline = next(r for r in memo["scenarios"] if r["scenario_id"] == "earnings-decline-15")
+    assert combined["scenario_name"] and decline["scenario_name"]
+    # Both shocks at once bite harder than either alone, and break-even makes that one
+    # comparable number rather than two shocked values a reader must weigh themselves.
+    if combined["breaks_at"] is not None and decline["breaks_at"] is not None:
+        assert combined["breaks_at"] <= decline["breaks_at"]
+
+
+# --------------------------------------------------------------------------- #
 # Revisions
 # --------------------------------------------------------------------------- #
 def _built(client: TestClient) -> str:

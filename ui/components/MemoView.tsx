@@ -6,6 +6,7 @@ import { ManifestSummary } from "./DocumentPanel";
 import { ProvenanceLegend, ProvenanceTag } from "./Provenance";
 import { RatioTable } from "./RatioTable";
 import { RiskFlagList } from "./RiskFlagList";
+import { GlobalCashFlowView, GroupRoster, ScenarioView } from "./GroupAndStress";
 
 const KIND_LABEL: Record<string, string> = {
   new_facility: "New facility",
@@ -147,6 +148,99 @@ export function MemoView({ memo }: { memo: CreditMemo }) {
       <Section title="Peer comparison">
         <PeerComparisonView comparisons={memo.peer_comparison} />
       </Section>
+
+      {memo.policy_exceptions.length ? (
+        <Section title="Policy exceptions">
+          <p className="mb-2 text-xs text-ink-500">
+            Measured against the bank&apos;s own uploaded limits
+            {memo.policy_version ? ` (${memo.policy_version})` : ""}. Arithmetic, not
+            judgement: the waiver is somebody&apos;s to grant, not this service&apos;s.
+          </p>
+          <ul className="space-y-1 text-sm">
+            {memo.policy_exceptions.map((e) => (
+              <li key={`${e.rule_id}-${e.period}`} className="rounded border border-amber-300 bg-amber-50 p-2">
+                <span className="font-medium text-amber-900">{e.rule_id}</span>{" "}
+                <span className="text-xs uppercase tracking-wide text-amber-700">{e.severity}</span>
+                <span className="block text-ink-800">{e.description}</span>
+                <span className="block font-mono text-xs text-ink-600">
+                  measured {e.measured ?? "—"} against {e.operator} {e.limit ?? "—"}
+                  {e.period ? ` for ${e.period}` : ""}
+                </span>
+                {e.waiver_authority ? (
+                  <span className="block text-xs text-ink-500">
+                    Waiver authority: {e.waiver_authority}
+                  </span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </Section>
+      ) : null}
+
+      {memo.rating ? (
+        <Section title="Proposed risk rating">
+          <p className="text-sm text-ink-800">
+            Grade <span className="font-mono font-semibold">{memo.rating.obligor_grade}</span>{" "}
+            (score {memo.rating.score.toFixed(2)}
+            {memo.rating.scorecard_version ? `, ${memo.rating.scorecard_version}` : ""}).
+          </p>
+          <p className="mb-2 text-xs text-ink-500">
+            A proposal from the bank&apos;s own scorecard. It is never the grade of record:
+            assigning one is a person&apos;s decision.
+          </p>
+          {memo.rating.drivers.length ? (
+            <ul className="space-y-0.5 text-xs text-ink-700">
+              {memo.rating.drivers.map((d) => (
+                <li key={d.name}>
+                  {d.name}: {d.measured ?? "—"} → {d.band} ({d.points} pts)
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </Section>
+      ) : null}
+
+      {memo.tie_out.length ? (
+        <Section title="Reconciliation findings">
+          <p className="mb-2 text-xs text-ink-500">
+            The checks a credit file is expected to survive. Each one is arithmetic or a
+            substring search, and each is something an analyst would otherwise do by hand.
+          </p>
+          <ul className="space-y-1 text-sm">
+            {memo.tie_out.map((f, i) => (
+              <li key={`${f.check}-${i}`} className="rounded border border-ink-200 bg-white p-2">
+                <span className="text-xs uppercase tracking-wide text-ink-500">
+                  {f.check.replace(/_/g, " ")} · {f.severity}
+                </span>
+                <span className="block text-ink-800">{f.detail}</span>
+                {f.expected == null && f.actual == null ? null : (
+                  <span className="block font-mono text-xs text-ink-600">
+                    expected {f.expected ?? "—"}, found {f.actual ?? "—"}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </Section>
+      ) : null}
+
+      {memo.related_entities.length || memo.guarantors.length ? (
+        <Section title="The group">
+          <GroupRoster memo={memo} />
+        </Section>
+      ) : null}
+
+      {memo.global_cash_flow ? (
+        <Section title="Global cash flow">
+          <GlobalCashFlowView gcf={memo.global_cash_flow} />
+        </Section>
+      ) : null}
+
+      {memo.scenarios.length ? (
+        <Section title="Stress">
+          <ScenarioView scenarios={memo.scenarios} />
+        </Section>
+      ) : null}
 
       <Section title="Recommendation rationale">
         <p className="text-sm leading-relaxed text-ink-800">
