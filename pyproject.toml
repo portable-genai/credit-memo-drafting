@@ -50,9 +50,9 @@ gcp = [
   "google-adk==2.8.0",
   "google-genai>=1.21",
   "google-cloud-aiplatform[agent_engines,adk,evaluation]>=1.158.0",
-  "google-cloud-documentai>=2.31",
-  "google-cloud-discoveryengine>=0.13",
   "google-cloud-bigquery>=3.25",
+  # Object custody for the analysis bundle (adapters/gcp/analysis_bundle.py).
+  "google-cloud-storage>=2.18",
   "google-cloud-dlp>=3.20",
   "google-cloud-logging>=3.11",
   # GuardrailPort on the gcp profile (model_armor_guardrail.py).
@@ -61,6 +61,17 @@ gcp = [
   "opentelemetry-exporter-gcp-trace>=1.7",
   "a2a-sdk[http-server]>=1.1",
   "mcp>=2.1",
+  # A managed deployment produces every format the ExportPort advertises.
+  "reportlab>=4.2",
+]
+# PDF rendering for the committee pack. Opt-in because a deployment that never exports a
+# PDF should not carry the dependency, and because the DOCX and HTML paths need nothing at
+# all: a .docx is a ZIP of XML that the standard library writes (adapters/local/export.py).
+# The gcp adapter adds PDF via reportlab, rendered IN PROCESS and therefore in region --
+# the Google Docs export path leaves the deploy region and caps at 10 MB, which for a
+# document holding a borrower's financial position is the whole question.
+export = [
+  "reportlab>=4.2",
 ]
 # Demo tooling is a PINNED, opt-in extra (F2): the served-page walkthrough and the
 # headless-browser anti-rot test need it, while the day-one offline gate (D3) must stay

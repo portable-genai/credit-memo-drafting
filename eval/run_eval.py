@@ -116,6 +116,10 @@ THRESHOLDS: dict[str, float] = {
     # Both directions. A tie-out that cries wolf on a clean file gets switched off, and
     # one that never fires was never a control.
     "tie_out_precision": 0.95,
+    # Exactly 1.0. The revision chain is the answer to "which version did the committee
+    # read", and a chain that verifies 99% of the time answers it 99% of the time, which
+    # is the same as not answering it.
+    "revision_integrity": 1.0,
 }
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -692,6 +696,41 @@ def score_spread_accuracy(memo: CreditMemo, expected: dict) -> float:
     return round(hits / total, 4) if total else 1.0
 
 
+def score_revision_integrity(memo: CreditMemo, actor: str = "eval-bot") -> float:
+    """Does a memo's revision chain survive being built, extended and verified?
+
+    Not a property of the memo so much as of the mechanism that records it. The chain is
+    what answers "which version did the committee read" months later, and it is worth
+    nothing unless tampering actually breaks it — so this builds a two-revision chain,
+    verifies it holds, then alters the first revision's content and verifies it does NOT.
+    A chain that verifies either way is decoration.
+    """
+    from credit_memo.domain.revision_service import RevisionService
+
+    service = RevisionService()
+    payload = {"summary": memo.summary, "recommendation_rationale": memo.recommendation_rationale}
+    first = service.first(payload, actor=actor)
+    amended_payload = {**payload, "summary": f"{memo.summary} Reviewed."}
+    second = service.amend(
+        first,
+        amended_payload,
+        actor=actor,
+        edits=service.edits_between(payload, amended_payload, actor=actor),
+    )
+
+    intact, _ = service.verify((first, second))
+    if not intact:
+        return 0.0
+
+    # Tamper with what revision 1 said, keeping its recorded digest. Every digest after
+    # it must stop reconciling.
+    from dataclasses import replace
+
+    tampered = replace(first, memo_json={**payload, "summary": "Something else entirely."})
+    still_intact, _ = service.verify((tampered, second))
+    return 0.0 if still_intact else 1.0
+
+
 def score_tie_out_precision(memo: CreditMemo, expected_findings: tuple[str, ...]) -> float:
     """Did the reconciliations fire on the cases that should fail, and stay quiet elsewhere?
 
@@ -832,6 +871,7 @@ def run_offline(
         agg["tie_out_precision"].scores.append(
             score_tie_out_precision(memo, example.expected_tie_out)
         )
+        agg["revision_integrity"].scores.append(score_revision_integrity(memo))
 
     results = tuple(
         EvalMetricResult(
@@ -848,6 +888,7 @@ def run_offline(
             "ratio_reproducibility",
             "spread_accuracy",
             "tie_out_precision",
+            "revision_integrity",
         )
     )
     return EvalReport(dataset=str(dataset), results=results, n_examples=len(examples))

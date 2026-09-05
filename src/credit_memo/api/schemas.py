@@ -12,6 +12,8 @@ domain models, the ports, and the orchestration services, never on a concrete ad
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 from ..domain import models as m
@@ -611,6 +613,141 @@ class CreditMemoResponse(BaseModel):
                 else None
             ),
         )
+
+
+def to_domain_memo(response: CreditMemoResponse) -> m.CreditMemo:
+    """Rebuild the domain memo from its wire form.
+
+    The honest inverse of ``from_domain``, needed wherever a stored memo has to become a
+    domain object again: exporting the pack a committee reviewed, diffing a renewal
+    against it, replaying it. A partial reconstruction would be worse than none — an
+    exporter silently missing the policy exceptions produces a pack that reads as though
+    there were none.
+
+    Enums are re-parsed rather than trusted, so a stored memo from a version that has
+    since renamed a value fails here rather than three layers down.
+    """
+    return m.CreditMemo(
+        borrower=response.borrower.to_domain(),
+        summary=response.summary,
+        financial_metrics=tuple(
+            m.FinancialMetric(name=x.name, value=x.value, period=x.period, currency=x.currency)
+            for x in response.financial_metrics
+        ),
+        covenants=tuple(_covenant_to_domain(c) for c in response.covenants),
+        risk_flags=tuple(
+            m.RiskFlag(
+                category=m.RiskCategory(f.category),
+                severity=m.Severity(f.severity),
+                detail=f.detail,
+                citations=tuple(_citation_to_domain(c) for c in f.citations),
+            )
+            for f in response.risk_flags
+        ),
+        peer_comparison=tuple(
+            m.PeerComparison(
+                metric=p.metric,
+                borrower_value=p.borrower_value,
+                peer_median=p.peer_median,
+                percentile=p.percentile,
+                peers=tuple(
+                    m.PeerMetric(peer_name=q.peer_name, metric=q.metric, value=q.value)
+                    for q in p.peers
+                ),
+            )
+            for p in response.peer_comparison
+        ),
+        recommendation_rationale=response.recommendation_rationale,
+        citations=tuple(_citation_to_domain(c) for c in response.citations),
+        requires_human_review=response.requires_human_review,
+        generated_at=(
+            datetime.fromisoformat(response.generated_at) if response.generated_at else m.utcnow()
+        ),
+        request=response.request.to_domain() if response.request else None,
+        spreads=tuple(x.to_domain() for x in response.spreads),
+        ratios=tuple(_ratio_to_domain(r) for r in response.ratios),
+        confidence=response.confidence,
+        caveats=tuple(response.caveats),
+        questions_for_client=tuple(response.questions_for_client),
+        manifest=_manifest_to_domain(response.manifest) if response.manifest else None,
+    )
+
+
+def _citation_to_domain(model: CitationModel) -> m.Citation:
+    return m.Citation(
+        source_id=model.source_id,
+        source_type=m.SourceType(model.source_type),
+        title=model.title,
+        url=model.url,
+        page=model.page,
+        snippet=model.snippet,
+        score=model.score,
+    )
+
+
+def _ratio_to_domain(model: RatioModel) -> m.Ratio:
+    return m.Ratio(
+        formula_id=model.formula_id,
+        name=model.name,
+        period=model.period,
+        value=model.value,
+        unit=model.unit,
+        higher_is_better=model.higher_is_better,
+        inputs=tuple(
+            m.RatioInput(
+                code=m.LineItemCode(i.code),
+                period=i.period,
+                value=i.value,
+                coefficient=i.coefficient,
+                side=i.side,
+            )
+            for i in model.inputs
+        ),
+        definition=model.definition,
+        reason_missing=model.reason_missing,
+    )
+
+
+def _covenant_to_domain(model: CovenantModel) -> m.Covenant:
+    return m.Covenant(
+        type=m.CovenantType(model.type),
+        description=model.description,
+        threshold=model.threshold,
+        operator=m.CovenantOperator(model.operator),
+        current_value=model.current_value,
+        status=m.CovenantStatus(model.status),
+        period=model.period,
+        citations=tuple(_citation_to_domain(c) for c in model.citations),
+        measured=_ratio_to_domain(model.measured) if model.measured else None,
+        reported_value=model.reported_value,
+        value_provenance=m.Provenance(model.value_provenance),
+    )
+
+
+def _manifest_to_domain(model: AnalysisManifestModel) -> m.AnalysisManifest:
+    return m.AnalysisManifest(
+        analysis_id=model.analysis_id,
+        borrower_id=model.borrower_id,
+        documents=tuple(
+            m.StoredDocument(
+                id=d.id,
+                filename=d.filename,
+                doc_type=m.DocType(d.doc_type),
+                mime_type=d.mime_type,
+                size_bytes=d.size_bytes,
+                sha256=d.sha256,
+                pages=d.pages,
+                declared_as_of=d.declared_as_of,
+                uploaded_at=datetime.fromisoformat(d.uploaded_at) if d.uploaded_at else m.utcnow(),
+                uploaded_by=d.uploaded_by,
+                third_party_sourced=d.third_party_sourced,
+            )
+            for d in model.documents
+        ),
+        created_at=datetime.fromisoformat(model.created_at) if model.created_at else m.utcnow(),
+        expires_at=datetime.fromisoformat(model.expires_at) if model.expires_at else None,
+        created_by=model.created_by,
+    )
 
 
 class CovenantListResponse(BaseModel):

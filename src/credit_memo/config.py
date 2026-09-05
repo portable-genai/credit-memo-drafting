@@ -23,6 +23,7 @@ import yaml
 from .envread import (
     ConfiguredEmptyError,
     EnvSetting,
+    boolean_setting,
     optional_setting,
     read_env_setting,
     setting_or_default,
@@ -510,6 +511,10 @@ class Container:
         return self._bind("analysis_bundle")
 
     @cached_property
+    def export(self) -> Any:
+        return self._bind("export")
+
+    @cached_property
     def policy_pack(self) -> Any:
         return self._bind("policy_pack")
 
@@ -567,6 +572,21 @@ class Container:
 
     @cached_property
     def review_router(self) -> Any:
+        """The maker-checker console, when this deployment routes to one.
+
+        None unless ``CREDIT_MEMO_REVIEW_ENABLED`` is set. Routing every memo to a
+        console that persists cases indefinitely is the wrong default for a service whose
+        own evidence is deleted after fifteen days, so the escalation stays where it can
+        be acted on: the memo is shown with its provenance and sources the moment it is
+        built, and a second pair of eyes is a control the deployment switches on rather
+        than one it inherits.
+
+        What does NOT become optional: every memo still carries requires_human_review, and
+        the standing "decision support, not a credit decision" sentence is unconditional.
+        This is about where an escalation is SENT, not about whether one is needed.
+        """
+        if not boolean_setting("CREDIT_MEMO_REVIEW_ENABLED"):
+            return None
         return self._bind("review_router")
 
 
