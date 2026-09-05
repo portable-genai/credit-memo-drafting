@@ -29,6 +29,46 @@ def utcnow() -> datetime:
 
 
 # --------------------------------------------------------------------------- #
+# Provenance — where a value came from, which decides what may consume it
+# --------------------------------------------------------------------------- #
+class Provenance(StrEnum):
+    """How a value in the artifact came to exist.
+
+    This is the type-level half of the deterministic-engine boundary. A reader can see
+    on the page whether a figure was calculated, read off a document, typed by the
+    analyst, written by the model or fetched from the web; and a *service* can refuse
+    the ones it must not consume. The rules the domain enforces by construction:
+
+    * ``COMPUTED`` is the only provenance a :class:`~credit_memo.domain.models.Ratio`
+      may carry, so a ratio is never something a model asserted.
+    * ``USER_ENTERED`` and ``CONFIRMED`` are the only provenances a line item in a
+      :class:`~credit_memo.domain.models.FinancialSpread` may carry, so an engine
+      never computes over an unreviewed extraction.
+    * ``MODEL_DRAFTED``, ``WEB_GROUNDED`` and ``VENDOR`` may never occupy a slot an
+      engine reads. They label prose and context only.
+
+    Precedence where two sources offer the same slot:
+    ``USER_ENTERED`` > ``COMPUTED`` > ``CONFIRMED`` > ``EXTRACTED``. The analyst's own
+    figure wins over the machine's, which is the point of letting them type one.
+    """
+
+    USER_ENTERED = "user_entered"  # a person typed or uploaded it; canonical
+    EXTRACTED = "extracted"  # read off a document, not yet reviewed by a person
+    CONFIRMED = "confirmed"  # an extraction a person has reviewed and accepted
+    COMPUTED = "computed"  # a deterministic engine calculated it from the above
+    MODEL_DRAFTED = "model_drafted"  # prose an LLM wrote
+    WEB_GROUNDED = "web_grounded"  # retrieved from the public web; context only
+    VENDOR = "vendor"  # supplied pre-computed by a data vendor; context only
+
+
+#: The provenances a deterministic engine is allowed to read as an operand. An
+#: extraction no one has confirmed is deliberately absent: see ``FinancialSpread``.
+ENGINE_READABLE: frozenset[Provenance] = frozenset(
+    {Provenance.USER_ENTERED, Provenance.CONFIRMED, Provenance.COMPUTED}
+)
+
+
+# --------------------------------------------------------------------------- #
 # Retrieval & citation
 # --------------------------------------------------------------------------- #
 class SourceType(StrEnum):

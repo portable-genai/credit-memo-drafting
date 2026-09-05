@@ -58,19 +58,43 @@ MEMO_SYSTEM = (
     "- The recommendation rationale must weigh the financial analysis, covenant status "
     "and risk flags; it must NOT state a final approve/decline decision.\n"
     "- Normalise the key financial metrics (revenue, ebitda, leverage, dscr) you can "
-    "support from the evidence, each with a period and currency.\n\n"
+    "support from the evidence, each with a period and currency.\n"
+    "- Where a COMPUTED FIGURES block is present, those numbers were calculated by the "
+    "bank's own ratio engine from a spread a person confirmed. They are authoritative. "
+    "Cite them as given and never restate a different value for the same ratio and "
+    "period; if the evidence appears to contradict one, say so in the caveat rather "
+    "than substituting your own arithmetic.\n"
+    "- List the questions the analyst should put to the borrower: the specific gaps, "
+    "inconsistencies or missing documents that stop this memo being conclusive. Ask for "
+    "a document or a figure, not for reassurance. Return an empty list rather than "
+    "inventing a question when the evidence leaves nothing material open.\n\n"
     "Return your result strictly as JSON matching the provided response schema with "
     "fields: summary (string), financial_metrics (array of {{name, value, period, "
     "currency, used_source_ids}}), recommendation_rationale (string), confidence "
     "(number 0.0-1.0 reflecting how fully the evidence supports the memo), "
+    "questions_for_client (array of strings), "
     "used_source_ids (array of cited source_id strings)."
 )
 
 MEMO_USER = (
     "BORROWER:\n{borrower}\n\n"
+    "{request}"
+    "{computed}"
     "EVIDENCE:\n{passages}\n\n"
     "Draft the credit memo for this borrower using only the EVIDENCE above. List in "
     "used_source_ids every source_id you cited."
+)
+
+#: The ask, rendered into the prompt when the caller supplied one. A memo drafted
+#: without it describes a borrower; with it, it assesses a credit.
+REQUEST_BLOCK = "CREDIT REQUEST:\n{request}\n\n"
+
+#: Engine output handed to the drafter as authoritative fact. It is deliberately a
+#: separate block from EVIDENCE: evidence is what a document says, this is what the
+#: bank calculated, and the model may cite it but never recompute it.
+COMPUTED_BLOCK = (
+    "COMPUTED FIGURES (calculated by the bank's ratio engine from the confirmed "
+    "spread; authoritative, do not restate differently):\n{computed}\n\n"
 )
 
 # --------------------------------------------------------------------------- #

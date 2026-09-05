@@ -33,6 +33,21 @@ export function CitationCard({ citation }: { citation: Citation }) {
           </a>
         </>
       ) : null}
+      {citation.score != null ? (
+        <span
+          className="ml-1 font-mono text-[10px] tabular-nums text-ink-400"
+          title="Retrieval score: how strongly this passage matched the query"
+        >
+          {citation.score.toFixed(2)}
+        </span>
+      ) : null}
+      {/* The snippet is the evidence itself. It was carried on every citation and never
+          shown, so a reader had a reference with nothing to read. */}
+      {citation.snippet ? (
+        <p className="mt-1 border-l-2 border-ink-200 pl-2 text-[11px] leading-snug text-ink-600">
+          {citation.snippet}
+        </p>
+      ) : null}
     </div>
   );
 }

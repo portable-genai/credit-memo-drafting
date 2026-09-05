@@ -72,6 +72,201 @@ class DocumentModel(BaseModel):
         )
 
 
+class FacilityModel(BaseModel):
+    id: str = Field(..., min_length=1)
+    facility_type: str = "term_loan"
+    amount: float = 0.0
+    currency: str = "SGD"
+    tenor_months: int = 0
+    purpose: str = ""
+    repayment_source: str = ""
+    security: str = ""
+    #: Recorded from the relationship manager and never assessed: pricing is out of
+    #: scope (SPEC §1), so no service reads this.
+    pricing_note: str = ""
+
+    def to_domain(self) -> m.Facility:
+        return m.Facility(
+            id=self.id,
+            facility_type=m.FacilityType(self.facility_type),
+            amount=self.amount,
+            currency=self.currency,
+            tenor_months=self.tenor_months,
+            purpose=self.purpose,
+            repayment_source=self.repayment_source,
+            security=self.security,
+            pricing_note=self.pricing_note,
+        )
+
+    @classmethod
+    def from_domain(cls, facility: m.Facility) -> FacilityModel:
+        return cls(
+            id=facility.id,
+            facility_type=facility.facility_type.value,
+            amount=facility.amount,
+            currency=facility.currency,
+            tenor_months=facility.tenor_months,
+            purpose=facility.purpose,
+            repayment_source=facility.repayment_source,
+            security=facility.security,
+            pricing_note=facility.pricing_note,
+        )
+
+
+class FundingLineModel(BaseModel):
+    label: str
+    amount: float
+    currency: str = "SGD"
+
+    def to_domain(self) -> m.FundingLine:
+        return m.FundingLine(label=self.label, amount=self.amount, currency=self.currency)
+
+    @classmethod
+    def from_domain(cls, line: m.FundingLine) -> FundingLineModel:
+        return cls(label=line.label, amount=line.amount, currency=line.currency)
+
+
+class SourcesAndUsesModel(BaseModel):
+    sources: list[FundingLineModel] = Field(default_factory=list)
+    uses: list[FundingLineModel] = Field(default_factory=list)
+    total_sources: float = 0.0
+    total_uses: float = 0.0
+    imbalance: float = 0.0
+
+    def to_domain(self) -> m.SourcesAndUses:
+        return m.SourcesAndUses(
+            sources=tuple(x.to_domain() for x in self.sources),
+            uses=tuple(x.to_domain() for x in self.uses),
+        )
+
+    @classmethod
+    def from_domain(cls, table: m.SourcesAndUses) -> SourcesAndUsesModel:
+        return cls(
+            sources=[FundingLineModel.from_domain(x) for x in table.sources],
+            uses=[FundingLineModel.from_domain(x) for x in table.uses],
+            total_sources=table.total_sources,
+            total_uses=table.total_uses,
+            imbalance=table.imbalance,
+        )
+
+
+class CreditRequestModel(BaseModel):
+    """The ask the memo answers: kind of memo, loan type, and the facilities."""
+
+    kind: str = "new_facility"
+    loan_type: str = "ci_term"
+    facilities: list[FacilityModel] = Field(default_factory=list)
+    sources_and_uses: SourcesAndUsesModel = Field(default_factory=SourcesAndUsesModel)
+    purpose: str = ""
+    notes: str = ""
+    total_amount: float = 0.0
+
+    def to_domain(self) -> m.CreditRequest:
+        return m.CreditRequest(
+            kind=m.MemoKind(self.kind),
+            loan_type=m.LoanType(self.loan_type),
+            facilities=tuple(f.to_domain() for f in self.facilities),
+            sources_and_uses=self.sources_and_uses.to_domain(),
+            purpose=self.purpose,
+            notes=self.notes,
+        )
+
+    @classmethod
+    def from_domain(cls, request: m.CreditRequest) -> CreditRequestModel:
+        return cls(
+            kind=request.kind.value,
+            loan_type=request.loan_type.value,
+            facilities=[FacilityModel.from_domain(f) for f in request.facilities],
+            sources_and_uses=SourcesAndUsesModel.from_domain(request.sources_and_uses),
+            purpose=request.purpose,
+            notes=request.notes,
+            total_amount=request.total_amount,
+        )
+
+
+class PeriodModel(BaseModel):
+    label: str = Field(..., min_length=1)
+    ends_on: str = ""
+    months: int = 12
+    audited: bool = False
+
+    def to_domain(self) -> m.Period:
+        return m.Period(
+            label=self.label, ends_on=self.ends_on, months=self.months, audited=self.audited
+        )
+
+    @classmethod
+    def from_domain(cls, period: m.Period) -> PeriodModel:
+        return cls(
+            label=period.label,
+            ends_on=period.ends_on,
+            months=period.months,
+            audited=period.audited,
+        )
+
+
+class LineItemModel(BaseModel):
+    code: str
+    period: str
+    value: float
+    currency: str = "SGD"
+    #: Inbound spreads are what the analyst typed, so the default is ``user_entered``.
+    #: The domain refuses anything an engine may not read, and that refusal is a 422
+    #: rather than something the API silently upgrades.
+    provenance: str = "user_entered"
+    citations: list[CitationModel] = Field(default_factory=list)
+
+    def to_domain(self) -> m.LineItem:
+        return m.LineItem(
+            code=m.LineItemCode(self.code),
+            period=self.period,
+            value=self.value,
+            currency=self.currency,
+            provenance=m.Provenance(self.provenance),
+        )
+
+    @classmethod
+    def from_domain(cls, item: m.LineItem) -> LineItemModel:
+        return cls(
+            code=item.code.value,
+            period=item.period,
+            value=item.value,
+            currency=item.currency,
+            provenance=item.provenance.value,
+            citations=[CitationModel.from_domain(c) for c in item.citations],
+        )
+
+
+class FinancialSpreadModel(BaseModel):
+    borrower_id: str = ""
+    periods: list[PeriodModel] = Field(default_factory=list)
+    items: list[LineItemModel] = Field(default_factory=list)
+    currency: str = "SGD"
+    unit: str = "thousands"
+    confirmed_by: str = ""
+
+    def to_domain(self, borrower_id: str = "") -> m.FinancialSpread:
+        return m.FinancialSpread(
+            borrower_id=self.borrower_id or borrower_id,
+            periods=tuple(p.to_domain() for p in self.periods),
+            items=tuple(i.to_domain() for i in self.items),
+            currency=self.currency,
+            unit=self.unit,
+            confirmed_by=self.confirmed_by,
+        )
+
+    @classmethod
+    def from_domain(cls, spread: m.FinancialSpread) -> FinancialSpreadModel:
+        return cls(
+            borrower_id=spread.borrower_id,
+            periods=[PeriodModel.from_domain(p) for p in spread.periods],
+            items=[LineItemModel.from_domain(i) for i in spread.items],
+            currency=spread.currency,
+            unit=spread.unit,
+            confirmed_by=spread.confirmed_by,
+        )
+
+
 class CreditMemoRequest(BaseModel):
     """Inbound request to build a full credit memo.
 
@@ -81,11 +276,18 @@ class CreditMemoRequest(BaseModel):
 
     borrower: BorrowerModel
     documents: list[DocumentModel] = Field(default_factory=list)
+    #: The ask, and the confirmed figures the engines compute from. Optional so every
+    #: existing caller keeps working; supplying them is what turns a commentary on a
+    #: borrower into an assessment of a credit.
+    request: CreditRequestModel | None = None
+    spreads: list[FinancialSpreadModel] = Field(default_factory=list)
 
     def to_memo_input(self) -> m.MemoInput:
         return m.MemoInput(
             borrower=self.borrower.to_domain(),
             documents=tuple(d.to_domain() for d in self.documents),
+            request=self.request.to_domain() if self.request is not None else None,
+            spreads=tuple(s.to_domain(self.borrower.id) for s in self.spreads),
         )
 
 
@@ -148,6 +350,54 @@ class FinancialMetricModel(BaseModel):
         )
 
 
+class RatioInputModel(BaseModel):
+    code: str
+    period: str
+    value: float
+    coefficient: float = 1.0
+    side: str = "numerator"
+
+    @classmethod
+    def from_domain(cls, item: m.RatioInput) -> RatioInputModel:
+        return cls(
+            code=item.code.value,
+            period=item.period,
+            value=item.value,
+            coefficient=item.coefficient,
+            side=item.side,
+        )
+
+
+class RatioModel(BaseModel):
+    """A figure the engine calculated, with the formula and operands that produced it."""
+
+    formula_id: str
+    name: str
+    period: str
+    value: float | None = None
+    unit: str = "x"
+    higher_is_better: bool = True
+    inputs: list[RatioInputModel] = Field(default_factory=list)
+    definition: str = ""
+    reason_missing: str = ""
+    provenance: str = "computed"
+
+    @classmethod
+    def from_domain(cls, ratio: m.Ratio) -> RatioModel:
+        return cls(
+            formula_id=ratio.formula_id,
+            name=ratio.name,
+            period=ratio.period,
+            value=ratio.value,
+            unit=ratio.unit,
+            higher_is_better=ratio.higher_is_better,
+            inputs=[RatioInputModel.from_domain(i) for i in ratio.inputs],
+            definition=ratio.definition,
+            reason_missing=ratio.reason_missing,
+            provenance=ratio.provenance.value,
+        )
+
+
 class CovenantModel(BaseModel):
     type: str
     description: str
@@ -157,6 +407,12 @@ class CovenantModel(BaseModel):
     status: str
     period: str = ""
     citations: list[CitationModel] = Field(default_factory=list)
+    #: The engine's own measurement, where the confirmed spread supported one. When it
+    #: is set, ``current_value`` is its value and the test ran on arithmetic rather than
+    #: on what a model read off a page.
+    measured: RatioModel | None = None
+    reported_value: float | None = None
+    value_provenance: str = "extracted"
 
     @classmethod
     def from_domain(cls, covenant: m.Covenant) -> CovenantModel:
@@ -169,6 +425,11 @@ class CovenantModel(BaseModel):
             status=covenant.status.value,
             period=covenant.period,
             citations=[CitationModel.from_domain(c) for c in covenant.citations],
+            measured=(
+                RatioModel.from_domain(covenant.measured) if covenant.measured is not None else None
+            ),
+            reported_value=covenant.reported_value,
+            value_provenance=covenant.value_provenance.value,
         )
 
 
@@ -231,6 +492,14 @@ class CreditMemoResponse(BaseModel):
     citations: list[CitationModel] = Field(default_factory=list)
     requires_human_review: bool = True
     generated_at: str = ""
+    request: CreditRequestModel | None = None
+    spreads: list[FinancialSpreadModel] = Field(default_factory=list)
+    ratios: list[RatioModel] = Field(default_factory=list)
+    #: How fully the drafter believed the evidence supported the memo, and what it said
+    #: it could not support. Both were computed and discarded before Wave 0.
+    confidence: float = 0.0
+    caveats: list[str] = Field(default_factory=list)
+    questions_for_client: list[str] = Field(default_factory=list)
 
     @classmethod
     def from_domain(cls, memo: m.CreditMemo) -> CreditMemoResponse:
@@ -250,6 +519,14 @@ class CreditMemoResponse(BaseModel):
             citations=[CitationModel.from_domain(c) for c in memo.citations],
             requires_human_review=memo.requires_human_review,
             generated_at=memo.generated_at.isoformat(),
+            request=(
+                CreditRequestModel.from_domain(memo.request) if memo.request is not None else None
+            ),
+            spreads=[FinancialSpreadModel.from_domain(s) for s in memo.spreads],
+            ratios=[RatioModel.from_domain(r) for r in memo.ratios],
+            confidence=memo.confidence,
+            caveats=list(memo.caveats),
+            questions_for_client=list(memo.questions_for_client),
         )
 
 

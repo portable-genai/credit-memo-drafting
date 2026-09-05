@@ -13,6 +13,8 @@ import type {
   Borrower,
   Covenant,
   CreditMemo,
+  CreditRequest,
+  FinancialSpread,
   HealthStatus,
   RiskFlag,
 } from "./types";
@@ -116,6 +118,9 @@ async function parseJsonOrThrow(res: Response): Promise<unknown> {
 export interface MemoRequestBody {
   borrower: Partial<Borrower> & { id: string; name: string };
   documents?: { id: string; doc_type?: string; uri?: string; title?: string }[];
+  /** The ask the memo answers, and the spread its engines compute from. */
+  request?: CreditRequest;
+  spreads?: FinancialSpread[];
 }
 
 export async function buildCreditMemo(
