@@ -79,12 +79,17 @@ from credit_memo.domain.models import (
     EvalMetricResult,
     EvalReport,
     Filing,
+    FinancialSpread,
     GuardrailVerdict,
     IngestResult,
+    LineItem,
+    LineItemCode,
     LlmRequest,
     LlmResponse,
     MemoInput,
     PeerMetric,
+    Period,
+    Provenance,
     RetrievalQuery,
     RetrievedPassage,
     SourceType,
@@ -97,6 +102,14 @@ THRESHOLDS: dict[str, float] = {
     "covenant_accuracy": 0.90,
     "citation_accuracy": 0.90,
     "pii_safety": 0.99,
+    # Exactly 1.0, not 0.99. A ratio engine that reproduces 99% of its own numbers is
+    # not a ratio engine, and there is no sampling here to explain a miss: the same
+    # spread and the same catalogue version must give the same figure or the arithmetic
+    # has changed under a memo somebody already signed. Note what this metric does NOT
+    # prove: that the figure is RIGHT. It proves it is stable and that it came from the
+    # named formula. Correctness of the operands arrives with extraction receipts in
+    # Wave 2 (spread_accuracy).
+    "ratio_reproducibility": 1.0,
 }
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -154,6 +167,10 @@ class GoldenExample:
     expected_covenants: tuple[dict, ...]  # {type, threshold, operator, current_value, status}
     expected_risk_categories: tuple[str, ...]
     pii_in_inputs: bool = False
+    #: The confirmed spread the engines compute from: {"periods": [...], "items": [...]}.
+    spread: dict = field(default_factory=dict)
+    #: {formula_id: {period: expected value}} — what the catalogue must reproduce.
+    expected_ratios: dict = field(default_factory=dict)
 
 
 def load_golden(path: Path) -> list[GoldenExample]:
@@ -174,6 +191,8 @@ def load_golden(path: Path) -> list[GoldenExample]:
                 jurisdiction=str(obj.get("jurisdiction", "")),
                 documents=tuple(obj.get("documents", []) or ()),
                 evidence=tuple(obj.get("evidence", []) or ()),
+                spread=dict(obj.get("spread", {}) or {}),
+                expected_ratios=dict(obj.get("expected_ratios", {}) or {}),
                 expected_metrics=dict(obj.get("expected_metrics", {}) or {}),
                 expected_covenants=tuple(obj.get("expected_covenants", []) or ()),
                 expected_risk_categories=tuple(obj.get("expected_risk_categories", []) or ()),
@@ -494,7 +513,48 @@ def _memo_input(example: GoldenExample) -> MemoInput:
         Filing(id=f"{example.id}-{d}", acl_tags=(f"borrower:{example.id}",))
         for d in example.documents
     )
-    return MemoInput(borrower=borrower, documents=documents)
+    return MemoInput(borrower=borrower, documents=documents, spreads=_spreads(example, borrower.id))
+
+
+def _spreads(example: GoldenExample, borrower_id: str) -> tuple[FinancialSpread, ...]:
+    """The golden case's confirmed spread, as the analyst would have typed it.
+
+    Absent for a case that only exercises prose, which is deliberate: those cases then
+    prove the pipeline still builds a memo with no figures to compute from, and their
+    covenants fall back to the extracted value.
+    """
+    raw = example.spread
+    if not raw:
+        return ()
+    periods = tuple(
+        Period(
+            label=str(p["label"]),
+            ends_on=str(p.get("ends_on", "")),
+            months=int(p.get("months", 12)),
+            audited=bool(p.get("audited", False)),
+        )
+        for p in raw.get("periods", [])
+    )
+    items = tuple(
+        LineItem(
+            code=LineItemCode(str(i["code"])),
+            period=str(i["period"]),
+            value=float(i["value"]),
+            currency=str(i.get("currency", "USD")),
+            provenance=Provenance.USER_ENTERED,
+        )
+        for i in raw.get("items", [])
+    )
+    return (
+        FinancialSpread(
+            borrower_id=borrower_id,
+            periods=periods,
+            items=items,
+            currency=str(raw.get("currency", "USD")),
+            unit=str(raw.get("unit", "millions")),
+            confirmed_by="eval-bot",
+        ),
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -541,6 +601,34 @@ def score_covenant_accuracy(memo: CreditMemo, expected: tuple[dict, ...]) -> flo
 
 def _status_from(value: str) -> CovenantStatus:
     return {s.value: s for s in CovenantStatus}.get(value, CovenantStatus.AT_RISK)
+
+
+def score_ratio_reproducibility(memo: CreditMemo, expected: dict) -> float:
+    """Every expected ratio must be present, computed, and equal to the stated figure.
+
+    Three separate ways to score zero, because each is a different failure:
+
+    * the ratio is absent from the memo — the catalogue no longer computes it;
+    * it is present but has no value — the spread stopped supporting it;
+    * it has a value and the value moved — the formula changed under a signed memo.
+
+    A case with no ``expected_ratios`` scores 1.0 rather than being skipped: it asserts
+    that a memo built without a spread still produces one, and does not drag the mean.
+    """
+    if not expected:
+        return 1.0
+    by_key = {(r.formula_id, r.period): r for r in memo.ratios}
+    hits = 0
+    total = 0
+    for formula_id, per_period in expected.items():
+        for period, want in per_period.items():
+            total += 1
+            got = by_key.get((formula_id, period))
+            if got is None or got.value is None:
+                continue
+            if abs(got.value - float(want)) <= 1e-9:
+                hits += 1
+    return hits / total if total else 1.0
 
 
 def score_pii_safety(memo: CreditMemo, example: GoldenExample, audit_events: list[object]) -> float:
@@ -607,6 +695,9 @@ def run_offline(dataset: Path, thresholds: dict[str, float]) -> EvalReport:
             score_covenant_accuracy(memo, example.expected_covenants)
         )
         agg["pii_safety"].scores.append(score_pii_safety(memo, example, adapters.audit.events))
+        agg["ratio_reproducibility"].scores.append(
+            score_ratio_reproducibility(memo, example.expected_ratios)
+        )
 
     results = tuple(
         EvalMetricResult(
@@ -615,7 +706,13 @@ def run_offline(dataset: Path, thresholds: dict[str, float]) -> EvalReport:
             threshold=thresholds.get(metric, THRESHOLDS[metric]),
             passed=round(agg[metric].mean, 4) >= thresholds.get(metric, THRESHOLDS[metric]),
         )
-        for metric in ("groundedness", "covenant_accuracy", "citation_accuracy", "pii_safety")
+        for metric in (
+            "groundedness",
+            "covenant_accuracy",
+            "citation_accuracy",
+            "pii_safety",
+            "ratio_reproducibility",
+        )
     )
     return EvalReport(dataset=str(dataset), results=results, n_examples=len(examples))
 

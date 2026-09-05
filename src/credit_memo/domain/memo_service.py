@@ -12,8 +12,11 @@ Pipeline (each step in ``tracer.span``; audited at the end):
       -> guardrail.screen(INPUT)             [blocked -> audit BLOCKED + raise]
       -> for each filing: extraction.extract then knowledge_base.ingest (borrower ACL)
       -> knowledge_base.search (filings + credit-policy/sector context)  [empty -> error]
-      -> llm normalise financials + draft memo (summary + rationale)
-      -> deterministic covenant status + risk flags
+      -> compute ratios from the confirmed spread (deterministic, no ports)
+      -> llm normalise financials + draft memo (summary + rationale), handed the ask
+         and the computed ratios as authoritative blocks
+      -> covenant status tested against the COMPUTED value where the spread supports
+         it, otherwise against the extracted one; risk flags
       -> peer comps (BigQuery)
       -> assemble CreditMemo
       -> guardrail.screen(OUTPUT)            [blocked -> audit BLOCKED + raise]
@@ -47,13 +50,17 @@ from .models import (
     Decision,
     Direction,
     Filing,
+    FinancialSpread,
     GuardrailVerdict,
     MemoInput,
     PeerComparison,
+    Ratio,
     RetrievedPassage,
     RiskFlag,
 )
 from .peer_comp_service import PeerCompService
+from .ratio_catalogue import catalogue_version
+from .ratio_service import RatioService
 from .review_policy import CreditReviewPolicy
 from .risk_flag_service import RiskFlagService
 from .serialization import to_jsonable
@@ -97,6 +104,9 @@ class CreditMemoService:
         )
         self._risk = RiskFlagService(llm=llm, tracer=tracer)
         self._peers = PeerCompService(peer_data=peer_data, tracer=tracer)
+        # No ports and no I/O: the ratio engine is arithmetic over a confirmed spread,
+        # which is what makes a memo's figures replayable years after it was written.
+        self._ratios = RatioService()
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -164,19 +174,32 @@ class CreditMemoService:
             self._write_audit(actor, redacted_summary, "", Decision.ESCALATED)
             raise RetrievalEmptyError(f"no borrower evidence retrieved: {borrower.id!r}")
 
-        # 5) Synthesise the memo prose + normalise financial metrics (LLM, grounded).
-        draft = self._synth.synthesise(borrower, passages, actor)
+        # 5) Compute the ratios BEFORE drafting. Order matters: the engine's figures are
+        #    handed to the drafter as authoritative fact, so the narrative is written
+        #    around numbers the bank calculated rather than numbers the model inferred.
+        spread = self._primary_spread(memo_input)
+        ratios: tuple[Ratio, ...] = self._ratios.compute_all(spread) if spread is not None else ()
 
-        # 6) Deterministic covenant status + grounded risk flags.
-        covenants: tuple[Covenant, ...] = self._covenants.extract(borrower, passages, actor)
+        # 6) Synthesise the memo prose + normalise financial metrics (LLM, grounded).
+        draft = self._synth.synthesise(
+            borrower, passages, actor, request=memo_input.request, ratios=ratios
+        )
+
+        # 7) Covenant status computed against the engine's value where the spread
+        #    supports it, and grounded risk flags.
+        covenants: tuple[Covenant, ...] = self._covenants.extract(
+            borrower, passages, actor, spread=spread
+        )
         risk_flags: tuple[RiskFlag, ...] = self._risk.flag(borrower, passages, actor)
 
-        # 7) Peer comparisons (BigQuery peer dataset; arithmetic only).
+        # 8) Peer comparisons (BigQuery peer dataset; arithmetic only).
         peer_comparison: tuple[PeerComparison, ...] = self._peers.compare(
             borrower, draft.financial_metrics, actor
         )
 
-        # 8) Assemble the memo.
+        # 9) Assemble the memo. The draft's confidence, caveats and questions were
+        #    computed and then dropped on the floor before this: a reader could not see
+        #    how sure the drafter was, nor what it had said it could not support.
         citations = self._memo_citations(draft.citations, covenants, risk_flags)
         memo = CreditMemo(
             borrower=borrower,
@@ -188,23 +211,29 @@ class CreditMemoService:
             recommendation_rationale=draft.recommendation_rationale,
             citations=citations,
             requires_human_review=self._review.requires_review(),
+            request=memo_input.request,
+            spreads=memo_input.spreads,
+            ratios=ratios,
+            confidence=draft.confidence,
+            caveats=draft.caveats,
+            questions_for_client=draft.questions_for_client,
         )
 
-        # 9) Guardrail screen (OUTPUT) on the assembled prose.
+        # 10) Guardrail screen (OUTPUT) on the assembled prose.
         out_text = f"{memo.summary}\n{memo.recommendation_rationale}"
         out_verdict: GuardrailVerdict = self._guardrail.screen(out_text, Direction.OUTPUT)
         if not out_verdict.allowed:
             self._write_audit(actor, redacted_summary, "", Decision.BLOCKED, direction="output")
             raise GuardrailBlockedError(out_verdict.reason or "credit memo blocked by guardrail")
 
-        # 10) Review policy: a memo is consequential, so it is always routed to a human
+        # 11) Review policy: a memo is consequential, so it is always routed to a human
         #     checker (audit decision ESCALATED); a breach/high-severity flag escalates.
         escalated = self._review.escalates(covenants, risk_flags)
 
-        # 11) Audit (already-redacted prompt + a redacted response summary).
+        # 12) Audit (already-redacted prompt + a redacted response summary).
         self._audit_memo(actor, redacted_summary, memo, Decision.ESCALATED, escalated)
 
-        # 12) Route the escalation to Hrz7 (rule R8). A memo always requires human review, so it is
+        # 13) Route the escalation to Hrz7 (rule R8). A memo always requires human review, so it is
         #     handed to the maker-checker console rather than terminating in a boolean; the adapter
         #     redacts before the wire. Best-effort: a console outage must not fail an already-
         #     assembled, already-audited memo (the audit ESCALATED record is the durable escalation
@@ -232,6 +261,23 @@ class CreditMemoService:
     # ------------------------------------------------------------------ #
     # Helpers
     # ------------------------------------------------------------------ #
+    @staticmethod
+    def _primary_spread(memo_input: MemoInput) -> FinancialSpread | None:
+        """The spread the engines compute from: the borrower's own, where supplied.
+
+        A multi-entity request carries a spread per entity; the borrower's own is the
+        one the covenants and ratios are about, and the rest are consolidated separately
+        once global cash flow exists. Falls back to the first spread so a caller that
+        supplied one under a different id still gets its figures computed rather than
+        silently ignored.
+        """
+        if not memo_input.spreads:
+            return None
+        for spread in memo_input.spreads:
+            if spread.borrower_id == memo_input.borrower.id:
+                return spread
+        return memo_input.spreads[0]
+
     @staticmethod
     def _case_summary(memo_input: MemoInput) -> str:
         borrower = memo_input.borrower
@@ -307,10 +353,12 @@ class CreditMemoService:
         escalated: bool,
     ) -> None:
         breaches = sum(1 for c in memo.covenants if c.status.value == "breach")
+        computed = sum(1 for r in memo.ratios if r.value is not None)
         summary = (
             f"metrics={len(memo.financial_metrics)}; covenants={len(memo.covenants)}; "
             f"breaches={breaches}; risk_flags={len(memo.risk_flags)}; "
-            f"peers={len(memo.peer_comparison)}"
+            f"peers={len(memo.peer_comparison)}; ratios={computed}/{len(memo.ratios)}; "
+            f"confidence={memo.confidence:.2f}"
         )
         self._write_audit(
             actor,
@@ -323,6 +371,10 @@ class CreditMemoService:
                 "escalated": str(escalated).lower(),
                 "covenant_breaches": str(breaches),
                 "n_citations": str(len(memo.citations)),
+                # Lineage: which arithmetic produced the figures in this memo, so a
+                # reader years later can tell whether a replay should reproduce them.
+                "ratio_catalogue_version": catalogue_version(),
+                "computed_covenants": str(sum(1 for c in memo.covenants if c.measured is not None)),
             },
         )
 

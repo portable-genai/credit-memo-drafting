@@ -2,8 +2,16 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api, DOCUMENT_UPLOAD_TEMPLATE_URL, uploadBorrowerDocument, type Persona } from "@/lib/api";
-import { isBlocked, type BlockedEnvelope, type CreditMemo } from "@/lib/types";
+import {
+  isBlocked,
+  type BlockedEnvelope,
+  type CreditMemo,
+  type CreditRequest,
+  type FinancialSpread,
+} from "@/lib/types";
 import { MemoView } from "@/components/MemoView";
+import { emptyRequest, FacilityForm } from "@/components/FacilityForm";
+import { emptySpread, SpreadGrid } from "@/components/SpreadGrid";
 
 const IS_EMBEDDED = process.env.NEXT_PUBLIC_EMBED === "1";
 
@@ -30,6 +38,10 @@ export default function Home() {
   const [uploadTitle, setUploadTitle] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadNote, setUploadNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [request, setRequest] = useState<CreditRequest>(emptyRequest);
+  const [spread, setSpread] = useState<FinancialSpread>(() =>
+    emptySpread("acme-manufacturing-pte-ltd-fictional"),
+  );
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -71,13 +83,16 @@ export default function Home() {
     setMemo(null);
     setBlocked(null);
     try {
+      const borrowerId = name.toLowerCase().replace(/\s+/g, "-");
       const result = await api.buildCreditMemo({
-        borrower: {
-          id: name.toLowerCase().replace(/\s+/g, "-"),
-          name,
-          sector,
-          jurisdiction,
-        },
+        borrower: { id: borrowerId, name, sector, jurisdiction },
+        request,
+        // Only send a spread that has figures in it. An empty grid would be a spread
+        // with no line items, which computes nothing and reads as though the engine
+        // failed rather than as though nobody typed anything.
+        spreads: spread.items.length
+          ? [{ ...spread, borrower_id: borrowerId }]
+          : [],
       });
       if (isBlocked(result)) {
         setBlocked(result);
@@ -143,10 +158,24 @@ export default function Home() {
             className="w-full rounded border border-ink-300 px-2 py-1.5"
           />
         </label>
+        <div className="xl:col-span-3">
+          <span className="mb-2 block text-sm font-semibold text-ink-900">
+            The ask
+          </span>
+          <FacilityForm request={request} onChange={setRequest} />
+        </div>
+
+        <div className="xl:col-span-3">
+          <span className="mb-2 block text-sm font-semibold text-ink-900">
+            Financial spread
+          </span>
+          <SpreadGrid spread={spread} onChange={setSpread} />
+        </div>
+
         <button
           type="submit"
           disabled={loading}
-          className="self-end rounded bg-regblue-600 px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
+          className="self-end rounded bg-regblue-600 px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-50 xl:col-span-3 xl:justify-self-start"
         >
           {loading ? "Building..." : "Build credit memo"}
         </button>
@@ -227,17 +256,33 @@ export default function Home() {
         ) : null}
       </div>
 
-      {error ? (
-        <div className="mb-4 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">
-          {error}
-        </div>
-      ) : null}
+      <div aria-live="polite" aria-atomic="true">
+        {loading ? (
+          <p className="mb-4 text-sm text-ink-500">
+            Building the memo: computing ratios, then drafting from the evidence.
+          </p>
+        ) : null}
 
-      {blocked ? (
-        <div className="mb-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
-          <strong>Blocked by guardrail.</strong> {blocked.detail} ({blocked.reason})
-        </div>
-      ) : null}
+        {error ? (
+          <div className="mb-4 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+            <strong>Could not build the memo.</strong> {error}
+            {/* 422 means the service had nothing to ground on. Point at the fix rather
+                than restating the status code. */}
+            {error.includes("422") || error.toLowerCase().includes("evidence") ? (
+              <p className="mt-1">
+                Upload the borrower&apos;s financial statements below, then build again.
+                The memo grounds only on evidence you supply.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {blocked ? (
+          <div className="mb-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+            <strong>Blocked by guardrail.</strong> {blocked.detail} ({blocked.reason})
+          </div>
+        ) : null}
+      </div>
 
       {memo ? <MemoView memo={memo} /> : null}
     </main>

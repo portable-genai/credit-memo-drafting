@@ -19,6 +19,7 @@ Run locally with ``python -m credit_memo.api.app`` (uvicorn on :8093).
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, File, Form, Request, Response, UploadFile, status
@@ -389,7 +390,13 @@ def build_credit_memo(
     service: Annotated[CreditMemoService, Depends(deps.get_credit_memo_service)],
 ) -> JSONResponse | CreditMemoResponse:
     """Build a full cited credit memo for a borrower and its filings."""
-    memo_input = request.to_memo_input()
+    # The domain refuses a spread holding a figure no engine may read (an unconfirmed
+    # extraction, say). That refusal is about what the CALLER sent, so it is a 422 with
+    # the domain's own sentence, never a 500 the caller cannot act on.
+    try:
+        memo_input = request.to_memo_input()
+    except ValueError as exc:
+        return _ungrounded_response(str(exc))
     # Object-level authorization: the borrower ACL principal is granted server-side from the
     # VERIFIED principal, never from the request body's borrower id alone.
     try:
@@ -446,7 +453,22 @@ def extract_covenants(
     if not passages:
         return _ungrounded_response("No evidence available to ground covenant extraction.")
     service = deps.build_covenant_service(container)
-    covenants = service.extract(borrower, passages, principal.actor)
+    span = container.tracer.span(
+        "credit_memo.covenants", action="extract_covenants", actor=principal.actor
+    )
+    with span if span is not None else nullcontext():
+        covenants = service.extract(borrower, passages, principal.actor)
+    _audit_artifact(
+        container,
+        action="extract_covenants",
+        actor=principal.actor,
+        prompt=f"covenant extraction for borrower {borrower.id}",
+        response=(
+            f"covenants={len(covenants)}; "
+            f"breaches={sum(1 for c in covenants if c.status is m.CovenantStatus.BREACH)}"
+        ),
+        citations=tuple(c for cov in covenants for c in cov.citations),
+    )
     return CovenantListResponse.from_domain(borrower.id, covenants)
 
 
@@ -479,8 +501,52 @@ def flag_risks(
     if not passages:
         return _ungrounded_response("No evidence available to ground risk-flag identification.")
     service = deps.build_risk_flag_service(container)
-    flags = service.flag(borrower, passages, principal.actor)
+    span = container.tracer.span(
+        "credit_memo.risk_flags", action="flag_risks", actor=principal.actor
+    )
+    with span if span is not None else nullcontext():
+        flags = service.flag(borrower, passages, principal.actor)
+    _audit_artifact(
+        container,
+        action="flag_risks",
+        actor=principal.actor,
+        prompt=f"risk-flag identification for borrower {borrower.id}",
+        response=f"risk_flags={len(flags)}",
+        citations=tuple(c for flag in flags for c in flag.citations),
+    )
     return RiskFlagListResponse.from_domain(borrower.id, flags)
+
+
+def _audit_artifact(
+    container: Any,
+    action: str,
+    actor: str,
+    prompt: str,
+    response: str,
+    citations: tuple[m.Citation, ...] = (),
+) -> None:
+    """Record one artifact build. On a managed profile, a lost record is a failed request.
+
+    Swallowing the write keeps a demo alive and leaves a regulated deployment with an
+    artifact nobody can prove was produced. ``local`` still degrades (the append-only
+    file may be read-only in a sandbox); ``gcp`` and ``platform`` raise, because there
+    the audit sink IS the record of what the bank did.
+    """
+    event = m.AuditEvent(
+        action=action,
+        actor=actor,
+        decision=m.Decision.ESCALATED,
+        redacted_prompt=prompt,
+        redacted_response=response,
+        citations=citations,
+        metadata={"direction": "output", "requires_human_review": "true"},
+    )
+    try:
+        container.audit.record(event)
+    except Exception:
+        if deps.get_settings().profile in {"gcp", "platform"}:
+            raise
+        return
 
 
 # --------------------------------------------------------------------------- #

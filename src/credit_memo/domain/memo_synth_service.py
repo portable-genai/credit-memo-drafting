@@ -18,13 +18,17 @@ from . import _grounded as g
 from .models import (
     Borrower,
     Citation,
+    CreditRequest,
     FinancialMetric,
+    Ratio,
     RetrievedPassage,
 )
 from .prompts import (
     _CITATION_RULES,
+    COMPUTED_BLOCK,
     MEMO_SYSTEM,
     MEMO_USER,
+    REQUEST_BLOCK,
     SELF_CRITIQUE_SYSTEM,
     SELF_CRITIQUE_USER,
 )
@@ -49,6 +53,7 @@ _MEMO_SCHEMA: dict[str, Any] = {
         },
         "recommendation_rationale": {"type": "string"},
         "confidence": {"type": "number"},
+        "questions_for_client": {"type": "array", "items": {"type": "string"}},
         "used_source_ids": {"type": "array", "items": {"type": "string"}},
     },
     "required": ["summary", "financial_metrics", "recommendation_rationale", "used_source_ids"],
@@ -75,6 +80,9 @@ class MemoDraft:
     citations: tuple[Citation, ...]
     confidence: float
     caveats: tuple[str, ...] = ()
+    #: What the analyst should go and ask the borrower. A gap the drafter noticed is
+    #: worth more as a question than as another hedged sentence in the narrative.
+    questions_for_client: tuple[str, ...] = ()
 
 
 class MemoSynthService:
@@ -89,19 +97,31 @@ class MemoSynthService:
         borrower: Borrower,
         passages: list[RetrievedPassage],
         actor: str,
+        request: CreditRequest | None = None,
+        ratios: tuple[Ratio, ...] = (),
     ) -> MemoDraft:
-        """Draft the memo prose and normalise metrics for ``borrower``."""
+        """Draft the memo prose and normalise metrics for ``borrower``.
+
+        ``request`` is the ask the memo answers and ``ratios`` are the engine's own
+        figures. Both are handed to the drafter as separate, authoritative blocks: the
+        model narrates them and cites them, and never recomputes them.
+        """
         passage_block = g.render_passages(list(passages))
         borrower_block = self._borrower_block(borrower)
         system = MEMO_SYSTEM.format(citation_rules=_CITATION_RULES)
-        user = MEMO_USER.format(borrower=borrower_block, passages=passage_block)
-        request = g.build_llm_request(
+        user = MEMO_USER.format(
+            borrower=borrower_block,
+            request=self._request_block(request),
+            computed=self._computed_block(ratios),
+            passages=passage_block,
+        )
+        llm_request = g.build_llm_request(
             system_instruction=system,
             user_content=user,
             model=None,  # adapter default => reasoning model gemini-3.5-flash
             response_schema=_MEMO_SCHEMA,
         )
-        response = self._llm.generate(request)
+        response = self._llm.generate(llm_request)
         g.maybe_record_usage(self._tracer, response)
 
         parsed = g.parse_structured(response)
@@ -112,6 +132,7 @@ class MemoSynthService:
 
         metrics = self._build_metrics(parsed.get("financial_metrics"))
         citations = g.citations_for_source_ids(used_ids, list(passages))
+        questions = g.as_str_list(parsed.get("questions_for_client"))
 
         caveats: list[str] = []
         if not summary:
@@ -134,6 +155,7 @@ class MemoSynthService:
             citations=citations,
             confidence=confidence,
             caveats=tuple(dict.fromkeys(caveats)),
+            questions_for_client=tuple(dict.fromkeys(questions)),
         )
 
     # ------------------------------------------------------------------ #
@@ -145,6 +167,57 @@ class MemoSynthService:
             f"id={borrower.id}, name={borrower.name}, sector={borrower.sector or 'unknown'}, "
             f"jurisdiction={borrower.jurisdiction or 'unknown'}"
         )
+
+    @staticmethod
+    def _request_block(request: CreditRequest | None) -> str:
+        if request is None:
+            return ""
+        lines = [
+            f"kind={request.kind.value}, loan_type={request.loan_type.value}",
+            f"purpose={request.purpose or 'not stated'}",
+        ]
+        for facility in request.facilities:
+            lines.append(
+                f"- facility {facility.id}: {facility.facility_type.value} "
+                f"{facility.currency} {facility.amount:,.0f} over "
+                f"{facility.tenor_months} months; purpose={facility.purpose or 'not stated'}; "
+                f"repayment={facility.repayment_source or 'not stated'}; "
+                f"security={facility.security or 'none stated'}"
+            )
+        sources_and_uses = request.sources_and_uses
+        if sources_and_uses.sources or sources_and_uses.uses:
+            lines.append(
+                f"- sources {sources_and_uses.total_sources:,.0f} vs uses "
+                f"{sources_and_uses.total_uses:,.0f} "
+                f"(imbalance {sources_and_uses.imbalance:,.0f})"
+            )
+        if request.notes:
+            lines.append(f"notes: {request.notes}")
+        return REQUEST_BLOCK.format(request="\n".join(lines))
+
+    @staticmethod
+    def _computed_block(ratios: tuple[Ratio, ...]) -> str:
+        """Render the engine's figures, including the ones it could not compute.
+
+        A ratio the engine could not produce is stated as such rather than omitted, so
+        the drafter says "the interest expense was not supplied" instead of quietly
+        filling the gap from a passage.
+        """
+        if not ratios:
+            return ""
+        lines = []
+        for ratio in ratios:
+            if ratio.value is None:
+                lines.append(
+                    f"- {ratio.name} ({ratio.period}): not computable, {ratio.reason_missing}"
+                )
+                continue
+            rendered = f"{ratio.value:,.2f}" + ("x" if ratio.unit == "x" else "")
+            lines.append(
+                f"- {ratio.name} ({ratio.period}) = {rendered} "
+                f"[{ratio.formula_id}: {ratio.definition}]"
+            )
+        return COMPUTED_BLOCK.format(computed="\n".join(lines))
 
     @staticmethod
     def _build_metrics(raw_metrics: Any) -> tuple[FinancialMetric, ...]:

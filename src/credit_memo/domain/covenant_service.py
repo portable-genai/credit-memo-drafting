@@ -18,9 +18,12 @@ from . import _grounded as g
 from .models import (
     Borrower,
     Covenant,
+    FinancialSpread,
+    Provenance,
     RetrievedPassage,
 )
 from .prompts import _CITATION_RULES, COVENANT_SYSTEM, COVENANT_USER
+from .ratio_service import RatioService, latest_period
 
 _COVENANT_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -65,14 +68,21 @@ class CovenantService:
         self._llm = llm
         self._tracer = tracer
         self._at_risk_band = at_risk_band
+        self._ratios = RatioService()
 
     def extract(
         self,
         borrower: Borrower,
         passages: list[RetrievedPassage],
         actor: str,
+        spread: FinancialSpread | None = None,
     ) -> tuple[Covenant, ...]:
-        """Extract covenants for ``borrower`` from the evidence, with tested status."""
+        """Extract covenants for ``borrower`` from the evidence, with tested status.
+
+        ``spread`` is the confirmed financial spread, when the caller has one. Where it
+        supports a covenant's type the engine measures the current value and the test
+        runs against that number rather than against the one the model read off a page.
+        """
         passage_block = g.render_passages(list(passages))
         borrower_block = _borrower_block(borrower)
         system = COVENANT_SYSTEM.format(citation_rules=_CITATION_RULES)
@@ -87,13 +97,16 @@ class CovenantService:
         g.maybe_record_usage(self._tracer, response)
 
         parsed = g.parse_structured(response)
-        return self._build_covenants(parsed.get("items"), list(passages))
+        return self._build_covenants(parsed.get("items"), list(passages), spread)
 
     # ------------------------------------------------------------------ #
     # Helpers
     # ------------------------------------------------------------------ #
     def _build_covenants(
-        self, raw_items: Any, passages: list[RetrievedPassage]
+        self,
+        raw_items: Any,
+        passages: list[RetrievedPassage],
+        spread: FinancialSpread | None = None,
     ) -> tuple[Covenant, ...]:
         if not isinstance(raw_items, list):
             return ()
@@ -105,26 +118,61 @@ class CovenantService:
             threshold = g.as_float(raw.get("threshold"))
             if not description or threshold is None:
                 continue
+            covenant_type = g.coerce_covenant_type(raw.get("type"))
             operator = g.coerce_operator(raw.get("operator"))
-            current_value = g.as_float(raw.get("current_value"))
+            reported_value = g.as_float(raw.get("current_value"))
+            period = str(raw.get("period") or "").strip()
+
+            measured = self._measure(spread, covenant_type, period)
+            if measured is not None and measured.value is not None:
+                current_value = measured.value
+                provenance = Provenance.COMPUTED
+                period = period or measured.period
+            else:
+                current_value = reported_value
+                provenance = Provenance.EXTRACTED
+
             status = g.covenant_status(
                 current_value, threshold, operator, at_risk_band=self._at_risk_band
             )
             out.append(
                 Covenant(
-                    type=g.coerce_covenant_type(raw.get("type")),
+                    type=covenant_type,
                     description=description,
                     threshold=threshold,
                     operator=operator,
                     current_value=current_value,
                     status=status,
-                    period=str(raw.get("period") or "").strip(),
+                    period=period,
                     citations=g.citations_for_source_ids(
                         g.as_str_list(raw.get("used_source_ids")), passages
                     ),
+                    measured=measured,
+                    reported_value=reported_value,
+                    value_provenance=provenance,
                 )
             )
         return tuple(out)
+
+    def _measure(
+        self,
+        spread: FinancialSpread | None,
+        covenant_type: Any,
+        period: str,
+    ) -> Any:
+        """The engine's own value for this covenant, or None when it cannot supply one.
+
+        Uses the covenant's own period where the spread has it, and the spread's most
+        recent period otherwise: a covenant certificate naming a quarter the spread does
+        not carry should fall back to the latest confirmed figures rather than silently
+        measuring nothing.
+        """
+        if spread is None or not spread.items:
+            return None
+        wanted = period if period in spread.period_labels else latest_period(spread)
+        if not wanted:
+            return None
+        return self._ratios.measure_covenant(spread, covenant_type, wanted)
 
 
 def _borrower_block(borrower: Borrower) -> str:
