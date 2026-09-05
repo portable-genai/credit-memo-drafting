@@ -13,6 +13,12 @@
 terraform {
   required_version = ">= 1.9.0"
 
+  # Partial backend: the bucket and the per-installation prefix are supplied at init, which
+  # keeps the module reusable while making accidental local state impossible in a named
+  # deployment. Local state for a stack that owns KMS keys and an org policy is state that
+  # exists on exactly one laptop.
+  backend "gcs" {}
+
   required_providers {
     google = {
       source  = "hashicorp/google"

@@ -120,6 +120,47 @@ variable "enable_vpc_sc" {
   default     = true
 }
 
+variable "manage_org_policies" {
+  type        = bool
+  default     = true
+  description = <<-EOT
+    Whether THIS stack writes the project's Org Policies (gcp.resourceLocations and
+    iam.disableServiceAccountKeyCreation).
+
+    True by default, because a fork deploying this app on its own project should inherit the
+    residency guardrail rather than have to remember it. Set false where another stack in the
+    same project already owns them: two stacks declaring the same project-level policy is a
+    last-writer-wins race, and the loser is whichever application needed the wider boundary.
+
+    That is not hypothetical. This stack derives the STRICTEST form from its own region, so
+    applying it into a shared project silently narrows `gcp.resourceLocations` to that region
+    and breaks every sibling that reaches another one -- a sibling using Document AI in `us`
+    stops extracting, and nothing in this stack's plan says so.
+  EOT
+}
+
+variable "additional_serving_service_accounts" {
+  type        = list(string)
+  default     = []
+  description = <<-EOT
+    Service-account emails, other than this stack's own serving identity, that run this
+    application and therefore need its key, its bundle bucket and its model access.
+
+    Exists for embedding hosts. A portal that mounts this console same-origin runs it under a
+    runtime identity of the PORTAL's making, which this stack cannot know and the serving
+    identity's own grants do not cover; without this the deployed app authenticates fine and
+    then fails on its first CMEK read. Empty by default, because an app deployed on its own
+    needs none.
+  EOT
+  validation {
+    condition = alltrue([
+      for email in var.additional_serving_service_accounts :
+      can(regex("^[a-z0-9-]+@[a-z0-9-]+\\.iam\\.gserviceaccount\\.com$", email))
+    ])
+    error_message = "each additional_serving_service_accounts entry must be a service-account email."
+  }
+}
+
 variable "resource_location_values" {
   description = <<-EOT
     Value groups for the gcp.resourceLocations Org Policy.

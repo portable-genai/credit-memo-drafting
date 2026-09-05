@@ -66,3 +66,26 @@ resource "google_project_iam_member" "agent_runtime" {
   role     = each.value
   member   = "serviceAccount:${google_service_account.agent_runtime.email}"
 }
+
+# --------------------- Embedding host's runtime identity -------------------- #
+# A portal that mounts this console same-origin runs it under a service account of the
+# PORTAL's making. That identity is the one the container actually authenticates as, so
+# without these grants the deployed app starts, authenticates, and then fails on its first
+# CMEK read or model call -- which reads as a broken application rather than as a missing
+# binding. Empty by default: an app deployed on its own needs none of this.
+resource "google_project_iam_member" "additional_serving" {
+  for_each = {
+    for pair in setproduct(var.additional_serving_service_accounts, local.app_roles) :
+    "${pair[0]}|${pair[1]}" => { email = pair[0], role = pair[1] }
+  }
+  project = var.project_id
+  role    = each.value.role
+  member  = "serviceAccount:${each.value.email}"
+}
+
+resource "google_kms_crypto_key_iam_member" "additional_serving" {
+  for_each      = toset(var.additional_serving_service_accounts)
+  crypto_key_id = google_kms_crypto_key.credit_memo.id
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  member        = "serviceAccount:${each.value}"
+}
