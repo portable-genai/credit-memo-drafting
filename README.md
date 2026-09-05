@@ -103,6 +103,11 @@ python eval/run_eval.py          # Hrz4 promotion eval gate
 
 ## Run locally (a real cited memo, fully offline)
 
+> The CLI example below names an obviously fictional borrower on purpose. With no evidence
+> uploaded for it, the memo is grounded in the built-in synthetic corpus, and the borrower's
+> name should say so. The demo (`make walkthrough`) is the opposite case: it uploads a real
+> company's filed documents and grounds on those.
+
 Under the `local` profile the whole pipeline runs on a laptop with no Google Cloud, no API
 key, and no emulator: retrieval is SQLite FTS5 over a small built-in synthetic corpus, the
 LLM is a deterministic schema-driven generator, redaction is regex DLP, and audit is an
@@ -111,7 +116,7 @@ needed for the smoke run:
 
 ```bash
 export CREDIT_MEMO_PROFILE=local
-credit-memo build "Acme Manufacturing Pte Ltd" --sector manufacturing --jurisdiction SG
+credit-memo build "Acme Manufacturing Pte Ltd (FICTIONAL)" --sector manufacturing --jurisdiction SG
 ```
 
 This prints a real `CreditMemo`: a grounded summary, normalised metrics, two covenants with
@@ -131,8 +136,8 @@ import-safe with no GCP SDK installed. Install the managed stack with
 `pip install -e ".[gcp,dev]"`.
 
 ```bash
-credit-memo build "Acme Manufacturing Pte Ltd" --sector manufacturing --jurisdiction SG
-credit-memo covenants "Acme Manufacturing Pte Ltd" --sector manufacturing
+credit-memo build "Acme Manufacturing Pte Ltd (FICTIONAL)" --sector manufacturing --jurisdiction SG
+credit-memo covenants "Acme Manufacturing Pte Ltd (FICTIONAL)" --sector manufacturing
 credit-memo serve --port 8093
 ```
 
@@ -162,7 +167,15 @@ quality eval gate (R5), Hrz5 observability/audit (R2). Peer data is public filin
 so it has no platform adapter.
 
 See `SPEC.md` for the contract, `ARCHITECTURE.md` for the design, and `COMPLIANCE.md` for
-the principle and rule mapping. All borrower data in this repo is fictional.
+the principle and rule mapping.
+
+**About the data.** The test fixtures, the eval sector cases and the built-in offline
+corpus are fictional and say so on every title. The demo is not: it walks Flowserve
+Corporation (NYSE: FLS) using figures filed in its FY2025 Form 10-K, so an audience can
+open the filing and check the memo against it rather than take the software's word for
+anything — see `demo/documents/SOURCES.md`. The limits those figures are tested against
+are still this repo's invented example policy, so a policy exception in the demo is a
+statement about that example appetite and never an allegation about the company.
 
 ## Licence
 

@@ -2,7 +2,7 @@
 
 ``test_served_demo_ui.py`` covers the presenter server on :8094. This file covers the
 PRODUCT: the built Next.js console talking to the FastAPI service, walked through the
-seventeen acts in :mod:`scripts.demo_console.acts` — the same acts
+eighteen acts in :mod:`scripts.demo_console.acts` — the same acts
 ``scripts/credit_memo_console_walkthrough.py`` narrates to an audience.
 
 Why the demo is also a test. This repository has shipped capabilities that were fully
@@ -77,7 +77,7 @@ def stage(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stage]:
     ``servers.api_server(...)`` only builds the context manager; its body — the port check,
     the process launch, the readiness wait — runs at ``with``. Catching around the
     construction alone let a ``DemoServerError`` escape the fixture, which pytest reports as
-    seventeen ERRORS rather than the honest skip (or, when a browser was promised, the
+    eighteen ERRORS rather than the honest skip (or, when a browser was promised, the
     honest single failure).
     """
     analysis_root = tmp_path_factory.mktemp("analyses")
@@ -158,7 +158,7 @@ def test_the_demo_covered_every_act(stage: Stage) -> None:
     fixture DID come up, every act must have completed.
     """
     assert stage is not None
-    assert len(ACTS) >= 17, "acts have gone missing from the walkthrough"
+    assert len(ACTS) >= 18, "acts have gone missing from the walkthrough"
     assert not _FAILED_AT, f"the demo did not complete: it stopped at {_FAILED_AT[0]!r}"
     # The check that matters when the environment, rather than the product, is what broke:
     # a run where the fixture never started reaches here with nothing failed and nothing

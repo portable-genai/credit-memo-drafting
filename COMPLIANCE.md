@@ -2,8 +2,14 @@
 
 How Doc2 maps the catalog's General Principles (P-01..P-12) and platform Rules (R1..R6, R8) to
 concrete controls in THIS repo. Items genuinely not applicable are marked n/a with a
-reason. All borrower data shipped in this repo (`tests/fixtures`, `eval/datasets`) is
-fictional.
+reason.
+
+Borrower data shipped in this repo is fictional — `tests/fixtures`, the built-in offline
+corpus in `adapters/local/_seed.py`, and every `eval/datasets` case except
+`case-flowserve-real`. That case and the demo under `demo/documents/` use Flowserve
+Corporation's publicly filed FY2025 figures (SEC CIK 30625) so the gate and the demo can
+both be checked against a real filing. The policy limits those figures are measured
+against remain invented (`config/policy_pack.example.yaml`).
 
 ## General Principles
 

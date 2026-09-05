@@ -9,6 +9,18 @@ All text, ids and peer rows are invented and must never be treated as real borro
 This lives under ``src`` (not ``tests``) so the shipped package can self-seed without
 importing the test tree; it mirrors the shape of ``tests/fixtures/sample_cases`` for
 determinism.
+
+**This corpus stays fictional on purpose, and the reason grew stronger, not weaker, when
+the demo moved onto a real borrower's filings.** Everything here is the fallback served
+when a borrower supplied no evidence at all — so whatever is written below is what a memo
+about SOME OTHER company will cite and report as that company's figures. Filling it with a
+real registrant's filed numbers would mean a memo for an unknown borrower quoting a real
+company's revenue and leverage as its own, which is a worse failure than the one the move
+to real data was meant to fix. The obviously-invented names and the ``(FICTIONAL)`` on
+every title are what make that fallback visible to a reader the moment it happens.
+
+The demo does not rely on this. It uploads Flowserve Corporation's real filed documents
+(``demo/documents/``), which retrieve on their own and shut the fallback out entirely.
 """
 
 from __future__ import annotations
@@ -106,22 +118,34 @@ SEED_PASSAGES: tuple[RetrievedPassage, ...] = (
     ),
 )
 
-# Synthetic peer-financials table, keyed by metric (the offline stand-in for SEC EDGAR).
+# Peer financials, keyed by metric: the offline stand-in for the SEC EDGAR peer adapter.
+#
+# REAL companies and REAL filed figures, unlike the passages above, and the difference is
+# deliberate. A peer table names other companies as comparators; it never speaks for the
+# borrower, so there is no misattribution to guard against — and inventing it does active
+# harm. When the demo moved onto a real borrower, three fictional peers with revenue
+# around USD 125m put Flowserve's USD 4.7bn at the hundredth percentile of its own sector,
+# which is a confident, precise and meaningless number.
+#
+# All three are flow-control manufacturers, all figures from each company's own FY2025
+# Form 10-K via the XBRL company facts at data.sec.gov, in USD millions. EBITDA is
+# operating income plus depreciation and amortisation, the same statutory definition the
+# borrower's spread uses, so the comparison is like for like.
 SEED_PEERS: dict[str, tuple[PeerMetric, ...]] = {
     "leverage": (
-        PeerMetric(peer_name="Peer Alpha (FICTIONAL)", metric="leverage", value=2.0),
-        PeerMetric(peer_name="Peer Beta (FICTIONAL)", metric="leverage", value=3.2),
-        PeerMetric(peer_name="Peer Gamma (FICTIONAL)", metric="leverage", value=2.8),
+        PeerMetric(peer_name="Watts Water Technologies, Inc.", metric="leverage", value=0.39),
+        PeerMetric(peer_name="ITT Inc.", metric="leverage", value=0.63),
+        PeerMetric(peer_name="Xylem Inc.", metric="leverage", value=0.78),
     ),
     "ebitda": (
-        PeerMetric(peer_name="Peer Alpha (FICTIONAL)", metric="ebitda", value=20.0),
-        PeerMetric(peer_name="Peer Beta (FICTIONAL)", metric="ebitda", value=30.0),
-        PeerMetric(peer_name="Peer Gamma (FICTIONAL)", metric="ebitda", value=26.0),
+        PeerMetric(peer_name="Watts Water Technologies, Inc.", metric="ebitda", value=504.9),
+        PeerMetric(peer_name="ITT Inc.", metric="ebitda", value=827.7),
+        PeerMetric(peer_name="Xylem Inc.", metric="ebitda", value=1798.0),
     ),
     "revenue": (
-        PeerMetric(peer_name="Peer Alpha (FICTIONAL)", metric="revenue", value=110.0),
-        PeerMetric(peer_name="Peer Beta (FICTIONAL)", metric="revenue", value=140.0),
-        PeerMetric(peer_name="Peer Gamma (FICTIONAL)", metric="revenue", value=125.0),
+        PeerMetric(peer_name="Watts Water Technologies, Inc.", metric="revenue", value=2438.5),
+        PeerMetric(peer_name="ITT Inc.", metric="revenue", value=3938.5),
+        PeerMetric(peer_name="Xylem Inc.", metric="revenue", value=9035.0),
     ),
 }
 
