@@ -31,6 +31,7 @@ from credit_memo.adapters.local.analysis_bundle import LocalAnalysisBundleAdapte
 from credit_memo.adapters.local.guardrail import LocalHeuristicGuardrailAdapter
 from credit_memo.adapters.local.identity import LocalPersonaIdentityAdapter
 from credit_memo.adapters.local.knowledge_base import LocalFtsKnowledgeBaseAdapter
+from credit_memo.adapters.local.policy_pack import LocalYamlPolicyPackAdapter
 from credit_memo.adapters.local.review_router import LocalReviewRouter
 from credit_memo.api import deps
 from credit_memo.api.app import app
@@ -56,6 +57,7 @@ class _RecordingContainer(Container):
         self.identity = LocalPersonaIdentityAdapter(settings)  # type: ignore[assignment]
         self.review_router = LocalReviewRouter(settings)  # type: ignore[assignment]
         self.analysis_bundle = LocalAnalysisBundleAdapter(settings)  # type: ignore[assignment]
+        self.policy_pack = LocalYamlPolicyPackAdapter(settings)  # type: ignore[assignment]
 
 
 @pytest.fixture

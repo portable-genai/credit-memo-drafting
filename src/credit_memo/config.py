@@ -274,6 +274,18 @@ class LocalSettings:
 
 
 @dataclass(frozen=True)
+class PolicyPackSettings:
+    """Where the bank's credit policy and rating scorecard are read from.
+
+    Empty selects the shipped example, whose limits are made up. That is fine for a demo
+    and wrong for a memo, which is why the pack's version is printed wherever an exception
+    or a grade appears.
+    """
+
+    path: str = ""
+
+
+@dataclass(frozen=True)
 class AnalysisBundleSettings:
     """Where one analysis lives, and for how long.
 
@@ -350,6 +362,7 @@ class Settings:
     policy: PolicySettings = field(default_factory=PolicySettings)
     local: LocalSettings = field(default_factory=LocalSettings)
     analysis_bundle: AnalysisBundleSettings = field(default_factory=AnalysisBundleSettings)
+    policy_pack: PolicyPackSettings = field(default_factory=PolicyPackSettings)
     live: LiveSettings = field(default_factory=LiveSettings)
     # port_name -> { profile -> "module.path:ClassName" }
     adapters: dict[str, dict[str, str]] = field(default_factory=dict)
@@ -440,6 +453,7 @@ class Settings:
             "agent_engine": AgentEngineSettings(**(raw.pop("agent_engine", {}) or {})),
             "policy": PolicySettings(**(raw.pop("policy", {}) or {})),
             "local": LocalSettings(**(raw.pop("local", {}) or {})),
+            "policy_pack": PolicyPackSettings(**(raw.pop("policy_pack", {}) or {})),
             "analysis_bundle": AnalysisBundleSettings(**(raw.pop("analysis_bundle", {}) or {})),
             "live": _live_settings(raw.pop("live", {}) or {}),
         }
@@ -494,6 +508,10 @@ class Container:
     @cached_property
     def analysis_bundle(self) -> Any:
         return self._bind("analysis_bundle")
+
+    @cached_property
+    def policy_pack(self) -> Any:
+        return self._bind("policy_pack")
 
     @cached_property
     def spread_extraction(self) -> Any:
