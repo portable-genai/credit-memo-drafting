@@ -41,6 +41,7 @@ class AnalysisBundlePort(Protocol):
         borrower_id: str,
         acl_tags: tuple[str, ...],
         created_by: str = "",
+        borrower_name: str = "",
     ) -> AnalysisManifest:
         """Open a bundle and return its manifest, whose ``expires_at`` is already set.
 

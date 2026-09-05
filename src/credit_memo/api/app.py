@@ -444,6 +444,7 @@ async def open_analysis(
     files: Annotated[list[UploadFile], File(description="The credit file for this analysis")],
     doc_types: Annotated[str, Form()] = "",
     declared_as_of: Annotated[str, Form()] = "",
+    borrower_name: Annotated[str, Form(max_length=200)] = "",
 ) -> AnalysisManifestModel | JSONResponse:
     """Open an analysis and put its evidence in custody for the retention window.
 
@@ -478,7 +479,13 @@ async def open_analysis(
 
     analysis_id = _new_analysis_id()
     bundle = container.analysis_bundle
-    bundle.create(analysis_id, borrower_id, acl_tags, created_by=principal.actor)
+    bundle.create(
+        analysis_id,
+        borrower_id,
+        acl_tags,
+        created_by=principal.actor,
+        borrower_name=" ".join(borrower_name.split()),
+    )
 
     for index, upload in enumerate(files):
         content = await upload.read(limits.max_upload_bytes + 1)
@@ -619,7 +626,13 @@ def build_analysis_memo(
 
     try:
         memo_input = m.MemoInput(
-            borrower=m.Borrower(id=manifest.borrower_id, name=manifest.borrower_id),
+            borrower=m.Borrower(
+                id=manifest.borrower_id,
+                # Display only, and from the BUNDLE rather than the body: a build still
+                # cannot claim to be about a different borrower than the one this analysis
+                # was opened for.
+                name=manifest.borrower_name or manifest.borrower_id,
+            ),
             request=body.request.to_domain() if body.request is not None else None,
             spreads=tuple(spreads),
             analysis_id=analysis_id,

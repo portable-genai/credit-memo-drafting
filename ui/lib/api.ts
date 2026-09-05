@@ -19,6 +19,7 @@ import type {
   HealthStatus,
   LineItemCode,
   Period,
+  EntityGroup,
   RiskFlag,
   SpreadCandidate,
 } from "./types";
@@ -183,9 +184,14 @@ export async function openAnalysis(
   borrowerId: string,
   files: { file: File; docType: string; asOf: string }[],
   signal?: AbortSignal,
+  borrowerName = "",
 ): Promise<AnalysisManifest> {
   const form = new FormData();
   form.append("borrower_id", borrowerId);
+  // Display only. The id governs the ACL and every entitlement check, so this cannot point
+  // a build at a different borrower; it is here so the memo names the borrower the way the
+  // analyst wrote it rather than by its slug.
+  if (borrowerName) form.append("borrower_name", borrowerName);
   for (const entry of files) form.append("files", entry.file);
   form.append("doc_types", files.map((f) => f.docType).join(","));
   form.append("declared_as_of", files.map((f) => f.asOf).join(","));
@@ -262,6 +268,31 @@ export async function confirmSpread(
   return (await parseJsonOrThrow(res)) as FinancialSpread;
 }
 
+/**
+ * Ask a public register who else is in this borrower's group.
+ *
+ * A suggestion about who EXISTS, never a figure. The analyst still uploads each entity's
+ * statements, and one they do not supply figures for is reported on the memo as an entity
+ * the consolidation could not include. Off unless the deployment switched it on, because
+ * the lookup sends the borrower's registered name outside the deploy region.
+ */
+export async function suggestGroup(
+  analysisId: string,
+  name = "",
+  jurisdiction = "",
+  signal?: AbortSignal,
+): Promise<EntityGroup> {
+  const query = new URLSearchParams();
+  if (name) query.set("name", name);
+  if (jurisdiction) query.set("jurisdiction", jurisdiction);
+  const suffix = query.toString() ? `?${query}` : "";
+  const res = await fetch(
+    `${API_BASE}/v1/analyses/${encodeURIComponent(analysisId)}/group/suggestions${suffix}`,
+    { method: "GET", headers: jsonHeaders(), signal },
+  );
+  return (await parseJsonOrThrow(res)) as EntityGroup;
+}
+
 /** Where one uploaded file can be read back, so a citation can open its page. */
 export function analysisDocumentUrl(
   analysisId: string,
@@ -325,6 +356,7 @@ export const api = {
   openAnalysis,
   extractSpread,
   confirmSpread,
+  suggestGroup,
   buildAnalysisMemo,
   analysisDocumentUrl,
   buildCreditMemo,

@@ -8,6 +8,7 @@ import {
   type BlockedEnvelope,
   type CreditMemo,
   type CreditRequest,
+  type Elimination,
   type FinancialSpread,
   type SpreadCandidate,
   type SpreadDecision,
@@ -16,6 +17,7 @@ import { MemoView } from "@/components/MemoView";
 import { emptyRequest, FacilityForm } from "@/components/FacilityForm";
 import { emptySpread, SpreadGrid } from "@/components/SpreadGrid";
 import { confirmBody, SpreadReview } from "@/components/SpreadReview";
+import { groupBody, GroupPanel, type GroupEntityDraft } from "@/components/GroupPanel";
 import { DocumentPanel, type PendingDocument } from "@/components/DocumentPanel";
 
 const IS_EMBEDDED = process.env.NEXT_PUBLIC_EMBED === "1";
@@ -54,6 +56,11 @@ export default function Home() {
   const [candidate, setCandidate] = useState<SpreadCandidate | null>(null);
   const [decisions, setDecisions] = useState<Record<string, SpreadDecision>>({});
   const [busy, setBusy] = useState("");
+  // The group the analyst declares for THIS analysis. There is no standing ownership
+  // graph, so an entity named here with no figures is reported on the memo as one the
+  // consolidation could not include rather than quietly contributing nothing.
+  const [groupEntities, setGroupEntities] = useState<GroupEntityDraft[]>([]);
+  const [eliminations, setEliminations] = useState<Elimination[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,7 +101,7 @@ export default function Home() {
   /** Open the analysis once, and reuse it for every later step. */
   async function ensureAnalysis(): Promise<string> {
     if (analysisId) return analysisId;
-    const opened = await api.openAnalysis(borrowerId(), documents);
+    const opened = await api.openAnalysis(borrowerId(), documents, undefined, name);
     setManifest(opened);
     setAnalysisId(opened.analysis_id);
     return opened.analysis_id;
@@ -163,6 +170,7 @@ export default function Home() {
       setStage("Reading the documents, computing the ratios, drafting the memo");
       const result = await api.buildAnalysisMemo(id, {
         request,
+        ...groupBody(groupEntities, eliminations, spread, spread.confirmed_by),
         // Only send a spread that has figures in it. An empty grid computes nothing and
         // would read as though the engine failed rather than as though nobody typed
         // anything. A spread confirmed through the panel above is already stored against
@@ -312,6 +320,21 @@ export default function Home() {
               readOnly={spread.confirmed_by !== ""}
             />
           )}
+        </div>
+
+        <div className="xl:col-span-3">
+          <span className="mb-2 block text-sm font-semibold text-ink-900">
+            The group
+          </span>
+          <GroupPanel
+            entities={groupEntities}
+            onChange={setGroupEntities}
+            eliminations={eliminations}
+            onEliminationsChange={setEliminations}
+            borrowerSpread={spread}
+            analysisId={analysisId}
+            disabled={loading || busy !== ""}
+          />
         </div>
 
         <button

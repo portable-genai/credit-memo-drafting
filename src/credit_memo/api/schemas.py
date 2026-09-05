@@ -654,6 +654,8 @@ class AnalysisManifestModel(BaseModel):
 
     analysis_id: str
     borrower_id: str
+    #: Display only. The id governs the ACL and every entitlement check.
+    borrower_name: str = ""
     documents: list[StoredDocumentModel] = Field(default_factory=list)
     created_at: str = ""
     expires_at: str | None = None
@@ -674,6 +676,7 @@ class AnalysisManifestModel(BaseModel):
         return cls(
             analysis_id=manifest.analysis_id,
             borrower_id=manifest.borrower_id,
+            borrower_name=manifest.borrower_name,
             documents=[StoredDocumentModel.from_domain(d) for d in manifest.documents],
             created_at=manifest.created_at.isoformat(),
             expires_at=expires.isoformat() if expires else None,
@@ -1573,6 +1576,7 @@ def _manifest_to_domain(model: AnalysisManifestModel) -> m.AnalysisManifest:
     return m.AnalysisManifest(
         analysis_id=model.analysis_id,
         borrower_id=model.borrower_id,
+        borrower_name=model.borrower_name,
         documents=tuple(
             m.StoredDocument(
                 id=d.id,

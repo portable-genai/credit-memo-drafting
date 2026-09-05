@@ -74,12 +74,14 @@ class LocalAnalysisBundleAdapter:
         borrower_id: str,
         acl_tags: tuple[str, ...],
         created_by: str = "",
+        borrower_name: str = "",
     ) -> AnalysisManifest:
         directory = self._dir(analysis_id, create=True)
         now = utcnow()
         manifest = AnalysisManifest(
             analysis_id=analysis_id,
             borrower_id=borrower_id,
+            borrower_name=borrower_name,
             documents=(),
             created_at=now,
             expires_at=now + timedelta(days=self._retention_days),
@@ -164,6 +166,7 @@ class LocalAnalysisBundleAdapter:
             AnalysisManifest(
                 analysis_id=manifest.analysis_id,
                 borrower_id=manifest.borrower_id,
+                borrower_name=manifest.borrower_name,
                 documents=(*manifest.documents, record),
                 created_at=manifest.created_at,
                 expires_at=manifest.expires_at,
@@ -251,6 +254,7 @@ class LocalAnalysisBundleAdapter:
         payload = {
             "analysis_id": manifest.analysis_id,
             "borrower_id": manifest.borrower_id,
+            "borrower_name": manifest.borrower_name,
             "created_at": manifest.created_at.isoformat(),
             "expires_at": manifest.expires_at.isoformat() if manifest.expires_at else None,
             "created_by": manifest.created_by,
@@ -298,6 +302,7 @@ class LocalAnalysisBundleAdapter:
         manifest = AnalysisManifest(
             analysis_id=raw["analysis_id"],
             borrower_id=raw.get("borrower_id", ""),
+            borrower_name=raw.get("borrower_name", ""),
             documents=tuple(
                 StoredDocument(
                     id=d["id"],
