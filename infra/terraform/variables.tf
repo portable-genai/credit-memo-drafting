@@ -23,7 +23,7 @@ variable "allowed_regions" {
     chosen at deploy time (var.region) and validated against this list to FAIL FAST (P-05),
     so an operator cannot accidentally deploy to an unvetted region. Extending this list is
     the deliberate residency review point: do it only after confirming the full managed stack
-    (Document AI, DLP, Model Armor, Vertex/Agent Platform, BigQuery, CMEK, Logging) and your
+    (DLP, Model Armor, Vertex/Agent Platform, CMEK, Logging) and your
     residency obligations are satisfied in that region.
   EOT
   type        = list(string)
@@ -126,9 +126,9 @@ variable "resource_location_values" {
 
     Empty (the default) derives the strictest form from the deploy region: that region and
     its sub-locations, nothing else. Every resource this stack CREATES fits inside it. The
-    analysis bundle is a regional bucket, the peer dataset is a regional dataset, the key
-    ring is regional; the Agent Search data store and the Document AI processor that used
-    to force a wider boundary are both gone.
+    analysis bundle is a regional bucket and the key ring is regional; the Agent Search
+    data store, the Document AI processor and the BigQuery peer dataset that used to force
+    a wider boundary are all gone.
 
     `global` is admitted for grounded model calls, deliberately and as a recorded
     deviation. Vertex serves web grounding only from the global endpoint, so an analyst
@@ -161,9 +161,9 @@ variable "allow_global_endpoints" {
     possible boundary.
 
     What this does and does not permit is the whole point. It permits a model call whose
-    search leg leaves the region. It does not move any stored data: the analysis bundle,
-    the peer dataset and the keys stay regional by their own configuration, and no
-    resource in this stack is created in `global`.
+    search leg leaves the region. It does not move any stored data: the analysis bundle
+    and the keys stay regional by their own configuration, and no resource in this stack is
+    created in `global`.
   EOT
   type        = bool
   default     = true

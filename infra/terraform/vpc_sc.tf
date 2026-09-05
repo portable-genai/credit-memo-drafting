@@ -2,11 +2,23 @@
 #
 # General Principle map:
 #   P-05 (residency + exfiltration control): a service perimeter draws a logical boundary
-#         around the sovereignty-critical APIs (Vertex/Agent Platform, Document AI, Agent
-#         Search backing A2, BigQuery, DLP, Model Armor, Logging, KMS, Secret Manager,
-#         Storage). Borrower data cannot be read across the boundary to a non-Singapore
-#         project, which is what stops the filings and audit log from leaving the country.
+#         around the sovereignty-critical APIs (Vertex/Agent Platform, DLP, Model Armor,
+#         Logging, KMS, Secret Manager, Storage). Borrower data cannot be read across the
+#         boundary to a non-Singapore project, which is what stops the filings and audit
+#         log from leaving the country.
 #   P-01 (least surface): only the services B2 uses are inside the perimeter.
+#
+# WHAT THE PERIMETER DOES NOT COVER:
+#   A service perimeter governs Google APIs. Two legs of this service reach the public
+#   internet instead, and neither is inside it:
+#     * peer data (data.sec.gov / www.sec.gov). No borrower identity is sent: company
+#       resolution matches a downloaded ticker file in-process, and the only borrower
+#       attribute that reaches SEC is the SIC code — a public industry classification —
+#       used to select the cohort. Everything after that is other companies' CIKs.
+#     * web research, when CREDIT_MEMO_RESEARCH_ENABLED is set. That leg does send the
+#       borrower's public identity, and is the recorded residency deviation.
+#   Both are read-only and neither carries an uploaded document, a spread, a memo or an
+#   audit record, all of which stay in region.
 #
 # Guarded by var.enable_vpc_sc so non-prod/dev applies can skip it (count = 0).
 #
@@ -23,7 +35,6 @@
 locals {
   perimeter_restricted_services = [
     "aiplatform.googleapis.com",
-    "bigquery.googleapis.com",
     "dlp.googleapis.com",
     "modelarmor.googleapis.com",
     "logging.googleapis.com",

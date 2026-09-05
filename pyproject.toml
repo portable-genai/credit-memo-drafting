@@ -50,7 +50,6 @@ gcp = [
   "google-adk==2.8.0",
   "google-genai>=1.21",
   "google-cloud-aiplatform[agent_engines,adk,evaluation]>=1.158.0",
-  "google-cloud-bigquery>=3.25",
   # Object custody for the analysis bundle (adapters/gcp/analysis_bundle.py).
   "google-cloud-storage>=2.18",
   "google-cloud-dlp>=3.20",

@@ -106,7 +106,7 @@ SEED_PASSAGES: tuple[RetrievedPassage, ...] = (
     ),
 )
 
-# Synthetic peer-financials table, keyed by metric (the local stand-in for BigQuery).
+# Synthetic peer-financials table, keyed by metric (the offline stand-in for SEC EDGAR).
 SEED_PEERS: dict[str, tuple[PeerMetric, ...]] = {
     "leverage": (
         PeerMetric(peer_name="Peer Alpha (FICTIONAL)", metric="leverage", value=2.0),

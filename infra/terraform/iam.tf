@@ -19,19 +19,19 @@ resource "google_service_account" "app" {
 }
 
 locals {
-  # Serving path: hold one analysis bundle, read peer data (BigQuery), call models + DLP,
-  # write audit + traces, run evals, read secrets. No org-wide writes.
+  # Serving path: hold one analysis bundle, call models + DLP, write audit + traces, run
+  # evals, read secrets. No org-wide writes.
   #
   # documentai.apiUser and discoveryengine.editor are gone with the services themselves:
   # extraction is Gemini reading the uploaded PDF in-region, and retrieval is per-request
-  # and in-process, so there is no processor to call and no index to write to.
+  # and in-process, so there is no processor to call and no index to write to. The two
+  # BigQuery roles went the same way: peer figures are now read from the filings the peers
+  # themselves published, so there is no dataset to grant access to.
   app_roles = [
-    "roles/aiplatform.user",     # Gemini reasoning + Gen AI evals
-    "roles/bigquery.dataViewer", # read the peer-financials dataset
-    "roles/bigquery.jobUser",    # run peer-comparison queries
-    "roles/dlp.user",            # deidentifyContent (P-04, R1)
-    "roles/logging.logWriter",   # write redacted audit events (R2)
-    "roles/cloudtrace.agent",    # OpenTelemetry spans (content OFF)
+    "roles/aiplatform.user",   # Gemini reasoning + Gen AI evals
+    "roles/dlp.user",          # deidentifyContent (P-04, R1)
+    "roles/logging.logWriter", # write redacted audit events (R2)
+    "roles/cloudtrace.agent",  # OpenTelemetry spans (content OFF)
     "roles/secretmanager.secretAccessor",
     "roles/run.invoker",
   ]

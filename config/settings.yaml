@@ -2,7 +2,7 @@
 #
 # Three deployment profiles share one domain (P-02, no vendor lock-in):
 #   gcp    : Google Cloud managed services (Gemini, a regional analysis-bundle bucket,
-#            BigQuery, Model Armor, DLP, Cloud Logging, Cloud Trace, Gen AI eval).
+#            Model Armor, DLP, Cloud Logging, Cloud Trace, Gen AI eval).
 #            Extraction and retrieval run in-process on every profile.
 #   local  : a WORKING offline laptop stack (SQLite FTS5 retrieval + a deterministic
 #            schema-driven LLM, regex DLP, heuristic guardrail, append-only audit),
@@ -71,10 +71,7 @@ knowledge_base:
   top_k: 10
 
 peer_data:
-  dataset: credit_peers                # BigQuery peer-financials dataset (CMEK)
-  table: peer_financials
-  location: asia-southeast1
-  max_peers: 25
+  max_peers: 25                        # ceiling on the cohort a comparison is drawn from
 
 model_armor:
   template_id: credit-memo-guardrail
@@ -217,8 +214,8 @@ adapters:
     live: credit_memo.adapters.live.knowledge_base:LiveEdgarKnowledgeBaseAdapter
     onprem: credit_memo.adapters.onprem.knowledge_base:OnPremKnowledgeBaseAdapter
   peer_data:
-    gcp: credit_memo.adapters.gcp.bigquery_peer_data:BigQueryPeerDataAdapter
-    platform: credit_memo.adapters.gcp.bigquery_peer_data:BigQueryPeerDataAdapter
+    gcp: credit_memo.adapters.live.peer_data:LiveEdgarPeerDataAdapter
+    platform: credit_memo.adapters.live.peer_data:LiveEdgarPeerDataAdapter
     local: credit_memo.adapters.local.peer_data:LocalPeerDataAdapter
     live: credit_memo.adapters.live.peer_data:LiveEdgarPeerDataAdapter
     onprem: credit_memo.adapters.onprem.peer_data:OnPremPeerDataAdapter

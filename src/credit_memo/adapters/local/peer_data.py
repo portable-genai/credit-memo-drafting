@@ -1,11 +1,15 @@
 """Local peer-data adapter (PeerDataPort) — in-process synthetic peer financials.
 
-The ``local`` profile's stand-in for the **BigQuery** peer-financials dataset: a small,
-deterministic in-process table keyed by metric. SDK-free and seedable (callers may pass a
-custom table), so the peer-comparison artifact runs offline. The service layer still
-computes the peer median and the borrower's percentile arithmetically, so peer numbers
-are never invented by a model. There is no Google emulator for BigQuery, so this path is
-unconditional and imports no google-cloud package.
+The ``local`` profile's offline stand-in for SEC EDGAR: a small, deterministic in-process
+table keyed by metric. SDK-free and seedable (callers may pass a custom table), so the
+peer-comparison artifact runs with no network at all. The service layer still computes the
+peer median and the borrower's percentile arithmetically, so peer numbers are never
+invented by a model.
+
+Deliberately fictional rather than a cached slice of real filings. A cache would go stale
+without saying so, which is the failure the managed profile moved away from a curated
+dataset to avoid; a table that is obviously synthetic cannot be mistaken for current
+market data by anyone reading the local demo.
 """
 
 from __future__ import annotations
@@ -16,7 +20,7 @@ from ._seed import SEED_PEERS
 
 
 class LocalPeerDataAdapter:
-    """In-process peer-financials table (the local stand-in for BigQuery)."""
+    """In-process peer-financials table: the offline stand-in for SEC EDGAR."""
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings

@@ -91,7 +91,7 @@ human decisions below.
    services; the default is a reference, not your policy. Add further owned thresholds through the
    same typed settings seam rather than hard-coding them.
 5. **Reference data is fictional.** Every fixture and figure use obviously-fake names
-   (`Acme Manufacturing (FICTIONAL)`). Swap the fixtures and the BigQuery peer set for your own
+   (`Acme Manufacturing (FICTIONAL)`). Swap the fixtures for your own
    synthetic data. **Do not run against live borrower data without your own legal, security and
    model-risk sign-off.**
 6. **Eval golden set.** Rebuild `eval/datasets/golden_cases.jsonl` and the rubrics for your
@@ -119,7 +119,7 @@ are already thin HTTP clients to those services.
 - [ ] Confirmed your IAP / identity front-end resolves the verified `Principal`.
 - [ ] Set `pii.jurisdictions` + added a pack market if needed; `pii_safety` exercises your ids.
 - [ ] Owned the covenant / risk numbers with your credit function (lifted `_AT_RISK_BAND` into config).
-- [ ] Replaced every synthetic fixture and the BigQuery peer set.
+- [ ] Replaced every synthetic fixture.
 - [ ] Rebuilt the eval golden set + rubrics for your vertical.
 - [ ] Reviewed the deploy posture (Dockerfile, Terraform, bind address); added the Terraform CI job.
 - [ ] Decided which sibling platform services you integrate vs stub.
