@@ -78,7 +78,7 @@ demo-selftest: ## Prove the served presenter states and evidence hooks cannot ro
 demo-browser: ## Drive the SERVED demo through pinned headless Chromium (needs the [demo] extra).
 	CREDIT_MEMO_PROFILE=local $(PYTHON) -m pytest $(TESTS)/browser -m 'not console' -q -rs
 
-demo-console: ui-build ## Walk the 17 business use cases through the BUILT console and assert each.
+demo-console: ui-build ## Walk the 18 business use cases through the BUILT console and assert each.
 	CREDIT_MEMO_PROFILE=local $(PYTHON) -m pytest \
 		$(TESTS)/browser/test_console_use_cases.py -m console -q -rs
 
@@ -86,14 +86,14 @@ ui-build: ## Build the console the demo presents from (never `next dev`: see ui/
 	NEXT_PUBLIC_API_BASE=$(CONSOLE_API_BASE) NEXT_TELEMETRY_DISABLED=1 \
 		npm --prefix $(UI_DIR) run build
 
-walkthrough: ui-build ## Presenter-paced walkthrough of the same 17 acts (ACT="..." for just one).
+walkthrough: ui-build ## Presenter-paced walkthrough of the same 18 acts (ACT="..." for just one).
 	$(PYTHON) scripts/credit_memo_console_walkthrough.py $(if $(ACT),--act "$(ACT)",)
 
 walkthrough-list: ## Name the use cases `make walkthrough ACT=...` can show.
 	@$(PYTHON) scripts/credit_memo_console_walkthrough.py --list
 
 memo: ## End-to-end smoke: build a cited memo offline under the local profile.
-	CREDIT_MEMO_PROFILE=local credit-memo build "Acme Manufacturing Pte Ltd" \
+	CREDIT_MEMO_PROFILE=local credit-memo build "Acme Manufacturing Pte Ltd (FICTIONAL)" \
 		--sector manufacturing --jurisdiction SG
 
 demo: ## Offline demo: build a cited memo + write JSON + render static audit-first HTML.

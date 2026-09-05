@@ -1,12 +1,12 @@
 # The business use-case demo
 
 One deal, walked end to end through the product a credit team would actually use: the
-built console talking to the real service. Seventeen acts, each a beat a credit audience
+built console talking to the real service. Eighteen acts, each a beat a credit audience
 recognises, and each one asserted so the demo cannot quietly rot.
 
 ```bash
 # Build the console once (its API base is inlined at build time), then present.
-make walkthrough                      # a browser opens; all seventeen acts
+make walkthrough                      # a browser opens; all eighteen acts
 
 make walkthrough ACT="The checker"    # just one use case
 make walkthrough-list                 # what you can name
@@ -23,23 +23,42 @@ bound, contract-tested and never called looks exactly like a working feature fro
 the suite. A demo asserts the one thing those checks cannot — that a person can still get
 to it.
 
-## The deal
+## The deal, and why every figure in it is checkable
 
-Acme Manufacturing Pte Ltd (FICTIONAL) asks for a USD 25m five-year term facility. Its
-figures are chosen so the memo shows what a credit audience needs to see rather than a
-happy path:
+**Flowserve Corporation** (NYSE: FLS, SEC CIK 30625) is asked for a USD 400m five-year
+term facility. The borrower is real, and every financial figure comes from its Form 10-K
+for the year ended 31 December 2025, accession `0000030625-26-000003`. The credit file the
+demo uploads is committed under [`demo/documents/`](../demo/documents/), with
+[`SOURCES.md`](../demo/documents/SOURCES.md) recording where each figure came from.
+
+That matters more than presentation. A fictional borrower never broke the memo — grounding
+is retrieval over uploaded evidence, so an invented company works fine — but nothing could
+be *checked*, and three real defects sat behind it: EDGAR grounding that mixed fiscal years
+and read this company's revenue as zero, an offline drafter that answered "Acme is a
+profitable manufacturer…" for every borrower it was handed, and an extractor whose
+placeholder text meant the presenter demo reported figures its own evidence never
+contained. All three were invisible until the numbers had to be right.
 
 | | |
 |---|---|
-| Leverage | 3.5x against a 3.0x covenant — a **BREACH**, and policy exception `LEV-01` |
-| DSCR | 1.29x against a 1.25x minimum — passing, but inside the thin-headroom band, so **AT RISK** |
+| Leverage | **3.18x** against the 3.00x this bank proposes — a **BREACH**, and policy exception `LEV-01` |
+| The borrower's own figure | **1.64x**, net of USD 760.2m cash, and it reports full compliance with its existing covenants |
+| Current ratio | **2.03x** against a 2.00x floor — passing by 1.3%, inside the thin-headroom band, so **AT RISK** |
+| DSCR | **5.42x** — comfortably met, and strong enough that a 200bp rate rise never breaks it |
 | Four ratios | not computable, each naming the line it was missing |
-| The certificate | says leverage is 2.50x where the engine computes 3.50x, and the reconciliation reports the disagreement |
 
-The last one is the point of the whole demo. The extractor reads 2.5x off the page; the
-engine computes 3.5x from the figures a named analyst confirmed; the covenant is a breach.
-A demo where the model and the arithmetic agree proves nothing about which one the product
-trusts.
+The disagreement is the point of the whole demo, and it is now real rather than staged.
+Both numbers are correct arithmetic on the same filing: the borrower nets its cash and adds
+back USD 58.3m of recurring realignment charges, and this bank does neither. The
+reconciliation reports both and names the cause instead of quietly picking one. That is the
+conversation a credit officer actually needs to have, and it could not be shown honestly
+with an invented borrower.
+
+**What is ours, not the company's.** The facility request, the proposed covenant
+thresholds, and every limit in `config/policy_pack.example.yaml` are this demo bank's and
+are invented. So an exception raised here is a statement about that example appetite, never
+an allegation about Flowserve — which, measured its own way against its own covenants,
+reports compliance.
 
 ## The acts
 
@@ -50,20 +69,21 @@ trusts.
 | 3 | Figures nobody has vouched for | The amber "Not yet anybody's figures" panel, and a quote opened beside its source page |
 | 4 | Becoming the person who stands behind them | The green "Confirmed by" line naming the analyst |
 | 5 | The memo | The human-review banner, then the sections a committee reads |
-| 6 | The breach the model did not see | The covenant pills, and the computed value beside the one the evidence reported |
+| 6 | Same filing, two answers | The covenant pills, and the engine's 3.18x beside the borrower's reported 1.64x |
 | 7 | It refuses to compute what it cannot | The ratio rows with no number, each naming the line it needed |
 | 8 | The bank's own policy | Rule `LEV-01` with its waiver authority, and the grade's drivers |
-| 9 | The reconciliations | The finding naming both figures |
-| 10 | The group | The "Incomplete" notice naming the guarantor nobody filed for, and the elimination row |
+| 9 | The reconciliations | The finding naming both figures, and that the cause is a definition rather than an error |
+| 10 | The group | The "Incomplete" notice naming the two real Exhibit 21 subsidiaries nobody filed for |
 | 11 | How far it can fall | The break-even column |
 | 12 | The checker | The revision chain, and the comment that went stale instead of away |
 | 13 | Figures are not editable prose | The refusal, which names the sections that *are* editable |
-| 14 | The committee pack | The rendered pack: the standing sentence, then `LEV-01` and the reconciliation |
-| 15 | Is this even bankable | The `TEN-01` knockout, and the absent rating |
-| 16 | What it will not do | The inline refusal, then the amber guardrail notice |
-| 17 | The evidence goes away | The 404 that does not confirm the analysis exists |
+| 14 | Public context, for the analyst only | The results with their suggestion chips, then the line saying none of it is in the memo |
+| 15 | The committee pack | The rendered pack: the standing sentence, then `LEV-01` and the reconciliation |
+| 16 | Is this even bankable | The `TEN-01` knockout, and the absent rating |
+| 17 | What it will not do | The inline refusal, then the amber guardrail notice |
+| 18 | The evidence goes away | The 404 that does not confirm the analysis exists |
 
-Acts 12, 13, 14 and 17 are driven over the API rather than the console, because the console
+Acts 12, 13, 15 and 18 are driven over the API rather than the console, because the console
 has no control for them (see **Gaps** below). Where there is something to look at, it still
 goes on screen: act 14 renders the committee pack in a browser tab.
 
@@ -88,7 +108,7 @@ make walkthrough ACT=checker                # any unambiguous part of the title
 ```
 
 An ambiguous name (`--act "The "`) is refused rather than guessed at, and an unknown one
-prints the seventeen titles. Slow motion is a launch-time Playwright setting, so the
+prints the eighteen titles. Slow motion is a launch-time Playwright setting, so the
 set-up acts run at whatever `SLOWMO_MS` the presented act uses; on this machine eleven
 set-up acts take a few seconds headless.
 
@@ -121,6 +141,21 @@ did not come for them. Each is one command:
 | The older presenter server? | `make demo-server` on :8094, six steps, unchanged |
 
 ## Gaps this demo surfaced
+
+**Closed by this work.** Grounding with Google Search was fully built — three adapters, a
+per-analysis cost cap, refuse-don't-scrub query redaction, a licence-driven isolation rule
+and a gate metric proving that rule holds — and reachable by nobody: no route, no client,
+no UI, so `Provenance.WEB_GROUNDED` and its console badge could never render. Act 14 exists
+because that is now wired end to end. Moving onto real filings closed three more: EDGAR
+grounding that mixed fiscal years, an offline drafter that ignored its borrower, and an
+extractor whose placeholder left the presenter demo reporting figures its evidence never
+held.
+
+**Still open.** `RenewalDiffService` is written, contract-tested and reachable by nobody —
+no route, no wire field, no console control. A renewal act was planned for this demo and
+dropped for exactly that reason. It is the same pattern, and it is still there.
+
+
 
 Recorded here rather than fixed, because each is product work with its own review:
 

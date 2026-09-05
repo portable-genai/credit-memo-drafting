@@ -127,7 +127,7 @@ options (`SLOWMO_MS`, `HEADLESS`, `CHROME_PATH`, ...) are in
 Section 2.1 walks the original four artifacts on the presenter server. The product has
 since grown the whole credit-file lifecycle, and
 [`docs/demo-use-cases.md`](docs/demo-use-cases.md) is the walkthrough that shows it: one
-deal through the REAL console and service, in seventeen acts — upload the credit file,
+deal through the REAL console and service, in eighteen acts — upload the credit file,
 extract and confirm the spread, state the ask, build, watch the engine's arithmetic
 override what the model read off the page, add the group, run the checker's comment thread,
 export the committee pack, and delete the evidence.
@@ -183,7 +183,7 @@ If you only want the cited memo in the terminal (not the browser):
 
 ```bash
 export CREDIT_MEMO_PROFILE=local
-credit-memo build "Acme Manufacturing Pte Ltd" --sector manufacturing --jurisdiction SG
+credit-memo build "Acme Manufacturing Pte Ltd (FICTIONAL)" --sector manufacturing --jurisdiction SG
 ```
 
 `credit-memo covenants ...` and `credit-memo risk-flags ...` show the individual artifacts.

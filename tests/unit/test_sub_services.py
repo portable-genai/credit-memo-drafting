@@ -11,6 +11,7 @@ All tests use only in-memory fakes (no Google Cloud SDK).
 
 from __future__ import annotations
 
+import pytest
 from tests.conftest import FakeLLM, FakePeerData, FakeTracer
 from tests.fixtures import sample_cases
 
@@ -130,17 +131,30 @@ def test_risk_flag_service_returns_cited_flags():
 # Peer comparison: arithmetic median/percentile, no invented peers.
 # --------------------------------------------------------------------------- #
 def test_peer_comp_computes_median_and_percentile():
+    """The arithmetic, derived from whatever peer set the adapter supplies.
+
+    Deliberately not pinned to particular peer values. This asserts that the median and
+    the delta follow from the peers actually returned; pinning the numbers made it a test
+    of the fixture table, and it failed the moment those peers became real companies
+    without anything about the calculation having changed.
+    """
+    from statistics import median
+
     from credit_memo.domain.models import FinancialMetric
 
     service = PeerCompService(peer_data=FakePeerData(), tracer=FakeTracer())
-    metrics = (FinancialMetric(name="leverage", value=2.5, period="FY2025", currency="x"),)
+    borrower_value = 2.5
+    metrics = (
+        FinancialMetric(name="leverage", value=borrower_value, period="FY2025", currency="x"),
+    )
     comparisons = service.compare(BORROWER, metrics, ACTOR)
     assert len(comparisons) == 1
     cmp = comparisons[0]
-    # Peers are 2.0, 2.8, 3.2 => median 2.8; borrower 2.5 sits below 2 of 3 (incl itself? no).
-    assert cmp.peer_median == 2.8
+
+    expected_median = median(p.value for p in cmp.peers)
+    assert cmp.peer_median == pytest.approx(expected_median)
+    assert cmp.delta_to_median == pytest.approx(borrower_value - expected_median)
     assert 0.0 <= cmp.percentile <= 1.0
-    assert cmp.delta_to_median == 2.5 - 2.8
 
 
 def test_peer_comp_skips_metric_without_peers():

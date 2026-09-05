@@ -34,9 +34,12 @@ const IS_EMBEDDED = process.env.NEXT_PUBLIC_EMBED === "1";
  * from the IAP assertion, so the picker is hidden.
  */
 export default function Home() {
-  const [name, setName] = useState("Acme Manufacturing Pte Ltd (FICTIONAL)");
+  // A real listed company, so whoever opens the console can check the memo against the
+  // filing. It is also what the live profile resolves against SEC EDGAR, so the default
+  // works on every profile rather than needing to be retyped on one of them.
+  const [name, setName] = useState("Flowserve Corporation");
   const [sector, setSector] = useState("manufacturing");
-  const [jurisdiction, setJurisdiction] = useState("SG");
+  const [jurisdiction, setJurisdiction] = useState("US");
   const [loading, setLoading] = useState(false);
   const [memo, setMemo] = useState<CreditMemo | null>(null);
   const [blocked, setBlocked] = useState<BlockedEnvelope | null>(null);
@@ -68,13 +71,6 @@ export default function Home() {
     (async () => {
       try {
         const status = await api.healthz();
-        if (!cancelled && status.profile === "live") {
-          // Live grounds on real SEC EDGAR records: suggest a real listed company
-          // instead of the fictional local-profile sample borrower.
-          setName("Apple Inc");
-          setSector("technology hardware");
-          setJurisdiction("US");
-        }
         if (status.profile !== "local") return;
         const list = await api.listPersonas();
         if (cancelled || list.length === 0) return;

@@ -66,6 +66,14 @@ class LocalFtsKnowledgeBaseAdapter:
     def _maybe_seed(self) -> None:
         """Self-seed the built-in fictional corpus so a local run grounds out of the box.
 
+        Seeded when the built-in passages are ABSENT, not when the whole index is empty.
+        The difference is the documented smoke run: the local store is persistent, so the
+        first thing that ingests a borrower document — ``make demo``, one CLI run with a
+        filing, the presenter demo — leaves the index non-empty forever. Seeding then
+        never ran again, and ``credit-memo build`` (README, PT-5, ``make memo``) failed
+        with ``RetrievalEmptyError`` on a machine where it had worked the day before. The
+        cause was invisible from the error, which talks about the borrower.
+
         Never under the ``live`` profile: live grounds on real ingested evidence (SEC
         EDGAR facts and uploaded borrower documents), and this guard covers every
         construction path, including the live subclass.
@@ -76,6 +84,25 @@ class LocalFtsKnowledgeBaseAdapter:
             self.seed(SEED_PASSAGES)
             return
         self._retag_legacy_seed_rows()
+        if self._seed_is_missing():
+            self._insert(list(SEED_PASSAGES))
+
+    def _seed_is_missing(self) -> bool:
+        """True when this index holds no rows carrying the demo corpus's ACL tag.
+
+        Keyed on the TAG rather than on the source ids, because the ids are not unique to
+        the corpus: the presenter demo ingests its filings under the same ids
+        (``doc-financials`` and friends), tagged to its own borrower. An id-based check
+        therefore found those, concluded the corpus was present, and left the fallback
+        with nothing to serve — the rows it needed were ACL'd to one borrower and
+        invisible to every other. The tag is what makes a row the fallback corpus, so the
+        tag is what to look for.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT count(*) AS n FROM passages WHERE acl_tags = ?", (DEMO_CORPUS_TAG,)
+            ).fetchone()
+        return not int(row["n"])
 
     def _retag_legacy_seed_rows(self) -> None:
         """Repair an index that was seeded BEFORE the demo corpus carried its ACL tag.

@@ -25,7 +25,14 @@ from __future__ import annotations
 from credit_memo.adapters.local._seed import DEMO_CORPUS_TAG, SEED_PASSAGES
 from credit_memo.adapters.local.knowledge_base import LocalFtsKnowledgeBaseAdapter
 from credit_memo.config import LocalSettings, Settings
-from credit_memo.domain.models import DocType, Filing, RetrievalQuery
+from credit_memo.domain.models import (
+    Citation,
+    DocType,
+    Filing,
+    RetrievalQuery,
+    RetrievedPassage,
+    SourceType,
+)
 
 #: Wording chosen to collide with the seed corpus on the terms it indexes. A filing about
 #: something the fixtures never mention would pass these tests without ever exercising the
@@ -187,3 +194,56 @@ def test_holding_the_demo_tag_is_what_admits_the_corpus() -> None:
     )
 
     assert {p.citation.source_id for p in with_tag} & _seeded_ids()
+
+
+def test_the_fallback_corpus_survives_an_index_that_has_been_used(tmp_path) -> None:
+    """The documented smoke run must not stop working because something was ingested.
+
+    The local store is persistent and seeding only ran on a wholly EMPTY index, so the
+    first `make demo` -- or any CLI run carrying a filing -- left it non-empty for good
+    and `credit-memo build` began failing with RetrievalEmptyError on a machine where it
+    had worked the day before. The error names the borrower, so nothing pointed at the
+    cause.
+
+    Worse, the presenter demo ingests its filings under the SAME source ids as the
+    built-in corpus, tagged to its own borrower. Checking for the ids therefore found
+    them, concluded the corpus was present, and left every other borrower with a fallback
+    that could serve nothing.
+    """
+    db = str(tmp_path / "local.db")
+    settings = Settings(profile="local", local=LocalSettings(db_path=db, audit_path=":memory:"))
+
+    # A first run ingests a borrower's own evidence under the built-in source ids.
+    first = LocalFtsKnowledgeBaseAdapter(settings)
+    first.add(
+        [
+            RetrievedPassage(
+                text="Some other borrower's own filing.",
+                citation=Citation(
+                    source_id="doc-financials",
+                    source_type=SourceType.FILING,
+                    title="Someone Else's Statements",
+                    url="https://example.invalid/other",
+                    page=1,
+                ),
+                score=0.9,
+                acl_tags=("borrower:someone-else",),
+            )
+        ]
+    )
+    first._conn.execute("DELETE FROM passages WHERE acl_tags = ?", (DEMO_CORPUS_TAG,))
+    first._conn.commit()
+
+    # A later process opens the same store and must restore the fallback.
+    second = LocalFtsKnowledgeBaseAdapter(settings)
+    grounded = second.search(
+        RetrievalQuery(
+            text="financial statements covenants credit policy",
+            top_k=5,
+            acl_principals=("borrower:a-third-borrower",),
+        )
+    )
+    assert grounded, "a borrower with no evidence of its own was left ungrounded"
+    assert all(p.citation.url.startswith("https://example.test/") for p in grounded), (
+        "the fallback served somebody else's ingested evidence"
+    )
