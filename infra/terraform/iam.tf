@@ -28,8 +28,22 @@ locals {
   # BigQuery roles went the same way: peer figures are now read from the filings the peers
   # themselves published, so there is no dataset to grant access to.
   app_roles = [
-    "roles/aiplatform.user",   # Gemini reasoning + Gen AI evals
-    "roles/dlp.user",          # deidentifyContent (P-04, R1)
+    "roles/aiplatform.user", # Gemini reasoning + Gen AI evals
+    "roles/dlp.user",        # deidentifyContent / inspectContent (P-04, R1)
+    # ...and the role that lets it READ the templates it is configured with. `dlp.user`
+    # grants the CALL and not `dlp.inspectTemplates.get`, so a serving identity holding only
+    # `dlp.user` can ask DLP to redact and cannot fetch the template that says HOW. The
+    # sibling app found this on its own first managed deployment and this one repeated it
+    # exactly: every build returned 500 with `dlp.inspectTemplates.get` denied on a template
+    # that exists, at the very first pipeline step.
+    "roles/dlp.reader",
+    # Model Armor's screening call is a permission ON THE TEMPLATE
+    # (`modelarmor.templates.useToSanitizeUserPrompt`), not a general API grant, so a
+    # serving identity that can reach Vertex and DLP is still refused by the guardrail --
+    # which is the step that runs before any retrieval or drafting, so the whole pipeline
+    # returns 500 at its second step. The sibling app grants the same role for the same
+    # reason.
+    "roles/modelarmor.user",
     "roles/logging.logWriter", # write redacted audit events (R2)
     "roles/cloudtrace.agent",  # OpenTelemetry spans (content OFF)
     "roles/secretmanager.secretAccessor",

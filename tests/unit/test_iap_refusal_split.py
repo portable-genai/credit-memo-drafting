@@ -87,8 +87,38 @@ def test_the_transport_facts_are_the_commons_values() -> None:
     from credit_memo.adapters.gcp import iap_identity
 
     assert iap_identity._ASSERTION_HEADER == kit_federation.IAP_ASSERTION_HEADER
+    assert iap_identity._PORTAL_ASSERTION_HEADER == kit_federation.PORTAL_ASSERTION_HEADER
     assert iap_identity._IAP_ISSUER == kit_federation.IAP_ISSUER
     assert iap_identity._IAP_KEYS_URL == kit_federation.IAP_KEYS_URL
+
+
+def test_an_embedding_host_may_forward_the_assertion_under_the_unreserved_name() -> None:
+    """Behind a portal this is the ONLY name the assertion arrives under.
+
+    Google's serverless frontend reserves ``x-goog-*`` and strips the standard header on the
+    hop into an embedded backend, so the embedding host re-injects the same assertion under a
+    name it does not reserve. Reading only the reserved one meant this application
+    authenticated nobody the moment it was deployed behind the portal -- 401 on every request,
+    while its own health endpoint went on reporting identity_mode=iap. It is a fallback for
+    TRANSPORT and not a second trust path: what it yields is verified identically, so a caller
+    gains nothing by choosing the header.
+    """
+    from credit_memo.adapters.gcp import iap_identity
+
+    adapter = _adapter()
+    ctx = RequestContext(headers={iap_identity._PORTAL_ASSERTION_HEADER: _token()})
+
+    # It gets past the missing-header refusal and on to verifying the token itself, which is
+    # the whole claim: the assertion was FOUND. Verification then fails on the stub token.
+    with pytest.raises(IdentityError) as caught:
+        adapter.resolve(ctx)
+    assert "missing IAP assertion header" not in str(caught.value)
+
+
+def test_neither_name_present_is_still_a_missing_assertion() -> None:
+    adapter = _adapter()
+    with pytest.raises(IdentityError, match="missing IAP assertion header"):
+        adapter.resolve(RequestContext(headers={}))
 
 
 # --------------------------------------------------------------------------------------- #
@@ -212,3 +242,54 @@ def test_the_api_still_answers_an_ordinary_refusal_with_a_bare_401(
         security.get_principal(request)
     assert caught.value.status_code == 401
     assert caught.value.detail == "authentication required"
+
+
+# --------------------------------------------------------------------------------------- #
+# (e) A deployment that can authenticate everyone and authorize nobody.
+# --------------------------------------------------------------------------------------- #
+def test_a_verified_caller_holds_the_groups_its_domain_is_mapped_to(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without this map, IAP authentication works and every borrower request is refused.
+
+    That is exactly what the first deployment behind the portal did: the assertion verified,
+    the principal resolved, and the borrower check refused it for holding no entitlement --
+    a 403 naming the caller, which reads like a missing grant rather than a deployment with
+    no way to express one.
+    """
+    from credit_memo.adapters.gcp import iap_identity
+
+    monkeypatch.setenv(
+        iap_identity._IAP_GROUPS_ENV,
+        '{"bank.example": ["group:credit-analyst", "group:credit-approver"]}',
+    )
+    policy = iap_identity._federation_policy()
+
+    assert policy.domain_groups == {
+        "bank.example": ("group:credit-analyst", "group:credit-approver")
+    }
+
+
+def test_no_group_map_grants_no_groups(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unset is empty, not a wildcard: a deployment that names no mapping grants none."""
+    from credit_memo.adapters.gcp import iap_identity
+
+    monkeypatch.delenv(iap_identity._IAP_GROUPS_ENV, raising=False)
+    assert iap_identity._federation_policy().domain_groups == {}
+
+
+def test_an_emptied_group_map_is_a_configuration_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Set-and-empty said something; it must not read the same as never having been set."""
+    from credit_memo.adapters.gcp import iap_identity
+
+    monkeypatch.setenv(iap_identity._IAP_GROUPS_ENV, "   ")
+    with pytest.raises(ValueError, match="names no mapping"):
+        iap_identity._federation_policy()
+
+
+def test_a_group_map_that_grants_nothing_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    from credit_memo.adapters.gcp import iap_identity
+
+    monkeypatch.setenv(iap_identity._IAP_GROUPS_ENV, '{"bank.example": []}')
+    with pytest.raises(ValueError, match="at least one non-empty group"):
+        iap_identity._federation_policy()

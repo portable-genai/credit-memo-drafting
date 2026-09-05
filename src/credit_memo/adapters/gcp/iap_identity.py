@@ -12,6 +12,7 @@ import them, and the verified assertion is never logged.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from hex_service_kit.assertion import require_claims, require_pinned_algorithm
@@ -19,6 +20,7 @@ from hex_service_kit.federation import (
     IAP_ASSERTION_HEADER,
     IAP_ISSUER,
     IAP_KEYS_URL,
+    PORTAL_ASSERTION_HEADER,
     FederationPolicy,
     principal_from_iap_claims,
 )
@@ -26,7 +28,7 @@ from hex_service_kit.identity import IdentityError as AssertionRefused
 
 from ...config import Settings
 from ...domain.identity import IdentityError, Principal, RequestContext
-from ...envread import optional_setting
+from ...envread import optional_setting, read_env_setting
 from ...ports.identity import VERIFIED, EndUserAuthUnavailableError
 
 # This repository's names for the kit's transport facts. They are REBOUND, not re-declared:
@@ -38,6 +40,17 @@ from ...ports.identity import VERIFIED, EndUserAuthUnavailableError
 #: ``verify_token`` does not check the issuer at all (``verify_oauth2_token`` is the wrapper
 #: that does), so this adapter checks it itself against the kit's value.
 _ASSERTION_HEADER = IAP_ASSERTION_HEADER
+#: The same assertion, forwarded by a same-origin embedding host under a name Google's
+#: serverless frontend does not reserve and therefore does not strip. Read as a FALLBACK,
+#: never as an alternative trust path: what it yields is verified exactly like the standard
+#: header, so a caller gains nothing by choosing it. What it solves is transport.
+#:
+#: Without it this app authenticated nobody behind the portal. The portal verifies the edge
+#: assertion and re-injects it under both names precisely because the serverless hop drops
+#: the reserved one; an app reading only the reserved name sees no assertion at all and
+#: answers 401 to every request, while its own health endpoint keeps reporting `iap`. The
+#: sibling app already read both, which is the drift the commons module exists to end.
+_PORTAL_ASSERTION_HEADER = PORTAL_ASSERTION_HEADER
 _IAP_KEYS_URL = IAP_KEYS_URL
 _IAP_ISSUER = IAP_ISSUER
 
@@ -46,13 +59,59 @@ _IAP_ISSUER = IAP_ISSUER
 #: an assertion carrying only one of them and could not tell an absent claim from an empty one.
 _REQUIRED_CLAIMS = ("iss", "sub", "email", "exp")
 
+#: The one place ``CREDIT_MEMO_IAP_GROUPS_JSON`` is read: a JSON object mapping an identity
+#: domain to the entitlement principals every verified caller from it holds, e.g.
+#: ``{"bank.example": ["group:credit-analyst"]}``.
+#:
+#: Unset means NOBODY is entitled to a borrower, and that is what this deployment did. The
+#: policy below used to be a literal whose comment said "no domain is mapped to a group"
+#: as a statement of fact about a repository that had never been deployed behind IAP. The
+#: moment it was, every verified caller resolved correctly, carried no group, and was
+#: refused at the borrower check -- authentication working and authorization impossible,
+#: reported as a 403 naming the caller, which reads like a missing grant rather than a
+#: deployment that cannot express one.
+_IAP_GROUPS_ENV = "CREDIT_MEMO_IAP_GROUPS_JSON"
+
+
+def _iap_groups_by_domain() -> dict[str, tuple[str, ...]]:
+    """The reviewed domain -> groups map, or an empty one when the deployment names none.
+
+    Three-state, like every other setting here: unset keeps the empty default, set-and-empty
+    is a configuration error rather than a silent no-op, and set-and-valid is the map.
+    """
+    setting = read_env_setting(_IAP_GROUPS_ENV)
+    if setting.is_configured_empty:
+        raise ValueError(
+            f"{_IAP_GROUPS_ENV} is set to an empty value, which names no mapping. Unset it "
+            "to grant no groups, or provide an object mapping a domain to its groups."
+        )
+    if setting.is_unset:
+        return {}
+    try:
+        parsed = json.loads(setting.value)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{_IAP_GROUPS_ENV} must contain a JSON object") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError(f"{_IAP_GROUPS_ENV} must map identity domains to lists of groups")
+    cleaned: dict[str, tuple[str, ...]] = {}
+    for domain, groups in parsed.items():
+        key = str(domain).strip().lower()
+        if not key:
+            raise ValueError(f"{_IAP_GROUPS_ENV} contains an empty domain")
+        if isinstance(groups, str) or not isinstance(groups, (list, tuple)):
+            raise ValueError(f"{_IAP_GROUPS_ENV}[{domain!r}] must be a list of group principals")
+        values = tuple(str(group).strip() for group in groups)
+        if not values or any(not group for group in values):
+            raise ValueError(
+                f"{_IAP_GROUPS_ENV}[{domain!r}] must name at least one non-empty group; an "
+                "empty list grants nothing and is better written by omitting the domain"
+            )
+        cleaned[key] = values
+    return cleaned
+
+
 #: The reviewed policy the CLAIM half is evaluated under, and the whole of what this
 #: deployment decides about a verified caller once its signature has been checked.
-#:
-#: It is a literal rather than a setting because every value in it is a decision this
-#: repository has already made and none of it varies by deployment yet: no domain is mapped
-#: to a tenant id, no domain is mapped to a group, and the hosted domain IS the tenant id
-#: here.
 #:
 #: ``tenant_from_hosted_domain`` is ON, and it is an OPT-IN rather than a fallback. IAP
 #: restricts the audience to one organisation on this deployment, so the ``hd`` claim and the
@@ -60,7 +119,11 @@ _REQUIRED_CLAIMS = ("iss", "sub", "email", "exp")
 #: tenant at all: fail-closed, but closed for every verified user, and an offline gate would
 #: not notice, because the local profile never constructs this adapter. Writing the choice
 #: down is what makes it readable and testable; a silent fallback would be neither.
-_FEDERATION_POLICY = FederationPolicy(tenant_from_hosted_domain=True)
+def _federation_policy() -> FederationPolicy:
+    return FederationPolicy(
+        tenant_from_hosted_domain=True,
+        domain_groups=_iap_groups_by_domain(),
+    )
 
 
 _VERIFIER_UNAVAILABLE = (
@@ -130,9 +193,12 @@ class IapIdentityAdapter:
         # assertion: a whitespace-only value is truthy, so it skipped this refusal
         # and was refused further down by the algorithm pin instead, which reports a
         # malformed token for what is actually a missing one.
-        assertion = ctx.header(_ASSERTION_HEADER).strip()
+        assertion = (ctx.header(_ASSERTION_HEADER) or ctx.header(_PORTAL_ASSERTION_HEADER)).strip()
         if not assertion:
-            raise IdentityError("missing IAP assertion header; request did not pass through IAP")
+            raise IdentityError(
+                "missing IAP assertion header; request did not pass through IAP, or an "
+                "embedding host forwarded it under neither name"
+            )
         # The algorithm is judged BEFORE the verifier is handed the token, with no cryptography
         # and no cloud SDK, so the refusal is exercised by the offline gate rather than living
         # inside a library the gate does not install. `alg: none` is an unsigned assertion and
@@ -154,7 +220,7 @@ class IapIdentityAdapter:
         # not; that is an authorization decision, so the call site says which one this is.
         return principal_from_iap_claims(
             claims,
-            _FEDERATION_POLICY,
+            _federation_policy(),
             source="gcp-iap",
             include_subject_principal=True,
         )

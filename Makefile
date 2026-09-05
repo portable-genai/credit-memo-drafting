@@ -26,7 +26,7 @@ export CREDIT_MEMO_PROFILE := $(PROFILE)
 
 .DEFAULT_GOAL := help
 .PHONY: help install install-demo install-gcp lock fmt lint test check memo demo demo-server demo-selftest eval eval-adversarial run-api run-ui \
-	demo-browser demo-console walkthrough walkthrough-list ui-build ui-install ui-check tf-plan clean
+	demo-browser demo-console walkthrough walkthrough-list verify-deployed ui-build ui-install ui-check tf-plan clean
 
 help: ## Show this help.
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -88,6 +88,9 @@ ui-build: ## Build the console the demo presents from (never `next dev`: see ui/
 
 walkthrough: ui-build ## Presenter-paced walkthrough of the same 18 acts (ACT="..." for just one).
 	$(PYTHON) scripts/credit_memo_console_walkthrough.py $(if $(ACT),--act "$(ACT)",)
+
+verify-deployed: ## Walk the demo's steps against a DEPLOYED service and assert each.
+	$(PYTHON) scripts/verify_deployed_demo.py
 
 walkthrough-list: ## Name the use cases `make walkthrough ACT=...` can show.
 	@$(PYTHON) scripts/credit_memo_console_walkthrough.py --list

@@ -49,7 +49,11 @@ _COVENANT_SCHEMA: dict[str, Any] = {
                     "description": {"type": "string"},
                     "threshold": {"type": "number"},
                     "operator": {"type": "string", "enum": ["<=", "<", ">=", ">", "=="]},
-                    "current_value": {"type": ["number", "null"]},
+                    # ``nullable`` rather than a type union: Vertex parses this schema into
+                    # a ``types.Schema`` whose ``type`` is one enum member, and refuses a
+                    # list. The offline stand-in never validates it, so a union passed every
+                    # test and failed every managed call.
+                    "current_value": {"type": "number", "nullable": True},
                     "period": {"type": "string"},
                     "used_source_ids": {"type": "array", "items": {"type": "string"}},
                 },

@@ -54,7 +54,13 @@ SPREAD_SCHEMA: dict[str, Any] = {
                     "period": {"type": "string"},
                     "value": {"type": "number"},
                     "document_id": {"type": "string"},
-                    "page": {"type": ["integer", "null"]},
+                    # ``nullable``, not a ["integer", "null"] type union. Vertex validates
+                    # this schema into its own ``types.Schema``, whose ``type`` is a single
+                    # enum member, and a union fails the request outright with a pydantic
+                    # error naming the field -- so extraction was impossible on the managed
+                    # profile while the offline stand-in, which never validates the schema,
+                    # stayed green.
+                    "page": {"type": "integer", "nullable": True},
                     "quote": {"type": "string"},
                     "confidence": {"type": "number"},
                 },
