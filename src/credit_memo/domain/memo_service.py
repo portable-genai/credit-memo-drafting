@@ -44,6 +44,7 @@ from .errors import (
     RetrievalEmptyError,
     SpreadNotConfirmedError,
 )
+from .global_cash_flow_service import GlobalCashFlowService
 from .memo_synth_service import MemoSynthService
 from .memo_templates import template_for
 from .models import (
@@ -52,11 +53,14 @@ from .models import (
     Borrower,
     Citation,
     Covenant,
+    CovenantOperator,
+    CovenantType,
     CreditMemo,
     Decision,
     Direction,
     Filing,
     FinancialSpread,
+    GlobalCashFlow,
     GuardrailVerdict,
     MemoInput,
     PeerComparison,
@@ -65,6 +69,7 @@ from .models import (
     RetrievedPassage,
     RiskFlag,
     RiskRatingProposal,
+    ScenarioResult,
     TieOutFinding,
 )
 from .peer_comp_service import PeerCompService
@@ -74,6 +79,7 @@ from .ratio_service import RatioService
 from .review_policy import CreditReviewPolicy
 from .risk_flag_service import RiskFlagService
 from .risk_rating_service import RiskRatingService
+from .scenario_service import ScenarioService
 from .serialization import to_jsonable
 from .spread_service import SpreadService
 from .tie_out_service import TieOutService
@@ -135,6 +141,8 @@ class CreditMemoService:
         self._tie_out = TieOutService()
         self._policy = PolicyExceptionService()
         self._rating = RiskRatingService()
+        self._group = GlobalCashFlowService()
+        self._scenarios = ScenarioService()
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -254,6 +262,14 @@ class CreditMemoService:
             borrower, draft.financial_metrics, actor
         )
 
+        # 10b) The group, and how far it can fall. Whose cash services this debt is the
+        #      question a credit officer is actually asking, and answering it for the
+        #      borrowing entity alone answers a narrower one. Both are arithmetic over
+        #      confirmed figures, so a consolidation and a stress test are as replayable
+        #      as the ratio underneath them.
+        global_cash_flow = self._consolidate(memo_input)
+        scenarios = self._stress(memo_input, spread, global_cash_flow, covenants)
+
         # 11) Assemble the memo. The draft's confidence, caveats and questions were
         #    computed and then dropped on the floor before this: a reader could not see
         #    how sure the drafter was, nor what it had said it could not support.
@@ -275,6 +291,10 @@ class CreditMemoService:
             policy_exceptions=policy_exceptions,
             policy_version=policy_version,
             rating=rating,
+            related_entities=memo_input.related_entities,
+            guarantors=memo_input.guarantors,
+            global_cash_flow=global_cash_flow,
+            scenarios=scenarios,
             confidence=draft.confidence,
             caveats=draft.caveats,
             questions_for_client=draft.questions_for_client,
@@ -492,6 +512,77 @@ class CreditMemoService:
             )
         except Exception:  # noqa: BLE001 - a reconciliation must never fail a memo
             return ()
+
+    def _consolidate(self, memo_input: MemoInput) -> GlobalCashFlow | None:
+        """The group's combined position, or None when there is no group to combine.
+
+        Absent rather than a one-entity consolidation: a "global cash flow" listing only
+        the borrower asserts that the borrower is the whole group, which is a stronger
+        claim than the analyst made by uploading one set of statements.
+        """
+        if not memo_input.related_entities or not memo_input.entity_spreads:
+            return None
+        unconfirmed = sorted(
+            entity_id
+            for entity_id, spread in memo_input.entity_spreads.items()
+            if not self._spreads.is_confirmed(spread)
+        )
+        if unconfirmed:
+            raise SpreadNotConfirmedError(
+                "a group cash flow may only consolidate figures a person confirmed; "
+                f"unconfirmed: {', '.join(unconfirmed)}"
+            )
+        return self._group.consolidate(
+            memo_input.related_entities,
+            memo_input.entity_spreads,
+            eliminations=memo_input.eliminations,
+            currency=next(iter(memo_input.entity_spreads.values())).currency,
+        )
+
+    def _stress(
+        self,
+        memo_input: MemoInput,
+        spread: FinancialSpread | None,
+        global_cash_flow: GlobalCashFlow | None,
+        covenants: tuple[Covenant, ...],
+    ) -> tuple[ScenarioResult, ...]:
+        """How far coverage can fall before the covenant breaks.
+
+        Run against the GROUP where there is one, because that is the cash actually
+        servicing the debt: stressing the borrowing entity alone answers a narrower
+        question than the one the committee asked.
+
+        The threshold is the borrower's OWN extracted DSCR covenant, cited to the
+        facility document it came from. Never a shipped default: that would test every
+        borrower against a number this service made up, and a committee reading "passes"
+        would have no way to know whose test it was. Without one the stressed value is
+        still reported, because "coverage becomes 1.4x under a 15% decline" is useful
+        with no covenant behind it.
+        """
+        base = spread
+        if global_cash_flow is not None and global_cash_flow.lines:
+            base = self._group.as_spread(global_cash_flow, memo_input.borrower.id)
+        if base is None or not base.items:
+            return ()
+        threshold, higher_is_better = self._dscr_test(covenants)
+        return self._scenarios.run(
+            base, "dscr.v1", threshold=threshold, higher_is_better=higher_is_better
+        )
+
+    @staticmethod
+    def _dscr_test(covenants: tuple[Covenant, ...]) -> tuple[float | None, bool]:
+        """The borrower's DSCR covenant, and which direction passes it.
+
+        The direction comes from the covenant's own operator rather than from an
+        assumption about DSCR: a minimum and a maximum written with the same threshold
+        are opposite tests, and reading "passes" off the wrong one is the kind of error
+        that survives review.
+        """
+        for covenant in covenants:
+            if covenant.type is CovenantType.DSCR:
+                higher = covenant.operator in {CovenantOperator.GE, CovenantOperator.GT}
+                return covenant.threshold, higher
+        return None, True
 
     @staticmethod
     def _primary_spread(memo_input: MemoInput) -> FinancialSpread | None:

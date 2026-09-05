@@ -365,12 +365,133 @@ export interface CreditMemo {
   request: CreditRequest | null;
   spreads: FinancialSpread[];
   ratios: Ratio[];
+  /** Reconciliations the credit file did not survive. */
+  tie_out: TieOutFinding[];
+  /** Breaches of the bank's OWN uploaded limits, measured arithmetically. */
+  policy_exceptions: PolicyException[];
+  policy_version: string;
+  /** A grade the service PROPOSES from the bank's scorecard. Never one of record. */
+  rating: RiskRatingProposal | null;
+  /** Whose cash actually services this debt. */
+  related_entities: RelatedEntity[];
+  guarantors: Guarantor[];
+  global_cash_flow: GlobalCashFlow | null;
+  /** How far the coverage can fall before the covenant breaks. */
+  scenarios: ScenarioResult[];
   /** How fully the drafter believed the evidence supported the memo (0.0-1.0). */
   confidence: number;
   caveats: string[];
   questions_for_client: string[];
   /** Exactly which uploaded files this memo was assessed on. */
   manifest: AnalysisManifest | null;
+}
+
+export interface TieOutFinding {
+  check: string;
+  severity: Severity;
+  detail: string;
+  expected: number | null;
+  actual: number | null;
+  document_id: string;
+  page: number | null;
+  period: string;
+}
+
+export interface PolicyException {
+  rule_id: string;
+  description: string;
+  measured: number | null;
+  limit: number | null;
+  operator: string;
+  severity: Severity;
+  waiver_authority: string;
+  period: string;
+  detail: string;
+  citation: string;
+}
+
+export interface RatingDriver {
+  name: string;
+  measured: number | null;
+  band: string;
+  points: number;
+  weight: number;
+  detail: string;
+}
+
+export interface RiskRatingProposal {
+  obligor_grade: string;
+  score: number;
+  drivers: RatingDriver[];
+  scorecard_version: string;
+  definitions_url: string;
+  rationale: string;
+  facility_grade: string;
+}
+
+export interface RelatedEntity {
+  id: string;
+  name: string;
+  role: string;
+  ownership_pct: number | null;
+  jurisdiction: string;
+  provenance: Provenance;
+}
+
+export interface Guarantor {
+  entity_id: string;
+  name: string;
+  is_personal: boolean;
+  support_amount: number | null;
+  currency: string;
+  limited: boolean;
+  reliance: string;
+}
+
+export interface EntityContribution {
+  entity_id: string;
+  entity_name: string;
+  role: string;
+  value: number;
+}
+
+export interface Elimination {
+  code: LineItemCode;
+  period: string;
+  amount: number;
+  between: string;
+  reason: string;
+}
+
+export interface GlobalCashFlowLine {
+  code: LineItemCode;
+  period: string;
+  total: number;
+  contributions: EntityContribution[];
+  eliminations: Elimination[];
+}
+
+export interface GlobalCashFlow {
+  periods: string[];
+  lines: GlobalCashFlowLine[];
+  entities: RelatedEntity[];
+  /** The field that keeps the calculation honest: who could not be included. */
+  entities_without_figures: string[];
+  currency: string;
+  complete: boolean;
+}
+
+export interface ScenarioResult {
+  scenario_id: string;
+  scenario_name: string;
+  formula_id: string;
+  period: string;
+  base_value: number | null;
+  stressed_value: number | null;
+  threshold: number | null;
+  passes: boolean | null;
+  /** A severity multiple of the scenario: 2.0 means it takes twice the shock. */
+  breaks_at: number | null;
 }
 
 // --------------------------------------------------------------------------- //

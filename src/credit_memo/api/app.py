@@ -38,6 +38,7 @@ from ..domain.errors import (
     BorrowerAccessDeniedError,
     GuardrailBlockedError,
     RetrievalEmptyError,
+    SpreadNotConfirmedError,
 )
 from ..domain.revision_service import EDITABLE_SECTIONS, RevisionService
 from ..domain.services import CreditMemoService
@@ -616,6 +617,13 @@ def build_analysis_memo(
             request=body.request.to_domain() if body.request is not None else None,
             spreads=tuple(spreads),
             analysis_id=analysis_id,
+            related_entities=tuple(e.to_domain() for e in body.related_entities),
+            guarantors=tuple(g.to_domain() for g in body.guarantors),
+            entity_spreads={
+                entity_id: spread.to_domain(entity_id)
+                for entity_id, spread in body.entity_spreads.items()
+            },
+            eliminations=tuple(e.to_domain() for e in body.eliminations),
         )
     except ValueError as exc:
         return _ungrounded_response(str(exc))
@@ -634,6 +642,8 @@ def build_analysis_memo(
         )
     except RetrievalEmptyError as exc:
         return _ungrounded_response(f"No borrower evidence available to ground the memo: {exc}")
+    except SpreadNotConfirmedError as exc:
+        return _ungrounded_response(str(exc))
 
     response = CreditMemoResponse.from_domain(memo)
     memo_json = response.model_dump(mode="json")
