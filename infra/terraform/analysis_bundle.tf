@@ -85,6 +85,15 @@ resource "google_storage_bucket_iam_member" "analysis_bundles_rw" {
   member = "serviceAccount:${google_service_account.app.email}"
 }
 
+# The same boundary for an embedding host's runtime identity, which is the account the
+# container actually runs as when this console is mounted inside a portal.
+resource "google_storage_bucket_iam_member" "analysis_bundles_rw_additional" {
+  for_each = toset(var.additional_serving_service_accounts)
+  bucket   = google_storage_bucket.analysis_bundles.name
+  role     = "roles/storage.objectAdmin"
+  member   = "serviceAccount:${each.value}"
+}
+
 # Cloud Storage encrypts with the regional key on this project's behalf, so its service
 # agent needs the key. Without this the bucket create fails with a permission error that
 # names KMS rather than the bucket, which is a confusing way to learn about CMEK.

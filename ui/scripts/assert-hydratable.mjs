@@ -100,7 +100,17 @@ try {
   if (REQUESTED_PORT !== "0" && port !== Number(REQUESTED_PORT)) {
     throw new Error(`requested ${REQUESTED_PORT}, but this child bound ${port}`);
   }
-  const url = `http://127.0.0.1:${port}/`;
+  // The console mounts under a reverse-proxy sub-path when it is embedded, and the base
+  // path is a BUILD-time input to Next.js. Probing "/" on such a build asks for a route
+  // that does not exist, and a 404 carries no CSP at all -- which this script then reports
+  // as six missing directives and a missing nonce, none of them the real problem.
+  // The console mounts under a reverse-proxy sub-path when it is embedded, and the base
+  // path is a BUILD-time input to Next.js: probing "/" on such a build asks for a route
+  // that does not exist. Next also 308s the base path WITH a trailing slash to the one
+  // without, and a redirect carries no CSP -- which this script reported as six missing
+  // directives, a missing nonce and a page with no scripts, none of them the real problem.
+  const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || "").replace(/\/$/, "");
+  const url = basePath ? `http://127.0.0.1:${port}${basePath}` : `http://127.0.0.1:${port}/`;
   const response = await waitForServer(url, Date.now() + BOOT_TIMEOUT_MS);
   if (exited) {
     fail(`this Next child exited before its document was checked\n${serverLog}`);
