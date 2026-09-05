@@ -188,6 +188,14 @@ secure profiles resolve it from the IAP assertion. Agent skills: `build_credit_m
   by the registered bundle name `doc2-credit-memo` (no bare metric names); the eval response is parsed from
   `results[]` and the gate returns `{passed}`.
 - **Hrz5 observability/audit** (`OBSERVABILITY_URL`): `POST /v1/audit`.
+- **B1 `cdd-sow-research`** (`CDD_SOW_RESEARCH_URL`): `POST /v1/ubo-graph` -> the borrower's
+  beneficial-ownership structure, consumed on the `platform` profile as the
+  `EntityResolutionPort`. Asked rather than re-implemented: that service computes every
+  percentage as the product of cited registry hops an auditor can recompute, and a second
+  resolver here would be a second answer to one question. Its financial-crime findings —
+  PEP status, adverse media, opacity score, the control narrative — are deliberately NOT
+  carried over: they have their own review path and their own audience, and a credit memo
+  restating one would publish another team's conclusion under this service's name.
 
 Peer data is public filing data read over HTTPS: no platform HTTP adapter of our own.
 
@@ -202,7 +210,7 @@ Peer data is public filing data read over HTTPS: no platform HTTP adapter of our
 | PolicyPackPort | uploaded YAML/JSON | uploaded YAML/JSON | same as gcp | stub |
 | ExportPort | DOCX/HTML + PDF (reportlab, in process) | DOCX/HTML (stdlib) | same as gcp | stub |
 | WebResearchPort | Gemini grounding at `global`, opt-in | fixture | same as gcp | stub |
-| EntityResolutionPort | GLEIF register, opt-in | fixture register | same as gcp | stub |
+| EntityResolutionPort | GLEIF register, opt-in | fixture register | B1 `/v1/ubo-graph` | stub |
 | PeerDataPort | SEC EDGAR | in-process peer table | same as gcp | stub |
 | LLMPort | Gemini | deterministic schema-driven | same as gcp | stub |
 | GuardrailPort | Model Armor | heuristic injection screen | Hrz1 | stub |
