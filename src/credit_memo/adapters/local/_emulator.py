@@ -10,7 +10,7 @@ at module top level**. Each adapter that supports an emulator imports the google
 lazily, inside the method, and only on the emulator branch, so the default local path and
 the offline test suite never import a google-cloud package.
 
-There is no emulator for Agent Search, Gemini, Model Armor, DLP, Document AI or BigQuery,
+There is no emulator for Agent Search, Gemini, Model Armor, DLP or Document AI,
 so those adapters stay on the SDK-free workaround unconditionally. The credit-memo
 registry / audit / ledger-style stores can opt into the Firestore emulator.
 """

@@ -177,10 +177,7 @@ class KnowledgeBaseSettings:
 
 @dataclass(frozen=True)
 class PeerDataSettings:
-    dataset: str = "credit_peers"  # BigQuery dataset of peer financials
-    table: str = "peer_financials"
-    location: str = "asia-southeast1"
-    max_peers: int = 25
+    max_peers: int = 25  # ceiling on the cohort a comparison is drawn from
 
 
 @dataclass(frozen=True)

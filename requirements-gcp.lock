@@ -70,7 +70,9 @@ certifi==2026.7.22
 cffi==2.1.1 ; platform_python_implementation != 'PyPy'
     # via cryptography
 charset-normalizer==3.5.1
-    # via requests
+    # via
+    #   reportlab
+    #   requests
 click==8.4.2
     # via
     #   google-adk
@@ -112,7 +114,7 @@ frozenlist==1.8.0
     #   aiosignal
 fsspec==2026.7.0
     # via huggingface-hub
-google-adk==2.7.1
+google-adk==2.8.0
     # via
     #   credit-memo-drafting (pyproject.toml)
     #   google-cloud-aiplatform
@@ -123,9 +125,7 @@ google-api-core==2.34.0
     #   google-cloud-appengine-logging
     #   google-cloud-bigquery
     #   google-cloud-core
-    #   google-cloud-discoveryengine
     #   google-cloud-dlp
-    #   google-cloud-documentai
     #   google-cloud-logging
     #   google-cloud-modelarmor
     #   google-cloud-resource-manager
@@ -139,9 +139,7 @@ google-auth==2.57.0
     #   google-cloud-appengine-logging
     #   google-cloud-bigquery
     #   google-cloud-core
-    #   google-cloud-discoveryengine
     #   google-cloud-dlp
-    #   google-cloud-documentai
     #   google-cloud-logging
     #   google-cloud-modelarmor
     #   google-cloud-resource-manager
@@ -155,19 +153,13 @@ google-cloud-appengine-logging==1.10.0
 google-cloud-audit-log==0.6.2
     # via google-cloud-logging
 google-cloud-bigquery==3.44.0
-    # via
-    #   credit-memo-drafting (pyproject.toml)
-    #   google-cloud-aiplatform
+    # via google-cloud-aiplatform
 google-cloud-core==2.7.0
     # via
     #   google-cloud-bigquery
     #   google-cloud-logging
     #   google-cloud-storage
-google-cloud-discoveryengine==0.20.2
-    # via credit-memo-drafting (pyproject.toml)
 google-cloud-dlp==3.38.0
-    # via credit-memo-drafting (pyproject.toml)
-google-cloud-documentai==3.15.0
     # via credit-memo-drafting (pyproject.toml)
 google-cloud-logging==3.16.3
     # via
@@ -179,7 +171,9 @@ google-cloud-modelarmor==0.7.1
 google-cloud-resource-manager==1.18.0
     # via google-cloud-aiplatform
 google-cloud-storage==3.13.1
-    # via google-cloud-aiplatform
+    # via
+    #   credit-memo-drafting (pyproject.toml)
+    #   google-cloud-aiplatform
 google-cloud-trace==1.20.0
     # via opentelemetry-exporter-gcp-trace
 google-crc32c==1.8.0
@@ -207,16 +201,13 @@ graphviz==0.21
     # via google-adk
 grpc-google-iam-v1==0.14.5
     # via
-    #   google-cloud-discoveryengine
     #   google-cloud-logging
     #   google-cloud-resource-manager
 grpcio==1.83.0
     # via
     #   google-api-core
     #   google-cloud-appengine-logging
-    #   google-cloud-discoveryengine
     #   google-cloud-dlp
-    #   google-cloud-documentai
     #   google-cloud-logging
     #   google-cloud-modelarmor
     #   google-cloud-resource-manager
@@ -360,6 +351,8 @@ pandas==3.0.5
     # via google-cloud-aiplatform
 pii-kit @ git+https://github.com/portable-genai/pii-kit@654493048a8434d645757cc916bb9d446313688f
     # via credit-memo-drafting (pyproject.toml)
+pillow==12.3.0
+    # via reportlab
 propcache==0.5.2
     # via
     #   aiohttp
@@ -369,9 +362,7 @@ proto-plus==1.28.3
     #   google-api-core
     #   google-cloud-aiplatform
     #   google-cloud-appengine-logging
-    #   google-cloud-discoveryengine
     #   google-cloud-dlp
-    #   google-cloud-documentai
     #   google-cloud-logging
     #   google-cloud-modelarmor
     #   google-cloud-resource-manager
@@ -383,9 +374,7 @@ protobuf==6.33.6
     #   google-cloud-aiplatform
     #   google-cloud-appengine-logging
     #   google-cloud-audit-log
-    #   google-cloud-discoveryengine
     #   google-cloud-dlp
-    #   google-cloud-documentai
     #   google-cloud-logging
     #   google-cloud-modelarmor
     #   google-cloud-resource-manager
@@ -455,6 +444,8 @@ referencing==0.37.0
     #   jsonschema-specifications
 regex==2026.7.19
     # via tiktoken
+reportlab==5.0.1
+    # via credit-memo-drafting (pyproject.toml)
 requests==2.34.2
     # via
     #   google-adk

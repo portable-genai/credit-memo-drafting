@@ -113,7 +113,7 @@ secure profiles resolve it from the IAP assertion. Agent skills: `build_credit_m
   `results[]` and the gate returns `{passed}`.
 - **Hrz5 observability/audit** (`OBSERVABILITY_URL`): `POST /v1/audit`.
 
-Peer data is internal (BigQuery): no platform HTTP adapter.
+Peer data is public filing data read over HTTPS: no platform HTTP adapter of our own.
 
 ## 7. Ports and adapter families
 
@@ -122,7 +122,7 @@ Peer data is internal (BigQuery): no platform HTTP adapter.
 | DocumentExtractionPort | local parser (pypdf/text) | local parser (pypdf/text) | n/a | stub |
 | KnowledgeBaseClientPort | per-request SQLite FTS5 | SQLite FTS5 (BM25) | Hrz2 `/v1/*` | stub |
 | AnalysisBundlePort | regional CMEK bucket, 15-day lifecycle | directory | regional CMEK bucket | stub |
-| PeerDataPort | BigQuery | in-process peer table | n/a | stub |
+| PeerDataPort | SEC EDGAR | in-process peer table | n/a | stub |
 | LLMPort | Gemini | deterministic schema-driven | n/a | stub |
 | GuardrailPort | Model Armor | heuristic injection screen | Hrz1 | stub |
 | PIIRedactionPort | DLP | regex de-identify | Hrz1 | stub |
@@ -135,7 +135,7 @@ Peer data is internal (BigQuery): no platform HTTP adapter.
 Under `local`, the platform-client ports (knowledge base, guardrail, redaction, audit,
 eval, registry) use in-process implementations, not HTTP to sibling services: a laptop
 runs one app, not the whole platform. There is no Google emulator for
-Gemini, Model Armor, DLP or BigQuery, so those local adapters are
+Gemini, Model Armor or DLP, so those local adapters are
 unconditionally SDK-free; the registry can opt into the Firestore emulator.
 
 ## 8. Eval gate (Hrz4 / P-08)

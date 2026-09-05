@@ -13,17 +13,6 @@ output "region" {
   value       = var.region
 }
 
-# ------------------------------- BigQuery ----------------------------------- #
-output "peer_dataset" {
-  description = "BigQuery peer-financials dataset id (settings.yaml peer_data.dataset)."
-  value       = google_bigquery_dataset.credit_peers.dataset_id
-}
-
-output "peer_table" {
-  description = "BigQuery peer-financials table id (settings.yaml peer_data.table)."
-  value       = google_bigquery_table.peer_financials.table_id
-}
-
 # --------------------------------- KMS -------------------------------------- #
 output "kms_key" {
   description = "Regional CMEK crypto key id (settings.yaml kms_key / CREDIT_MEMO_KMS_KEY)."

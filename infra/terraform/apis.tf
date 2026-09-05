@@ -7,8 +7,8 @@
 #         protected resources defined in the sibling files.
 #
 # Note: the governed RAG store (Agent Search data stores) lives in A2. B2 enables Document
-# AI (extraction), BigQuery (peer data), DLP (redaction), Model Armor (guardrail), and the
-# audit/trace/eval surface.
+# AI (extraction), DLP (redaction), Model Armor (guardrail), and the audit/trace/eval
+# surface. Peer data needs no API: it is read from the peers' own SEC filings over HTTPS.
 #
 # disable_on_destroy = false so a `terraform destroy` of this stack does not yank platform
 # APIs out from under other workloads in a shared project.
@@ -16,7 +16,6 @@
 locals {
   required_services = [
     "aiplatform.googleapis.com",           # Gemini Enterprise Agent Platform / Agent Runtime / evals
-    "bigquery.googleapis.com",             # BigQuery (peer-financials dataset)
     "dlp.googleapis.com",                  # Sensitive Data Protection / DLP (PII redaction, R1)
     "modelarmor.googleapis.com",           # Model Armor guardrail (R1)
     "logging.googleapis.com",              # Cloud Logging (WORM locked bucket + audit, R2)

@@ -15,8 +15,11 @@ Four cited artifacts from a borrower's financial statements and filings:
 2. **`Covenant[]`**: extracted from filings and agreements, each with a type, a threshold and
    operator, the current value, a status (`COMPLIANT` / `AT_RISK` / `BREACH`) and citations.
 3. **`RiskFlag[]`**: identified risks with category, severity, detail and citations.
-4. A **`PeerComparison`**: borrower metrics versus a peer set drawn from BigQuery, with the
-   peer median, percentile and deltas.
+4. A **`PeerComparison`**: borrower metrics versus a peer set drawn from the SEC filings
+   of registrants in the same industry, with the peer median, percentile and deltas. Peer
+   ratios are computed from the same versioned formula as the borrower's own, and a metric
+   EDGAR cannot answer (anything needing scheduled debt service) is skipped rather than
+   estimated.
 
 Every claim carries a source-and-page `Citation`, and the whole run writes an immutable audit
 trail.

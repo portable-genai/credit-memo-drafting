@@ -17,17 +17,22 @@ and the serving identity.
 | --- | --- |
 | `providers.tf` | google + google-beta providers, pinned to the project and region |
 | `variables.tf` | the only knobs (project_id, org_id, retention_days, VPC-SC toggle) |
-| `apis.tf` | the managed services Doc2 uses (nothing speculative) |
+| `apis.tf` | the managed services B2 uses (nothing speculative) |
 | `kms.tf` | one regional CMEK key ring + per-service-agent key bindings |
-| `document_ai.tf` | the Document AI form-parser processor (extraction) |
-| `bigquery.tf` | the CMEK-encrypted peer-financials dataset + table |
+| `analysis_bundle.tf` | the CMEK bucket one analysis lives in, deleted after 15 days |
 | `dlp.tf` | DLP inspect + deidentify templates (incl. SG NRIC/FIN) |
 | `model_armor.tf` | the Model Armor guardrail template (both directions) |
-| `logging_worm.tf` | locked WORM audit bucket + sink + data-access audit config |
+| `logging.tf` | the redacted audit sink and its data-access audit config |
+| `org_policy.tf` | the resource-location policy, and the one deviation it admits |
 | `iam.tf` | least-privilege serving + Agent Runtime service accounts |
 | `vpc_sc.tf` | the VPC Service Controls perimeter (residency / exfiltration) |
 | `agent_runtime.tf` | the Agent Runtime staging bucket (CMEK) |
 | `outputs.tf` | values to wire into `config/settings.yaml` after apply |
+
+There is no `document_ai.tf`, no `bigquery.tf` and no `logging_worm.tf`. Extraction is
+Gemini reading the uploaded PDF in region, peer figures come from the peers' own SEC
+filings, and the WORM audit bucket was declined for an ephemeral demo — each recorded
+where the decision was taken rather than left as an empty resource.
 
 ## Usage
 
@@ -39,8 +44,8 @@ terraform apply
 ```
 
 After apply, export the outputs into the runtime environment so they land in
-`config/settings.yaml` via `${VAR}` interpolation (processor id, peer dataset, DLP
-templates, KMS key, WORM bucket).
+`config/settings.yaml` via `${VAR}` interpolation (analysis-bundle bucket, DLP templates,
+KMS key).
 
 ## Warnings
 

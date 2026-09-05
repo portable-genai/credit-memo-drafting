@@ -35,9 +35,8 @@ for a live build.
 
 1. `make install-gcp`
 2. Provision infra: `cd infra/terraform && terraform init && terraform apply` (sets up
-   the analysis-bundle bucket (regional, CMEK, 15-day lifecycle), BigQuery peer dataset, DLP,
-   Model Armor, KMS, IAM and
-   VPC-SC, all in `asia-southeast1`).
+   the analysis-bundle bucket (regional, CMEK, 15-day lifecycle), DLP, Model Armor, KMS,
+   IAM and VPC-SC, all in `asia-southeast1`).
 3. Build and push the image (`Dockerfile`), deploy to Agent Runtime / Cloud Run.
 4. Register the agent card with Hrz3 and confirm Hrz4 eval gate is green before promotion.
 

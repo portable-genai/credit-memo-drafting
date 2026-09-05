@@ -34,7 +34,7 @@ flowchart TB
     p_id["IdentityPort"]
   end
   subgraph adapters["Adapters (one profile active)"]
-    gcp["gcp: Gemini · Cloud Storage (analysis bundles) · BigQuery · Model Armor · DLP · Cloud Logging · Cloud Trace"]
+    gcp["gcp: Gemini · Cloud Storage (analysis bundles) · Model Armor · DLP · Cloud Logging · Cloud Trace"]
     local["local: SQLite FTS5 · deterministic LLM · regex DLP · heuristic guardrail · append-only audit"]
     platform["platform: Hrz1 · Hrz2 · Hrz3 · Hrz4 · Hrz5 HTTP clients"]
     onprem["onprem: placeholder stubs"]
@@ -62,7 +62,7 @@ sequenceDiagram
   participant Safety as Hrz1 redact plus guardrail
   participant KB as Hrz2 Enterprise KB
   participant LLM as Gemini
-  participant Peer as BigQuery peer data
+  participant Peer as SEC EDGAR peer data
   participant Audit as Hrz5 audit
   Officer->>API: POST borrower, documents (no actor)
   API->>Service: build(memo_input, actor, principals) from verified Principal
@@ -108,7 +108,7 @@ covenant met or breached. A BREACH escalates the memo to enhanced review.
 | Extraction | local parser (pypdf/text) | local parser (pypdf/text) | n/a | placeholder |
 | Governed RAG | per-request SQLite FTS5 | SQLite FTS5 (BM25) | Hrz2 KB | placeholder |
 | Analysis custody | regional CMEK bucket (15-day lifecycle) | directory | regional CMEK bucket | placeholder |
-| Peer data | BigQuery | in-process peer table | n/a | placeholder |
+| Peer data | SEC EDGAR | in-process peer table | n/a | placeholder |
 | LLM | Gemini | deterministic schema-driven | n/a | placeholder |
 | Guardrail + redaction | Model Armor + DLP | heuristic + regex | Hrz1 gateway | placeholder |
 | Audit + tracing | Cloud Logging + Cloud Trace | append-only SQLite + no-op | Hrz5 | placeholder |
@@ -260,7 +260,7 @@ alert policies are not provisioned in this repo's Terraform).
 | # | Principle (generic) | Mechanism in this repo | Proof |
 |---|---------------------|------------------------|-------|
 | SC-14 | **Residency by construction.** The deploy region is validated so an out-of-region value fails before any resource is created; every service uses regional identifiers, never global. | The `region` variable in [`infra/terraform/variables.tf`](infra/terraform/variables.tf) has a `validation` block that fails unless the value is in the `allowed_regions` residency allowlist (default `["asia-southeast1"]`) (P-05); all service resources use `var.region`. | `terraform -chdir=infra/terraform plan -var 'project_id=demo' -var 'org_id=123' -var 'region=us-central1'` exits non-zero with the "must be one of var.allowed_regions (residency allowlist)" message (validation runs before any GCP call, so this is offline). Extending `allowed_regions` is the deliberate residency review point, not an accident. |
-| SC-15 | **CMEK does not cascade: bind it everywhere, explicitly.** Each service that touches the data gets its own key binding; assume nothing inherits encryption. | [`infra/terraform/kms.tf`](infra/terraform/kms.tf): one regional key ring/key with `prevent_destroy`, wired per-resource (the analysis-bundle bucket, BigQuery, Agent Runtime, Logging) rather than relying on inheritance. | `terraform -chdir=infra/terraform validate`; every CMEK-capable resource in the stack names `google_kms_crypto_key.credit_memo`. |
+| SC-15 | **CMEK does not cascade: bind it everywhere, explicitly.** Each service that touches the data gets its own key binding; assume nothing inherits encryption. | [`infra/terraform/kms.tf`](infra/terraform/kms.tf): one regional key ring/key with `prevent_destroy`, wired per-resource (the analysis-bundle bucket, Agent Runtime, Logging) rather than relying on inheritance. | `terraform -chdir=infra/terraform validate`; every CMEK-capable resource in the stack names `google_kms_crypto_key.credit_memo`. |
 | SC-16 | **Blast-radius controls default on, with an explicit staged rollout.** A VPC-SC perimeter around the AI/data APIs is on by default and rolled out in a documented enable-later sequence, behind least-privilege per-workload service accounts. | [`infra/terraform/vpc_sc.tf`](infra/terraform/vpc_sc.tf) (`enable_vpc_sc` toggle defaulting to `true`, `count`-guarded perimeter, with the apply-false-then-enforce sequence documented in the file header); [`infra/terraform/iam.tf`](infra/terraform/iam.tf) provisions two scoped service accounts (serving and Agent Runtime) with only the roles each needs. | `terraform -chdir=infra/terraform validate`; `grep -n "enable_vpc_sc\|roles/" infra/terraform/vpc_sc.tf infra/terraform/iam.tf`. |
 | SC-17 | **Graceful degradation is a design decision, listed per step.** Best-effort steps (extraction, ingestion) degrade with the memo still built; safety-critical steps (guardrail, grounding, review) hard-fail. Write the list down so nobody "fixes" a hard failure into a silent skip. | `CreditMemoService`: extraction/ingestion failures are caught per document and degrade; a blocked input, empty retrieval and the review gate raise or hold ([`memo_service.py`](src/credit_memo/domain/memo_service.py)). | `pytest "tests/unit/test_memo_service.py::test_blocked_input_raises_and_audits" "tests/unit/test_memo_service.py::test_empty_knowledge_base_raises" "tests/unit/test_memo_service.py::test_memo_builds_without_documents" -q` |
 

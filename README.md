@@ -32,7 +32,7 @@ shared platform services, or an on-premise stack, selected by one `profile` swit
    value, status `COMPLIANT` | `AT_RISK` | `BREACH`, citations). Status is computed
    deterministically; the LLM never overrides a breach.
 3. **RiskFlag[]**: identified risks (category, severity, detail, citations).
-4. **PeerComparison**: borrower metrics versus a peer set (from BigQuery), with the peer
+4. **PeerComparison**: borrower metrics versus a peer set (same-industry SEC filers), with the peer
    median, percentile, and deltas.
 
 ## Architecture at a glance
@@ -49,12 +49,12 @@ flowchart LR
   svc --> ports["Ports (Protocols)"]
   ports --> extract["DocumentExtractionPort"]
   ports --> kb["KnowledgeBaseClientPort (Hrz2)"]
-  ports --> peers["PeerDataPort (BigQuery)"]
+  ports --> peers["PeerDataPort (SEC EDGAR)"]
   ports --> llm["LLMPort (Gemini)"]
   ports --> obs["Audit + Tracer (Hrz5)"]
   extract --> parse["pypdf, in-process"]
   kb --> a2["Hrz2 Enterprise KB"]
-  peers --> bq["BigQuery peer dataset"]
+  peers --> bq["SEC EDGAR company facts"]
   llm --> gemini["Gemini 3.5 Flash"]
   obs --> logs["Cloud Logging"]
 ```
@@ -158,7 +158,7 @@ path + embed mode) or runs standalone. See
 
 Doc2 consumes the shared platform services via `platform` HTTP-client adapters: Hrz1
 guardrail/redaction (R1), Hrz2 Enterprise KB governed RAG (R3), Hrz3 registry (R4), Hrz4 AI
-quality eval gate (R5), Hrz5 observability/audit (R2). Peer data is internal (BigQuery),
+quality eval gate (R5), Hrz5 observability/audit (R2). Peer data is public filing data,
 so it has no platform adapter.
 
 See `SPEC.md` for the contract, `ARCHITECTURE.md` for the design, and `COMPLIANCE.md` for

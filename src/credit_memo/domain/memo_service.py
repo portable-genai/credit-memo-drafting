@@ -17,7 +17,7 @@ Pipeline (each step in ``tracer.span``; audited at the end):
          and the computed ratios as authoritative blocks
       -> covenant status tested against the COMPUTED value where the spread supports
          it, otherwise against the extracted one; risk flags
-      -> peer comps (BigQuery)
+      -> peer comps (same-industry SEC filers; arithmetic only)
       -> assemble CreditMemo
       -> guardrail.screen(OUTPUT)            [blocked -> audit BLOCKED + raise]
       -> review policy (always requires_human_review=True; escalation flag)
@@ -249,7 +249,7 @@ class CreditMemoService:
             spread, memo_input.request, covenants, draft
         )
 
-        # 10) Peer comparisons (BigQuery peer dataset; arithmetic only).
+        # 10) Peer comparisons (same-industry SEC filers; arithmetic only).
         peer_comparison: tuple[PeerComparison, ...] = self._peers.compare(
             borrower, draft.financial_metrics, actor
         )

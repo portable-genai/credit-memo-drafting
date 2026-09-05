@@ -1,8 +1,10 @@
 """On-prem placeholder for ``PeerDataPort`` — the sovereign target.
 
 One of the reversibility (P-02, P-12) migration placeholders: in the managed profile
-this port binds to the BigQuery peer-data adapter; switching ``profile`` to ``onprem``
-rebinds it here. The adapter constructs cleanly with **no external dependencies** and
+this port binds to the SEC EDGAR peer-data adapter; switching ``profile`` to ``onprem``
+rebinds it here. A sovereign deployment with no route to the public internet is exactly
+why this placeholder exists rather than the managed adapter being assumed reachable.
+The adapter constructs cleanly with **no external dependencies** and
 structurally satisfies the same Protocol as the managed adapter, so the contract tests
 prove interface parity. Porting B2 on-premise is *only* a matter of filling this body
 in: the domain orchestration and service callers do not change.

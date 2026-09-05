@@ -12,7 +12,7 @@ Cloud, no API key, and no running emulators by default**:
 * LLM -> a deterministic, schema-driven generator (no model, no network).
 * Guardrail -> a heuristic that blocks prompt-injection / jailbreak text.
 * PII redaction -> regex de-identification (SG NRIC/FIN, emails, SG phone numbers).
-* Peer data -> a small in-process synthetic peer-financials table (no BigQuery).
+* Peer data -> a small in-process synthetic peer-financials table (no network).
 * Audit -> an append-only local store (SQLite or in-memory), read-back supported.
 * Tracer -> no-op spans.
 * Agent registry / tool catalog -> in-process stores (no HTTP to A3).

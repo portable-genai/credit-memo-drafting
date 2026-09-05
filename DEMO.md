@@ -8,7 +8,7 @@ Step-by-step scripts for demoing Doc2 two ways:
   returns a credit memo where every claim carries a source-and-page citation, under a
   maker-checker (human-review) gate. Runs **fully offline** (no cloud, no API key).
 - **Demo B - The same memo on the managed GCP stack**: the identical artifact produced
-  against real Gemini / DLP / BigQuery in `asia-southeast1`, shown via the
+  against real Gemini / DLP in `asia-southeast1`, shown via the
   REST API and the Next.js console.
 
 - **Demo C - REAL borrowers under the `live` profile** (the audience-facing demo): type
@@ -55,7 +55,7 @@ evidence" panel in the UI; the next memo build for that borrower cites the uploa
 | Node.js 18+ & npm | for the UI / Playwright | for the UI | only if you show the browser console |
 | **Playwright** (`pip install playwright` + `playwright install chromium`) | for the guided walkthrough | no | Demo A's presenter walkthrough |
 | A GCP project + `gcloud` | no | yes | billing enabled; `asia-southeast1` available |
-| Terraform | no | yes | provisions the 15-day analysis bucket, DLP, BigQuery, CMEK |
+| Terraform | no | yes | provisions the 15-day analysis bucket, DLP, CMEK |
 | Cloud KMS key (regional) | no | yes | CMEK; set `CREDIT_MEMO_KMS_KEY` |
 
 Install/setup references (read these once):
@@ -182,7 +182,7 @@ authoritative deploy steps; the short version:
 
 ```bash
 source .venv/bin/activate
-pip install -e ".[gcp,dev]"                 # adds google-adk, google-genai, documentai, bigquery, dlp, ...
+pip install -e ".[gcp,dev]"                 # adds google-adk, google-genai, storage, dlp, model-armor, ...
 
 export GOOGLE_CLOUD_PROJECT=your-sg-project
 export CREDIT_MEMO_PROFILE=gcp

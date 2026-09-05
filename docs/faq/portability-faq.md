@@ -24,7 +24,7 @@ implement them, and `config/settings.yaml` binds one adapter per port per profil
   heuristic guardrail, append-only local audit). No Google Cloud SDK. The default for
   dev / test / CI; runs the whole memo pipeline end to end.
 - `gcp`: real managed services (Gemini, DLP, Model Armor, a regional analysis-bundle bucket, a
-  BigQuery peer dataset, Cloud Logging, Cloud Trace, Gen AI Evals), with lazy SDK imports.
+  Cloud Logging, Cloud Trace, Gen AI Evals), with lazy SDK imports.
   Extraction and retrieval are in-process on every profile: there is no processor to call and
   no standing index to place.
 - `platform`: thin HTTP clients delegating to the sibling horizontal-platform and
@@ -59,7 +59,7 @@ the systems whose exit that planner reasons about.
 
 No: residency is a deploy-time pin (the region, CMEK, VPC-SC), and portability is the ability to
 change *where* the stack runs by configuration. They are orthogonal. `infra/terraform/*` pins
-`var.region` (default `asia-southeast1`, Singapore) across the agent runtime, BigQuery, Document
+`var.region` (default `asia-southeast1`, Singapore) across the agent runtime, Document
 AI, DLP and KMS, and a second enterprise or region is a tfvars change, not a fork. Residency
 enforcement infra overlaps with the sibling **Rsk3** `architecture-validator`
 (`domain/residency/`, a CI gate for region violations), which a fork should run rather than
