@@ -21,7 +21,9 @@ class LocalDocumentExtractionAdapter:
         self.settings = settings
 
     def extract(self, document: Filing, content: bytes, mime_type: str) -> DocumentExtract:
-        pages, text = self._text_from(content, mime_type)
+        pages_text = self._pages_from(content, mime_type)
+        text = "\n\n".join(pages_text)
+        pages = len(pages_text)
         if not text:
             # No bytes supplied (ingest-by-reference): synthesise a deterministic body so
             # the local KB has something to index and the memo run stays grounded.
@@ -31,23 +33,31 @@ class LocalDocumentExtractionAdapter:
                 "context for offline grounding."
             )
             pages = 1
+            pages_text = (text,)
         return DocumentExtract(
             document_id=document.id,
             fields={"doc_type": document.doc_type.value, "title": document.title},
             text=text,
             pages=pages,
+            pages_text=tuple(pages_text),
         )
 
     @staticmethod
-    def _text_from(content: bytes, mime_type: str) -> tuple[int, str]:
+    def _pages_from(content: bytes, mime_type: str) -> tuple[str, ...]:
+        """One entry per page, in order.
+
+        Returning the pages rather than a joined blob is what lets a citation say p.7 and
+        mean it. The join still happens for ``text``, which callers that only want the
+        whole document keep using unchanged.
+        """
         if not content:
-            return 0, ""
+            return ()
         if LocalDocumentExtractionAdapter._looks_like_pdf(content, mime_type):
             pdf_pages = LocalDocumentExtractionAdapter._extract_pdf_pages(content)
             if pdf_pages:
-                return len(pdf_pages), "\n\n".join(pdf_pages)
+                return tuple(pdf_pages)
         text = content.decode("utf-8", errors="replace") if isinstance(content, bytes) else content
-        return 1, text
+        return (text,) if text else ()
 
     @staticmethod
     def _looks_like_pdf(content: bytes, mime_type: str) -> bool:

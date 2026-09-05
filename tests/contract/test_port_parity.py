@@ -32,6 +32,7 @@ CONFIG_PATH = "config/settings.yaml"
 
 # Every port name in settings.adapters mapped to its Protocol.
 PORT_PROTOCOLS: dict[str, type] = {
+    "analysis_bundle": ports.AnalysisBundlePort,
     "extraction": ports.DocumentExtractionPort,
     "knowledge_base": ports.KnowledgeBaseClientPort,
     "peer_data": ports.PeerDataPort,

@@ -196,19 +196,25 @@ class LocalFtsKnowledgeBaseAdapter:
 
         parser = LocalDocumentExtractionAdapter(self.settings)
         extract = parser.extract(document, content, "application/pdf")
-        text = (extract.text or "").strip()
+        # One passage per page, so a citation that says p.7 opens page 7. Every uploaded
+        # document used to become a single passage stamped page=1, which made the page
+        # number on every local citation a decoration.
+        pages = extract.pages_text or ((extract.text or "").strip(),)
         passages: list[RetrievedPassage] = []
-        if text:
+        for number, page_text in enumerate(pages, start=1):
+            body = (page_text or "").strip()
+            if not body:
+                continue
             passages.append(
                 RetrievedPassage(
-                    text=text,
+                    text=body,
                     citation=Citation(
                         source_id=document.id,
                         source_type=SourceType.FILING,
                         title=document.title or document.id,
                         url=document.uri,
-                        page=1,
-                        snippet=text[:280],
+                        page=number,
+                        snippet=body[:280],
                         score=0.5,
                     ),
                     score=0.5,

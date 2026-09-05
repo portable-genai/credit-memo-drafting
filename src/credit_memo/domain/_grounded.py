@@ -241,17 +241,19 @@ def citations_for_source_ids(
     never pages). When a source_id was cited by multiple passages, each distinct
     (source_id, page) citation is kept once, in retrieval order. Unknown ids the model
     may have hallucinated are dropped: we only ever cite what we retrieved/derived.
+
+    **A model that cited nothing gets no citations.** There used to be a fallback here:
+    when the model named no usable id, every retrieved passage was attached instead, "so
+    a claim is never left provenance-less". It had exactly the opposite effect. An
+    uncited claim is a visible problem a reader can act on; the same claim wearing eight
+    citations it never used is an invisible one, and it reads as the best-evidenced
+    paragraph in the memo. The caveat the service adds in its place says the true thing.
     """
     by_id: dict[str, list[Citation]] = {}
     for p in passages:
         by_id.setdefault(p.citation.source_id, []).append(p.citation)
 
-    wanted = list(used_source_ids or [])
-    # If the model returned nothing usable, fall back to all retrieved citations so a
-    # claim is never left provenance-less.
-    selected_ids = [sid for sid in wanted if sid in by_id]
-    if not selected_ids:
-        selected_ids = list(by_id.keys())
+    selected_ids = [sid for sid in (used_source_ids or []) if sid in by_id]
 
     out: list[Citation] = []
     seen: set[tuple[str, int | None]] = set()

@@ -19,6 +19,7 @@ Run locally with ``python -m credit_memo.api.app`` (uvicorn on :8093).
 
 from __future__ import annotations
 
+import contextlib
 from contextlib import nullcontext
 from typing import Annotated, Any
 
@@ -33,6 +34,7 @@ from ..domain import _grounded as g
 from ..domain import entitlements
 from ..domain import models as m
 from ..domain.errors import (
+    AnalysisNotFoundError,
     BorrowerAccessDeniedError,
     GuardrailBlockedError,
     RetrievalEmptyError,
@@ -43,6 +45,8 @@ from ..ports.identity import VERIFIED
 from . import deps
 from .schemas import (
     AgentCardModel,
+    AnalysisBuildRequest,
+    AnalysisManifestModel,
     CovenantListResponse,
     CovenantRequest,
     CreditMemoRequest,
@@ -378,6 +382,233 @@ def _slug(text: str) -> str:
     import re as _re
 
     return _re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:60]
+
+
+# --------------------------------------------------------------------------- #
+# Analyses (the stateless intake path)
+# --------------------------------------------------------------------------- #
+# An analysis is one question, the files uploaded to answer it, and the memo built from
+# them. It expires on a schedule the console prints. There is no document library here
+# and no memo of record: a user brings the evidence each time, which is what makes them
+# responsible for its freshness and able to see exactly what was used.
+_ANALYSIS_STAGES = (
+    "received",
+    "extracted",
+    "retrieved",
+    "computed",
+    "drafted",
+    "assembled",
+)
+
+
+def _new_analysis_id() -> str:
+    import uuid
+
+    return f"an-{uuid.uuid4().hex[:20]}"
+
+
+@app.post("/v1/analyses", response_model=AnalysisManifestModel, status_code=201, tags=["analyses"])
+async def open_analysis(
+    principal: CurrentPrincipal,
+    borrower_id: Annotated[str, Form(min_length=1, max_length=120)],
+    files: Annotated[list[UploadFile], File(description="The credit file for this analysis")],
+    doc_types: Annotated[str, Form()] = "",
+    declared_as_of: Annotated[str, Form()] = "",
+) -> AnalysisManifestModel | JSONResponse:
+    """Open an analysis and put its evidence in custody for the retention window.
+
+    ``doc_types`` and ``declared_as_of`` are comma-separated and positional against
+    ``files``. ``declared_as_of`` is the uploader's own statement of how current each
+    document is: the service cannot tell a management account printed yesterday from one
+    printed last year, and inventing a date would put a freshness claim in the memo that
+    nobody made.
+    """
+    try:
+        entitlements.borrower_scope(principal, borrower_id)
+    except BorrowerAccessDeniedError as exc:
+        return _denied_response(exc)
+
+    container = deps.get_container()
+    limits = container.settings.analysis_bundle
+    if len(files) > limits.max_documents:
+        return _ungrounded_response(
+            f"an analysis takes at most {limits.max_documents} documents; {len(files)} were sent"
+        )
+
+    kinds = [k.strip() for k in doc_types.split(",")] if doc_types else []
+    as_of = [d.strip() for d in declared_as_of.split(",")] if declared_as_of else []
+    acl_tags = entitlements.borrower_acl(borrower_id, principal.tenant)
+    acl_principals = (*acl_tags, *principal.principals)
+
+    analysis_id = _new_analysis_id()
+    bundle = container.analysis_bundle
+    bundle.create(analysis_id, borrower_id, acl_tags, created_by=principal.actor)
+
+    for index, upload in enumerate(files):
+        content = await upload.read(limits.max_upload_bytes + 1)
+        if len(content) > limits.max_upload_bytes:
+            bundle.delete(analysis_id, acl_principals)
+            return JSONResponse(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                content={
+                    "detail": (
+                        f"{upload.filename!r} exceeds the {limits.max_upload_bytes} byte limit"
+                    )
+                },
+            )
+        if not content:
+            continue
+        raw_kind = kinds[index] if index < len(kinds) else ""
+        try:
+            kind = m.DocType(raw_kind) if raw_kind else m.DocType.OTHER
+        except ValueError:
+            bundle.delete(analysis_id, acl_principals)
+            return _ungrounded_response(f"unknown doc_type {raw_kind!r}")
+        bundle.put_document(
+            analysis_id,
+            content,
+            filename=upload.filename or f"document-{index + 1}",
+            doc_type=kind,
+            acl_principals=acl_principals,
+            mime_type=upload.content_type or "",
+            declared_as_of=as_of[index] if index < len(as_of) else "",
+            uploaded_by=principal.actor,
+        )
+
+    manifest = bundle.manifest(analysis_id, acl_principals)
+    if not manifest.documents:
+        bundle.delete(analysis_id, acl_principals)
+        return _ungrounded_response(
+            "no readable document was uploaded; a memo is only ever built on evidence you supply"
+        )
+    _audit_artifact(
+        container,
+        action="open_analysis",
+        actor=principal.actor,
+        prompt=f"analysis {analysis_id} for borrower {borrower_id}",
+        response=f"documents={manifest.document_count}",
+    )
+    return AnalysisManifestModel.from_domain(manifest)
+
+
+@app.get("/v1/analyses/{analysis_id}", response_model=AnalysisManifestModel, tags=["analyses"])
+def read_analysis(
+    analysis_id: str, principal: CurrentPrincipal
+) -> AnalysisManifestModel | JSONResponse:
+    """What this analysis was given, and until when it can be reopened."""
+    container = deps.get_container()
+    try:
+        manifest = container.analysis_bundle.manifest(analysis_id, _analysis_principals(principal))
+    except AnalysisNotFoundError as exc:
+        return _analysis_gone(exc)
+    return AnalysisManifestModel.from_domain(manifest)
+
+
+@app.get("/v1/analyses/{analysis_id}/documents/{document_id}", tags=["analyses"])
+def read_analysis_document(
+    analysis_id: str, document_id: str, principal: CurrentPrincipal
+) -> Response:
+    """Serve one uploaded file back, inline, so a citation can open the page it names.
+
+    ``Content-Disposition: inline`` on purpose: the console appends ``#page=N`` and the
+    browser's own viewer scrolls there. An attachment would download the file instead,
+    which is not what "click the citation" means.
+    """
+    container = deps.get_container()
+    principals = _analysis_principals(principal)
+    try:
+        manifest = container.analysis_bundle.manifest(analysis_id, principals)
+        content = container.analysis_bundle.get_document(analysis_id, document_id, principals)
+    except AnalysisNotFoundError as exc:
+        return _analysis_gone(exc)
+    record = next((d for d in manifest.documents if d.id == document_id), None)
+    filename = record.filename if record else document_id
+    return Response(
+        content=content,
+        media_type=(record.mime_type if record else "") or "application/octet-stream",
+        headers={"Content-Disposition": f'inline; filename="{_slug(filename)}"'},
+    )
+
+
+@app.delete("/v1/analyses/{analysis_id}", status_code=204, tags=["analyses"])
+def delete_analysis(analysis_id: str, principal: CurrentPrincipal) -> Response:
+    """Delete the analysis now, rather than waiting for the retention window."""
+    container = deps.get_container()
+    # Already gone is the outcome the caller asked for, so deleting twice is not an error.
+    with contextlib.suppress(AnalysisNotFoundError):
+        container.analysis_bundle.delete(analysis_id, _analysis_principals(principal))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post("/v1/analyses/{analysis_id}/build", response_model=CreditMemoResponse, tags=["analyses"])
+def build_analysis_memo(
+    analysis_id: str,
+    body: AnalysisBuildRequest,
+    principal: CurrentPrincipal,
+    service: Annotated[CreditMemoService, Depends(deps.get_credit_memo_service)],
+) -> JSONResponse | CreditMemoResponse:
+    """Build the memo from the evidence already in this analysis.
+
+    The borrower comes from the bundle, not the body: the caller cannot point a build at
+    one analysis and claim it is about a different borrower.
+    """
+    container = deps.get_container()
+    principals = _analysis_principals(principal)
+    try:
+        manifest = container.analysis_bundle.manifest(analysis_id, principals)
+    except AnalysisNotFoundError as exc:
+        return _analysis_gone(exc)
+
+    try:
+        entitlements.borrower_scope(principal, manifest.borrower_id)
+    except BorrowerAccessDeniedError as exc:
+        return _denied_response(exc)
+
+    try:
+        memo_input = m.MemoInput(
+            borrower=m.Borrower(id=manifest.borrower_id, name=manifest.borrower_id),
+            request=body.request.to_domain() if body.request is not None else None,
+            spreads=tuple(s.to_domain(manifest.borrower_id) for s in body.spreads),
+            analysis_id=analysis_id,
+        )
+    except ValueError as exc:
+        return _ungrounded_response(str(exc))
+
+    try:
+        memo = service.build(
+            memo_input,
+            principal.actor,
+            principals=principal.principals,
+            tenant=principal.tenant,
+        )
+    except GuardrailBlockedError as exc:
+        return _blocked_response(
+            "This credit-memo request was blocked by the safety guardrail and routed for review.",
+            str(exc),
+        )
+    except RetrievalEmptyError as exc:
+        return _ungrounded_response(f"No borrower evidence available to ground the memo: {exc}")
+
+    response = CreditMemoResponse.from_domain(memo)
+    # The memo lives in the bundle with the evidence it was built from, and dies with it.
+    with contextlib.suppress(Exception):
+        container.analysis_bundle.put_artifact(
+            analysis_id, "memo", response.model_dump(mode="json"), principals
+        )
+    return response
+
+
+def _analysis_principals(principal: Any) -> tuple[str, ...]:
+    return (
+        (*principal.principals, f"tenant:{principal.tenant}")
+        if principal.tenant
+        else tuple(principal.principals)
+    )
+
+
+def _analysis_gone(exc: AnalysisNotFoundError) -> JSONResponse:
+    """404 for absent, expired, or not-readable alike, so ids cannot be probed."""
+    return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": str(exc)})
 
 
 # --------------------------------------------------------------------------- #

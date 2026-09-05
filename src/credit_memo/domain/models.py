@@ -141,12 +141,34 @@ class FinancialMetric:
 
 
 class DocType(StrEnum):
-    """Source-document kinds the assistant extracts and reasons over."""
+    """Source-document kinds the assistant extracts and reasons over.
+
+    Five kinds covered a memo drafted from filings. A credit file is not filings: it is
+    tax returns, bank statements, a debt schedule, an aging, a rent roll, a valuation,
+    the bank's own policy pack and the prior memo. Each drives a different extraction and
+    a different part of the analysis, so each is named rather than collapsed into OTHER.
+    """
 
     FINANCIAL_STATEMENT = "financial_statement"
+    MANAGEMENT_ACCOUNTS = "management_accounts"
     FILING = "filing"
+    TAX_RETURN = "tax_return"
+    BANK_STATEMENT = "bank_statement"
+    DEBT_SCHEDULE = "debt_schedule"
+    AR_AP_AGING = "ar_ap_aging"
+    BORROWING_BASE_CERTIFICATE = "borrowing_base_certificate"
+    RENT_ROLL = "rent_roll"
+    OPERATING_STATEMENT = "operating_statement"  # T-12 for investor CRE
     LOAN_AGREEMENT = "loan_agreement"
     COVENANT_CERTIFICATE = "covenant_certificate"
+    VALUATION = "valuation"
+    POLICY_PACK = "policy_pack"  # the bank's own credit policy and scorecard
+    PRIOR_MEMO = "prior_memo"
+    RM_NOTE = "rm_note"  # call report, site-visit note
+    EXPOSURE_SNAPSHOT = "exposure_snapshot"
+    PROJECTIONS = "projections"
+    REGISTRY_DOCUMENT = "registry_document"  # a purchased ACRA / INLIS / court search
+    ANALYST_SPREAD = "analyst_spread"  # the analyst's own workbook; canonical if present
     OTHER = "other"
 
 
@@ -162,6 +184,57 @@ class Filing:
 
 
 @dataclass(frozen=True, slots=True)
+class StoredDocument:
+    """A file the user uploaded for one analysis, and what is known about it.
+
+    ``declared_as_of`` is the user's own statement of how current the document is, and it
+    is deliberately not inferred: the system cannot tell a management account printed
+    yesterday from one printed last year, and guessing would put a freshness claim in the
+    memo that nobody made. The manifest prints exactly what was declared.
+    """
+
+    id: str
+    filename: str
+    doc_type: DocType = DocType.OTHER
+    mime_type: str = ""
+    size_bytes: int = 0
+    sha256: str = ""
+    pages: int = 0
+    declared_as_of: str = ""  # ISO date the uploader states the document speaks to
+    uploaded_at: datetime = field(default_factory=utcnow)
+    uploaded_by: str = ""
+    third_party_sourced: bool = False  # broker- or vendor-supplied, per APS 220 para 39
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisManifest:
+    """Exactly which files this analysis used, and until when it can be reopened.
+
+    The manifest is not bookkeeping; it is the answer to "what was this assessed on".
+    It opens the memo and every export, because a reader who cannot see the inputs is
+    being asked to trust the output. ``expires_at`` is printed beside it: this system
+    keeps nothing beyond the analysis, and the person relying on it should know when the
+    evidence behind it disappears.
+    """
+
+    analysis_id: str
+    borrower_id: str
+    documents: tuple[StoredDocument, ...] = ()
+    created_at: datetime = field(default_factory=utcnow)
+    expires_at: datetime | None = None
+    created_by: str = ""
+
+    @property
+    def document_count(self) -> int:
+        return len(self.documents)
+
+    def missing(self, required: tuple[DocType, ...]) -> tuple[DocType, ...]:
+        """Required kinds this analysis was not given, in the order asked for."""
+        present = {d.doc_type for d in self.documents}
+        return tuple(kind for kind in required if kind not in present)
+
+
+@dataclass(frozen=True, slots=True)
 class DocumentExtract:
     """Structured + raw text extracted from a filing (from Document AI)."""
 
@@ -169,6 +242,10 @@ class DocumentExtract:
     fields: dict[str, str] = field(default_factory=dict)  # key/value form fields
     text: str = ""  # full extracted text
     pages: int = 0
+    #: The text of each page, in order. The extractor already knew where the pages ended
+    #: and joined them anyway, so every citation from an uploaded file said "p.1" and no
+    #: click could open the right page. Empty when the source has no page structure.
+    pages_text: tuple[str, ...] = ()
 
 
 # --------------------------------------------------------------------------- #
@@ -595,6 +672,10 @@ class MemoInput:
     documents: tuple[Filing, ...] = ()
     request: CreditRequest | None = None
     spreads: tuple[FinancialSpread, ...] = ()
+    #: The bundle this memo is built from. When set, the pipeline reads the uploaded
+    #: bytes out of it rather than extracting from nothing, and the manifest of what it
+    #: actually used is carried onto the memo.
+    analysis_id: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -622,6 +703,8 @@ class CreditMemo:
     request: CreditRequest | None = None
     spreads: tuple[FinancialSpread, ...] = ()
     ratios: tuple[Ratio, ...] = ()
+    #: Exactly which uploaded files this memo was assessed on, and when they expire.
+    manifest: AnalysisManifest | None = None
     #: The synthesis service's self-critique. Both were computed and then dropped on the
     #: floor before this field existed, so a reader could not see how sure the drafter
     #: was, nor what it said it could not support.
