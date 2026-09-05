@@ -534,6 +534,42 @@ class EliminationModel(BaseModel):
         )
 
 
+class EntityGroupModel(BaseModel):
+    """A public register's view of who else is in this group.
+
+    A suggestion about who exists, never a figure. Every member is `vendor`-provenanced and
+    a related entity holds no number, so an entity named here that nobody uploads statements
+    for lands on the memo as one the consolidation could not include — which is exactly the
+    outcome that keeps a global cash flow honest.
+    """
+
+    subject: RelatedEntityModel
+    members: list[RelatedEntityModel] = Field(default_factory=list)
+    source: str = ""
+    as_of: str = ""
+    quality: str = "ambiguous"
+    #: Not the same as an empty ``members``: this is the register saying the company
+    #: reported no parent, where empty can also mean it holds nothing for this company.
+    register_reports_no_parent: bool = False
+    coverage_note: str = ""
+    candidates: list[str] = Field(default_factory=list)
+    found_nothing: bool = True
+
+    @classmethod
+    def from_domain(cls, group: m.EntityGroup) -> EntityGroupModel:
+        return cls(
+            subject=RelatedEntityModel.from_domain(group.subject),
+            members=[RelatedEntityModel.from_domain(e) for e in group.members],
+            source=group.source,
+            as_of=group.as_of.isoformat(),
+            quality=group.quality.value,
+            register_reports_no_parent=group.register_reports_no_parent,
+            coverage_note=group.coverage_note,
+            candidates=list(group.candidates),
+            found_nothing=group.found_nothing,
+        )
+
+
 class AnalysisBuildRequest(BaseModel):
     """Build the memo for an analysis that already holds its uploaded evidence.
 

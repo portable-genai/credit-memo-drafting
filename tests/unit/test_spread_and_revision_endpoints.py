@@ -377,6 +377,57 @@ def test_a_stress_result_carries_the_break_even_not_just_the_shock(
         assert combined["breaks_at"] <= decline["breaks_at"]
 
 
+def test_group_suggestions_are_off_unless_the_deployment_switched_them_on(
+    client: TestClient,
+) -> None:
+    """And the refusal says why, and which switch, rather than returning an empty list."""
+    analysis_id = _open_analysis(client)
+    response = client.get(f"/v1/analyses/{analysis_id}/group/suggestions", headers=ANALYST)
+    assert response.status_code == 422
+    assert "outside the deploy region" in response.text
+    assert "CREDIT_MEMO_ENTITY_RESOLUTION_ENABLED" in response.text
+
+
+def test_a_switched_on_register_suggests_the_group_and_says_what_it_cannot_see(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The suggestion is checkable and its blind spot is stated.
+
+    An empty answer from a register that only knows LEI holders says more about the
+    register than about the group, and a console that reported it as "no group" would be
+    reporting the wrong fact.
+    """
+    monkeypatch.setenv("CREDIT_MEMO_ENTITY_RESOLUTION_ENABLED", "1")
+    deps.get_container.cache_clear()
+    analysis_id = _open_analysis(client)
+    response = client.get(
+        f"/v1/analyses/{analysis_id}/group/suggestions",
+        headers=ANALYST,
+        params={"name": "Acme Manufacturing Pte Ltd (FICTIONAL)"},
+    )
+    assert response.status_code == 200, response.text
+    group = response.json()
+    assert group["quality"] == "exact"
+    assert {e["role"] for e in group["members"]} == {"parent", "subsidiary"}
+    assert all(e["provenance"] == "vendor" for e in group["members"])
+    assert group["coverage_note"]
+
+
+def test_a_name_the_register_does_not_hold_says_so_rather_than_returning_nothing(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CREDIT_MEMO_ENTITY_RESOLUTION_ENABLED", "1")
+    deps.get_container.cache_clear()
+    analysis_id = _open_analysis(client)
+    response = client.get(
+        f"/v1/analyses/{analysis_id}/group/suggestions",
+        headers=ANALYST,
+        params={"name": "A Company Nobody Registered"},
+    )
+    assert response.status_code == 422
+    assert "not evidence that the group is empty" in response.text
+
+
 # --------------------------------------------------------------------------- #
 # Revisions
 # --------------------------------------------------------------------------- #

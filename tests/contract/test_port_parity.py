@@ -47,6 +47,7 @@ PORT_PROTOCOLS: dict[str, type] = {
     "policy_pack": ports.PolicyPackPort,
     "export": ports.ExportPort,
     "web_research": ports.WebResearchPort,
+    "entity_resolution": ports.EntityResolutionPort,
     "knowledge_base": ports.KnowledgeBaseClientPort,
     "peer_data": ports.PeerDataPort,
     "llm": ports.LLMPort,

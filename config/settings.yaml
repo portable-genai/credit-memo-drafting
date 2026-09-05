@@ -178,6 +178,19 @@ adapters:
     local: credit_memo.adapters.local.web_research:LocalFixtureWebResearchAdapter
     live: credit_memo.adapters.local.web_research:LocalFixtureWebResearchAdapter
     onprem: credit_memo.adapters.onprem.web_research:OnPremWebResearchAdapter
+  # Who else a PUBLIC REGISTER says is in the borrower's group. A suggestion about who
+  # exists, never a figure: every entity comes back VENDOR-provenanced and a related entity
+  # holds no number, so one nobody uploads statements for is reported on the memo as an
+  # entity the consolidation could not include. The lookup sends the borrower's registered
+  # legal name outside the deploy region -- weaker than the peer leg, which sends no
+  # borrower identity at all -- so it is off unless CREDIT_MEMO_ENTITY_RESOLUTION_ENABLED
+  # is set, and the deviation is recorded rather than inherited.
+  entity_resolution:
+    gcp: credit_memo.adapters.live.gleif_entity_resolution:GleifEntityResolutionAdapter
+    platform: credit_memo.adapters.live.gleif_entity_resolution:GleifEntityResolutionAdapter
+    local: credit_memo.adapters.local.entity_resolution:LocalFixtureEntityResolutionAdapter
+    live: credit_memo.adapters.live.gleif_entity_resolution:GleifEntityResolutionAdapter
+    onprem: credit_memo.adapters.onprem.entity_resolution:OnPremEntityResolutionAdapter
   export:
     gcp: credit_memo.adapters.gcp.export:GcpExportAdapter
     platform: credit_memo.adapters.gcp.export:GcpExportAdapter
