@@ -88,7 +88,10 @@ class RenewalDiffService:
 
     @staticmethod
     def _spread_deltas(current: Any, prior: dict) -> tuple[SectionDelta, ...]:
-        before: dict[tuple[str, str], float] = {}
+        # float | None, not float: a prior memo may legitimately carry a null value for a
+        # line it could not measure, and typing that away would have the diff treat "the
+        # last memo did not have this figure" as if it had had a zero.
+        before: dict[tuple[str, str], float | None] = {}
         for spread in prior.get("spreads") or []:
             for item in (spread or {}).get("items") or []:
                 if isinstance(item, dict):
