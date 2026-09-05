@@ -45,7 +45,7 @@ from hex_service_kit.federation import (
     principal_from_iap_claims,
 )
 
-from credit_memo.adapters.gcp.iap_identity import _FEDERATION_POLICY, IapIdentityAdapter
+from credit_memo.adapters.gcp.iap_identity import IapIdentityAdapter, _federation_policy
 from credit_memo.domain.identity import IdentityError, RequestContext
 
 _AUDIENCE = "/projects/1234567890/global/backendServices/42"
@@ -143,7 +143,7 @@ def test_the_claim_half_is_the_commons_decision_and_not_a_local_copy(
     assert _fields(_resolve(claims)) == _fields(
         principal_from_iap_claims(
             claims,
-            _FEDERATION_POLICY,
+            _federation_policy(),
             source="gcp-iap",
             include_subject_principal=True,
         )
@@ -192,13 +192,17 @@ def test_the_hosted_domain_passthrough_is_an_opt_in_this_deployment_made() -> No
     deployment has no reviewed domain map: an unmapped domain must therefore get its tenant
     from the opt-in or from nothing.
     """
-    assert _FEDERATION_POLICY.tenant_from_hosted_domain is True
-    assert dict(_FEDERATION_POLICY.domain_tenants) == {}
-    assert dict(_FEDERATION_POLICY.domain_groups) == {}
+    policy = _federation_policy()
+    assert policy.tenant_from_hosted_domain is True
+    assert dict(policy.domain_tenants) == {}
+    # Empty because no deployment named a map in THIS process. It is read from the
+    # environment now rather than hardcoded: a deployment behind IAP that maps no domain to
+    # a group can authenticate every caller and authorize none of them.
+    assert dict(policy.domain_groups) == {}
 
     without = FederationPolicy()
     assert without.tenant_for("example-bank.test", email_domain="example-bank.test") == ""
-    assert _FEDERATION_POLICY.tenant_for("example-bank.test") == "example-bank.test"
+    assert policy.tenant_for("example-bank.test") == "example-bank.test"
 
     # The tenant a verified user actually receives, which is the half an attribute assertion
     # cannot see. The comparison test above evaluates BOTH sides under this same policy, so it

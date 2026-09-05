@@ -361,3 +361,32 @@ def test_the_memo_lives_and_dies_with_the_evidence_it_was_built_from(bundle) -> 
     bundle.delete("an-1", TENANT)
     with pytest.raises(AnalysisNotFoundError):
         bundle.get_artifact("an-1", "memo", TENANT)
+
+
+def test_an_upload_the_browser_could_not_name_still_reaches_the_model() -> None:
+    """`application/octet-stream` is what a browser sends when it recognises nothing.
+
+    Gemini refuses an unsupported mimeType outright -- 400 INVALID_ARGUMENT -- so the whole
+    extraction returned 500 for a document whose bytes were perfectly readable and whose only
+    problem was its label. Refusing the analyst's file over that would be refusing the wrong
+    thing, so the label is repaired from the filename.
+    """
+    from credit_memo.api.app import _model_mime_type
+
+    assert _model_mime_type("application/octet-stream", "spread.csv") == "text/csv"
+    assert _model_mime_type("", "covenant-position.txt") == "text/plain"
+    assert _model_mime_type("application/octet-stream", "statements.pdf") == "application/pdf"
+
+
+def test_a_media_type_the_model_accepts_is_left_alone() -> None:
+    from credit_memo.api.app import _model_mime_type
+
+    assert _model_mime_type("text/csv", "anything.bin") == "text/csv"
+    assert _model_mime_type("text/plain; charset=utf-8", "x.bin") == "text/plain"
+
+
+def test_a_file_nobody_can_identify_keeps_the_previous_default() -> None:
+    """Unknown label AND unknown extension behaves exactly as it did before."""
+    from credit_memo.api.app import _model_mime_type
+
+    assert _model_mime_type("application/octet-stream", "mystery.bin") == "application/pdf"

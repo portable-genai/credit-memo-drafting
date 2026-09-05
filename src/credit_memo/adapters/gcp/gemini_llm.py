@@ -18,6 +18,7 @@ module without ``google-genai`` installed.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 from ...config import Settings
@@ -25,6 +26,9 @@ from ...domain.models import LlmRequest, LlmResponse, ThinkingLevel, TokenUsage
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, never imported at runtime
     from google import genai
+
+
+_LOG = logging.getLogger(__name__)
 
 
 class GeminiLLMAdapter:
@@ -57,11 +61,55 @@ class GeminiLLMAdapter:
         config = self._build_config(request, types)
 
         response = client.models.generate_content(model=model, contents=contents, config=config)
+        text = getattr(response, "text", "") or ""
+        finish = self._finish_reason(response)
+        if finish not in ("STOP", "None", ""):
+            # A structured response that stopped for any other reason is unusable even when
+            # it is long: MAX_TOKENS truncates the JSON mid-object, the defensive parser
+            # reads nothing from it, and the service reports "no grounded memo could be
+            # synthesised from the evidence" -- which describes the evidence rather than the
+            # budget. Thinking is charged to the same budget as the answer, so this is the
+            # failure a bigger prompt produces first.
+            _LOG.warning(
+                "%s finished as %s, not STOP: %d chars of text, usage=%s",
+                model,
+                finish,
+                len(text),
+                getattr(response, "usage_metadata", None),
+            )
+        if not text.strip():
+            # An empty completion is indistinguishable, downstream, from a model that had
+            # nothing to say: the parser returns {} and the service reports "no grounded
+            # memo could be synthesised from the evidence", which reads as a judgement about
+            # the evidence rather than as a truncated or blocked response. The reason the
+            # API gives is the only thing that separates them, and it was being dropped, so
+            # a deployed build produced that sentence with no way to find out why.
+            _LOG.warning(
+                "empty completion from %s: finish_reason=%s block_reason=%s usage=%s",
+                model,
+                self._finish_reason(response),
+                self._block_reason(response),
+                getattr(response, "usage_metadata", None),
+            )
         return LlmResponse(
-            text=getattr(response, "text", "") or "",
+            text=text,
             usage=self._map_usage(getattr(response, "usage_metadata", None)),
             model=model,
         )
+
+    @staticmethod
+    def _finish_reason(response: Any) -> str:
+        candidates = getattr(response, "candidates", None) or []
+        if not candidates:
+            return "no-candidates"
+        reason = getattr(candidates[0], "finish_reason", None)
+        return getattr(reason, "name", None) or str(reason)
+
+    @staticmethod
+    def _block_reason(response: Any) -> str:
+        feedback = getattr(response, "prompt_feedback", None)
+        reason = getattr(feedback, "block_reason", None) if feedback else None
+        return getattr(reason, "name", None) or str(reason)
 
     def classify(self, text: str, labels: list[str]) -> str:
         """Cheap single-label classification using the triage-tier model."""

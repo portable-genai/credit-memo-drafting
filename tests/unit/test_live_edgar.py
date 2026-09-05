@@ -475,3 +475,40 @@ def test_capex_is_read_from_either_tag_filers_use(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(client, "companyfacts", lambda cik: _facts(gaap))
 
     assert client.latest_annual_facts("0000030625")["capex"]["value"] == 70.9e6
+
+
+def test_a_typed_name_resolves_whatever_legal_form_the_registrant_titles_itself(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """EDGAR says "FLOWSERVE CORP"; a person types "Flowserve Corporation".
+
+    The stop list held the abbreviations and not their long forms, so every word of the
+    typed name had to appear in the title and "corporation" never did. The borrower resolved
+    to no CIK; peer data is best-effort, so the memo came back with an empty peer table and
+    said nothing about the name not being found.
+    """
+    table = {"0": {"cik_str": 30625, "ticker": "FLS", "title": "FLOWSERVE CORP"}}
+    client = _client()
+    monkeypatch.setattr(client, "_get_json", lambda url: table)
+
+    for typed in ("Flowserve Corporation", "flowserve-corporation", "FLOWSERVE CORP", "FLS"):
+        entry = client.resolve(typed)
+        assert entry is not None, f"{typed!r} resolved to nothing"
+        assert entry["cik"] == "0000030625"
+
+
+def test_dropping_the_legal_form_does_not_make_two_companies_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ambiguity is still a non-match: the suffix list must not merge distinct registrants."""
+    table = {
+        "0": {"cik_str": 1, "ticker": "AAA", "title": "ACME CORP"},
+        "1": {"cik_str": 2, "ticker": "BBB", "title": "ACME HOLDINGS INC"},
+    }
+    client = _client()
+    monkeypatch.setattr(client, "_get_json", lambda url: table)
+
+    # "acme" alone is shared, so the shortest title wins rather than the wrong one being
+    # picked at random; "acme holdings" names exactly one.
+    assert client.resolve("Acme Corporation")["cik"] == "0000000001"
+    assert client.resolve("Acme Holdings")["cik"] == "0000000002"

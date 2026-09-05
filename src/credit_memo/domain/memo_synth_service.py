@@ -120,6 +120,14 @@ class MemoSynthService:
             user_content=user,
             model=None,  # adapter default => reasoning model gemini-3.5-flash
             response_schema=_MEMO_SCHEMA,
+            # The memo is by far the longest answer this service asks for, and the budget
+            # covers the model's THINKING as well as its output. Measured on a real credit
+            # file: ~3,300 tokens of reasoning before a word of the memo is written, and the
+            # whole document still to come. Stated here rather than left to the shared
+            # default, because this is the call that runs out -- and when it does the JSON
+            # stops mid-object, the parser reads nothing, and the memo says the evidence
+            # does not support one.
+            max_output_tokens=16384,
         )
         response = self._llm.generate(llm_request)
         g.maybe_record_usage(self._tracer, response)

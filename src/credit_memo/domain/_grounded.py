@@ -232,6 +232,20 @@ def _extract_json_object(text: str) -> str | None:
     return None
 
 
+def _source_id_only(cited: str, known: dict[str, list[Citation]]) -> str | None:
+    """The retrieved source id a model's citation names, or None when it names none.
+
+    Tolerates the page suffix the prompt's own ``[source_id p.N]`` format invites, and
+    nothing else: an id that is not among the retrieved passages is still dropped, because
+    the rule that we only ever cite what we retrieved is the point of this function.
+    """
+    candidate = (cited or "").strip()
+    if candidate in known:
+        return candidate
+    head = candidate.split(" p.", 1)[0].strip()
+    return head if head in known else None
+
+
 def citations_for_source_ids(
     used_source_ids: list[str],
     passages: list[RetrievedPassage],
@@ -254,7 +268,18 @@ def citations_for_source_ids(
     for p in passages:
         by_id.setdefault(p.citation.source_id, []).append(p.citation)
 
-    selected_ids = [sid for sid in (used_source_ids or []) if sid in by_id]
+    # The prompt asks for citations as ``[source_id p.N]``, so a model that follows it
+    # returns "doc-8526 p.4" and not "doc-8526". Matching the raw string found nothing, and
+    # the failure was invisible in the worst way: every claim came back uncited, the service
+    # correctly added its "cited no source" caveat, and the memo read as though the model
+    # had refused to ground itself when it had in fact grounded itself perfectly and named
+    # the page. Only a managed model formats the id that way; the offline stand-in echoes
+    # the bare id it was given.
+    selected_ids = [
+        resolved
+        for sid in (used_source_ids or [])
+        if (resolved := _source_id_only(sid, by_id)) is not None
+    ]
 
     out: list[Citation] = []
     seen: set[tuple[str, int | None]] = set()
@@ -274,13 +299,22 @@ def build_llm_request(
     response_schema: dict | None,
     thinking: ThinkingLevel = ThinkingLevel.HIGH,
     temperature: float = 0.0,
-    max_output_tokens: int = 4096,
+    max_output_tokens: int = 8192,
     documents: tuple[LlmDocument, ...] = (),
 ) -> LlmRequest:
     """Assemble an ``LlmRequest`` with a single user message and a system prompt.
 
     ``model=None`` lets the adapter pick its configured default (the reasoning model,
     ``gemini-3.5-flash``); thinking defaults to HIGH for grounded reasoning per SPEC.
+
+    ``max_output_tokens`` covers the THINKING and the answer together, which is why 4096 was
+    not enough. On a real credit file the reasoning alone took about 3,000 tokens, leaving
+    too few for the memo: the model stopped at MAX_TOKENS mid-JSON, the defensive parser
+    could not read the truncated object, and the service reported "no grounded memo could be
+    synthesised from the evidence" -- a sentence about the evidence for what was actually a
+    budget. Measured against this repository's own demo deal on gemini-3.5-flash: 2,654
+    thinking tokens plus 1,273 of answer. The offline stand-in has no budget at all, so no
+    test could have found this; only a managed call does.
     """
     return LlmRequest(
         messages=(LlmMessage(role="user", content=user_content),),

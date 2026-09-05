@@ -117,6 +117,39 @@ header" chatter, emitted every time the extractor is handed a CSV, otherwise lan
 middle of the sentence being read aloud. A server that fails to start still reports the
 tail of its own log in the error.
 
+## Checking a deployment
+
+`make demo-console` proves the acts against a console and an API on this laptop. It says
+nothing about a deployed service, and the difference is not cosmetic: every defect below
+passed the offline gate and failed the moment a managed model, a real IAM policy and a real
+proxy were involved.
+
+```bash
+CREDIT_MEMO_DEPLOYED_BASE=https://<host>/apps/credit-memo-drafting/api \
+CREDIT_MEMO_DEPLOYED_TOKEN="$(gcloud auth print-identity-token \
+    --impersonate-service-account=<e2e-sa> --audiences=<iap-oauth-client-id> --include-email)" \
+  make verify-deployed
+```
+
+Twenty-four checks, walking the same business steps as the acts: the credit file into
+custody, a managed model reading the figures, a named person confirming them, the memo, the
+engine's arithmetic, the reconciliation, the bank's policy, the peer set, and the evidence
+being deleted again. Both variables unset skips, so it stays runnable in a checkout with no
+cloud access. Everything it asserts is recomputed from the committed fixture rather than
+matched against prose.
+
+**What it caught that nothing else could.** A response schema Vertex refuses (`{"type":
+["integer","null"]}` is a union; it takes one type plus `nullable`). A token budget that
+covers the model's *thinking* as well as its answer, so the memo stopped mid-JSON and the
+service reported that the evidence did not support one. Citations returned as
+`source_id p.4`, exactly as the prompt asks, matching nothing. An IAP assertion arriving
+under the one header name the app did not read, because Google's serverless frontend strips
+the reserved one. `roles/dlp.user` granting the redaction CALL but not the template READ.
+Model Armor's screening permission living on the template. `application/octet-stream`, which
+a browser sends for anything it cannot name and the model refuses outright. And a borrower
+whose typed name never matched its own registrant title, because the stop-word list held
+`corp` but not `corporation`.
+
 ## What the run leaves behind
 
 `out/demo/` — one full-page screenshot per act, a video, and a Playwright trace

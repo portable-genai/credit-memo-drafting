@@ -89,6 +89,28 @@ class EdgarError(RuntimeError):
     """EDGAR was unreachable or did not know the company."""
 
 
+#: Legal-form words dropped before matching a typed name against a registrant title.
+#:
+#: Both spellings of each, which the abbreviations-only list did not have: EDGAR titles them
+#: "FLOWSERVE CORP" while a person types "Flowserve Corporation", and requiring every word to
+#: appear meant the long form matched nothing at all. The borrower then resolved to no CIK,
+#: and because peer data is best-effort the memo simply came back with an empty peer table --
+#: no error, no log line, and nothing to say the name had not been found.
+_LEGAL_SUFFIXES = frozenset(
+    {
+        "inc",
+        "incorporated",
+        "corp",
+        "corporation",
+        "co",
+        "company",
+        "ltd",
+        "limited",
+        "plc",
+    }
+)
+
+
 def _slug_to_words(slug: str) -> str:
     return re.sub(r"[-_]+", " ", slug).strip().lower()
 
@@ -165,7 +187,7 @@ class EdgarClient:
         exact = next((r for r in rows if str(r.get("title", "")).strip().lower() == wanted), None)
         if exact is not None:
             return self._entry(exact)
-        words = [w for w in wanted.split() if w not in {"inc", "corp", "co", "ltd", "plc"}]
+        words = [w for w in wanted.split() if w not in _LEGAL_SUFFIXES]
         if not words:
             return None
         contains = [r for r in rows if all(w in str(r.get("title", "")).lower() for w in words)]

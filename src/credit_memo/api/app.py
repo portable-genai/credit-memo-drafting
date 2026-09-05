@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import contextlib
 from contextlib import nullcontext
+from pathlib import PurePosixPath
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, File, Form, Request, Response, UploadFile, status
@@ -767,11 +768,43 @@ def _extraction_documents(
             out.append(
                 m.LlmDocument(
                     content=content,
-                    mime_type=record.mime_type or "application/pdf",
+                    mime_type=_model_mime_type(record.mime_type, record.filename),
                     document_id=record.id,
                 )
             )
     return tuple(out)
+
+
+#: What the model will accept, keyed by what browsers and command-line clients actually send.
+#:
+#: Gemini refuses an unsupported mimeType outright: ``application/octet-stream`` answers 400
+#: INVALID_ARGUMENT and the extraction 500s. That is the type a browser sends for anything it
+#: does not recognise, and the default for a form upload naming none. The bytes are perfectly
+#: readable and only the label was wrong, so refusing the analyst's document over it would be
+#: refusing the wrong thing.
+_MODEL_MIME_TYPES: dict[str, str] = {
+    ".pdf": "application/pdf",
+    ".txt": "text/plain",
+    ".md": "text/plain",
+    ".json": "text/plain",
+    ".csv": "text/csv",
+    ".htm": "text/html",
+    ".html": "text/html",
+}
+_MODEL_SAFE_MIME_TYPES = frozenset(_MODEL_MIME_TYPES.values())
+
+
+def _model_mime_type(declared: str, filename: str) -> str:
+    """A media type the model accepts, from what the upload declared or what it is called."""
+    label = (declared or "").split(";", 1)[0].strip().lower()
+    if label in _MODEL_SAFE_MIME_TYPES:
+        return label
+    suffix = PurePosixPath(filename or "").suffix.lower()
+    if suffix in _MODEL_MIME_TYPES:
+        return _MODEL_MIME_TYPES[suffix]
+    # Unknown label AND unknown extension: PDF is what this pipeline is overwhelmingly given
+    # and what the port already defaulted to, so an genuinely unknown file behaves as before.
+    return "application/pdf"
 
 
 @app.post(
