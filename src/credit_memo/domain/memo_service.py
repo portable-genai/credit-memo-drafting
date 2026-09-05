@@ -39,7 +39,11 @@ from typing import Any
 from . import _grounded as g
 from .covenant_service import CovenantService
 from .entitlements import borrower_acl
-from .errors import GuardrailBlockedError, RetrievalEmptyError
+from .errors import (
+    GuardrailBlockedError,
+    RetrievalEmptyError,
+    SpreadNotConfirmedError,
+)
 from .memo_synth_service import MemoSynthService
 from .models import (
     AnalysisManifest,
@@ -58,6 +62,7 @@ from .models import (
     Ratio,
     RetrievedPassage,
     RiskFlag,
+    TieOutFinding,
 )
 from .peer_comp_service import PeerCompService
 from .ratio_catalogue import catalogue_version
@@ -65,6 +70,8 @@ from .ratio_service import RatioService
 from .review_policy import CreditReviewPolicy
 from .risk_flag_service import RiskFlagService
 from .serialization import to_jsonable
+from .spread_service import SpreadService
+from .tie_out_service import TieOutService
 
 
 class CreditMemoService:
@@ -113,6 +120,8 @@ class CreditMemoService:
         # No ports and no I/O: the ratio engine is arithmetic over a confirmed spread,
         # which is what makes a memo's figures replayable years after it was written.
         self._ratios = RatioService()
+        self._spreads = SpreadService()
+        self._tie_out = TieOutService()
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -186,7 +195,19 @@ class CreditMemoService:
         # 5) Compute the ratios BEFORE drafting. Order matters: the engine's figures are
         #    handed to the drafter as authoritative fact, so the narrative is written
         #    around numbers the bank calculated rather than numbers the model inferred.
+        #
+        #    A spread nobody confirmed is refused here rather than computed on. The
+        #    difference between a table the model read correctly and one it misread is
+        #    visible to an analyst in seconds and invisible to everyone downstream
+        #    forever, which is why the confirm step exists and why skipping it is an
+        #    error with a remedy rather than a degraded mode.
         spread = self._primary_spread(memo_input)
+        if spread is not None and not self._spreads.is_confirmed(spread):
+            self._write_audit(actor, redacted_summary, "", Decision.ESCALATED)
+            raise SpreadNotConfirmedError(
+                "the financial spread has not been confirmed by a person, so no ratio may "
+                "be computed from it. Review the extracted figures and confirm them first."
+            )
         ratios: tuple[Ratio, ...] = self._ratios.compute_all(spread) if spread is not None else ()
 
         # 6) Synthesise the memo prose + normalise financial metrics (LLM, grounded).
@@ -201,12 +222,18 @@ class CreditMemoService:
         )
         risk_flags: tuple[RiskFlag, ...] = self._risk.flag(borrower, passages, actor)
 
-        # 8) Peer comparisons (BigQuery peer dataset; arithmetic only).
+        # 8) Reconcile. Every check here is one an analyst does by hand and an examiner
+        #    asks about, and none of them needs a model.
+        tie_out: tuple[TieOutFinding, ...] = self._reconcile(
+            spread, memo_input.request, covenants, draft
+        )
+
+        # 9) Peer comparisons (BigQuery peer dataset; arithmetic only).
         peer_comparison: tuple[PeerComparison, ...] = self._peers.compare(
             borrower, draft.financial_metrics, actor
         )
 
-        # 9) Assemble the memo. The draft's confidence, caveats and questions were
+        # 10) Assemble the memo. The draft's confidence, caveats and questions were
         #    computed and then dropped on the floor before this: a reader could not see
         #    how sure the drafter was, nor what it had said it could not support.
         citations = self._memo_citations(draft.citations, covenants, risk_flags)
@@ -223,27 +250,28 @@ class CreditMemoService:
             request=memo_input.request,
             spreads=memo_input.spreads,
             ratios=ratios,
+            tie_out=tie_out,
             confidence=draft.confidence,
             caveats=draft.caveats,
             questions_for_client=draft.questions_for_client,
             manifest=manifest,
         )
 
-        # 10) Guardrail screen (OUTPUT) on the assembled prose.
+        # 11) Guardrail screen (OUTPUT) on the assembled prose.
         out_text = f"{memo.summary}\n{memo.recommendation_rationale}"
         out_verdict: GuardrailVerdict = self._guardrail.screen(out_text, Direction.OUTPUT)
         if not out_verdict.allowed:
             self._write_audit(actor, redacted_summary, "", Decision.BLOCKED, direction="output")
             raise GuardrailBlockedError(out_verdict.reason or "credit memo blocked by guardrail")
 
-        # 11) Review policy: a memo is consequential, so it is always routed to a human
+        # 12) Review policy: a memo is consequential, so it is always routed to a human
         #     checker (audit decision ESCALATED); a breach/high-severity flag escalates.
         escalated = self._review.escalates(covenants, risk_flags)
 
-        # 12) Audit (already-redacted prompt + a redacted response summary).
+        # 13) Audit (already-redacted prompt + a redacted response summary).
         self._audit_memo(actor, redacted_summary, memo, Decision.ESCALATED, escalated)
 
-        # 13) Route the escalation to Hrz7 (rule R8). A memo always requires human review, so it is
+        # 14) Route the escalation to Hrz7 (rule R8). A memo always requires human review, so it is
         #     handed to the maker-checker console rather than terminating in a boolean; the adapter
         #     redacts before the wire. Best-effort: a console outage must not fail an already-
         #     assembled, already-audited memo (the audit ESCALATED record is the durable escalation
@@ -361,6 +389,39 @@ class CreditMemoService:
     # ------------------------------------------------------------------ #
     # Helpers
     # ------------------------------------------------------------------ #
+    def _reconcile(
+        self,
+        spread: FinancialSpread | None,
+        request: Any,
+        covenants: tuple[Covenant, ...],
+        draft: Any,
+    ) -> tuple[TieOutFinding, ...]:
+        """Run the tie-out checks the spread and the draft make possible.
+
+        The quote-on-page check needs the document pages and belongs to the confirm step,
+        where the candidate still exists; by the time a memo is being built the analyst
+        has already accepted the figures. What is checkable here is the arithmetic, and
+        the agreement between what the evidence reported and what the engine computed.
+        """
+        if spread is None:
+            return ()
+        reported = tuple(
+            (c.description, c.reported_value, c.measured.value)
+            for c in covenants
+            if c.measured is not None
+            and c.measured.value is not None
+            and c.reported_value is not None
+        )
+        try:
+            return self._tie_out.check(
+                spread,
+                request=request,
+                narrative=f"{draft.summary}\n{draft.recommendation_rationale}",
+                reported_covenants=reported,
+            )
+        except Exception:  # noqa: BLE001 - a reconciliation must never fail a memo
+            return ()
+
     @staticmethod
     def _primary_spread(memo_input: MemoInput) -> FinancialSpread | None:
         """The spread the engines compute from: the borrower's own, where supplied.

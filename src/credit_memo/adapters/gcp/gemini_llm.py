@@ -89,14 +89,33 @@ class GeminiLLMAdapter:
         return self._match_label(raw, labels)
 
     def _to_contents(self, request: LlmRequest) -> list[Any]:
+        """Messages as text parts, with any attached documents on the first user turn.
+
+        Documents ride with the prompt rather than as a separate turn because the model
+        reads them as context for the instruction, not as a conversation. Sending the
+        file rather than its text layer is what lets an answer name the page a figure sat
+        on, which is the difference between a citation a reviewer can click and one they
+        have to go looking for.
+        """
         from google.genai import types
+
+        document_parts = [
+            types.Part.from_bytes(data=document.content, mime_type=document.mime_type)
+            for document in request.documents
+            if document.content
+        ]
 
         contents: list[Any] = []
         for message in request.messages:
             role = "model" if message.role == "model" else "user"
-            contents.append(
-                types.Content(role=role, parts=[types.Part.from_text(text=message.content)])
-            )
+            parts = [types.Part.from_text(text=message.content)]
+            if document_parts and role == "user":
+                parts = [*document_parts, *parts]
+                document_parts = []  # attach once, to the first user turn
+            contents.append(types.Content(role=role, parts=parts))
+        if document_parts:
+            # Documents with no message to attach to still have to be sent.
+            contents.append(types.Content(role="user", parts=document_parts))
         return contents
 
     def _build_config(self, request: LlmRequest, types: Any) -> Any:

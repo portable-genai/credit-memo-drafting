@@ -68,6 +68,9 @@ from .kernel import (
     IngestResult as IngestResult,
 )
 from .kernel import (
+    LlmDocument as LlmDocument,
+)
+from .kernel import (
     LlmMessage as LlmMessage,
 )
 from .kernel import (
@@ -470,6 +473,107 @@ class FinancialSpread:
 
 
 @dataclass(frozen=True, slots=True)
+class CandidateLineItem:
+    """One figure a model read off a document, with where it read it.
+
+    ``quote`` is the verbatim text the model says it took the number from, and it is not
+    decoration: the tie-out service checks that the quote actually appears on the page
+    the model named. A model that invents a figure rarely invents a quote that survives
+    that check, which is the cheapest hallucination detector available here.
+    """
+
+    code: LineItemCode
+    period: str
+    value: float
+    currency: str = "SGD"
+    document_id: str = ""
+    page: int | None = None
+    quote: str = ""
+    confidence: float = 0.0
+    provenance: Provenance = Provenance.EXTRACTED
+
+
+@dataclass(frozen=True, slots=True)
+class SpreadCandidate:
+    """What extraction proposes, before a person has looked at it.
+
+    Deliberately NOT a :class:`FinancialSpread`. The spread refuses to hold an
+    unconfirmed figure, so there is no way to hand this to the ratio engine by accident;
+    turning one into the other is :meth:`SpreadService.confirm`, and it takes an actor.
+    That gap is the "confirm before drafting" stop, and it exists because the alternative
+    is a memo whose numbers nobody ever looked at.
+    """
+
+    borrower_id: str
+    periods: tuple[Period, ...] = ()
+    items: tuple[CandidateLineItem, ...] = ()
+    currency: str = "SGD"
+    unit: str = "thousands"
+    extractor: str = ""  # which adapter and model produced this
+    extractor_version: str = ""
+    extracted_at: datetime = field(default_factory=utcnow)
+
+    def value(self, code: LineItemCode, period: str) -> float | None:
+        for item in self.items:
+            if item.code is code and item.period == period:
+                return item.value
+        return None
+
+
+@dataclass(frozen=True, slots=True)
+class Adjustment:
+    """One analyst change to an extracted figure, kept forever beside the original.
+
+    A normalising add-back is a judgement, and a committee is entitled to see who made
+    it and why. ``before`` is retained even when it was wrong: "the statements said 18
+    and we normalised to 24 for the disposal" is the sentence this record exists to
+    support, and it cannot be written from the after-value alone.
+    """
+
+    code: LineItemCode
+    period: str
+    before: float | None
+    after: float
+    reason: str
+    actor: str
+    at: datetime = field(default_factory=utcnow)
+
+    def __post_init__(self) -> None:
+        if not self.reason.strip():
+            raise ValueError(
+                "an adjustment must say why. A changed figure with no reason is "
+                "indistinguishable from a typo when the committee asks about it."
+            )
+        if not self.actor.strip():
+            raise ValueError("an adjustment must name who made it")
+
+
+class TieOutCheck(StrEnum):
+    """The reconciliations a credit file is expected to survive."""
+
+    BALANCE_SHEET_BALANCES = "balance_sheet_balances"
+    QUOTE_ON_PAGE = "quote_on_page"  # the model's quote is really on the page it named
+    CERTIFICATE_AGREES = "certificate_agrees"  # covenant certificate vs computed
+    NARRATIVE_AGREES = "narrative_agrees"  # a figure in the prose vs the spread
+    SOURCES_EQUAL_USES = "sources_equal_uses"
+    PERIOD_CONTINUITY = "period_continuity"  # no period silently missing from a series
+
+
+@dataclass(frozen=True, slots=True)
+class TieOutFinding:
+    """One reconciliation that did not hold, stated as a reader would check it."""
+
+    check: TieOutCheck
+    severity: Severity
+    detail: str
+    expected: float | None = None
+    actual: float | None = None
+    document_id: str = ""
+    page: int | None = None
+    period: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class FormulaTerm:
     """One ``coefficient x line`` term of a formula's numerator or denominator."""
 
@@ -703,6 +807,9 @@ class CreditMemo:
     request: CreditRequest | None = None
     spreads: tuple[FinancialSpread, ...] = ()
     ratios: tuple[Ratio, ...] = ()
+    #: Reconciliations that did not hold. Not failures: sentences in the reviewer's
+    #: gutter saying "these two numbers should agree and they do not", with both numbers.
+    tie_out: tuple[TieOutFinding, ...] = ()
     #: Exactly which uploaded files this memo was assessed on, and when they expire.
     manifest: AnalysisManifest | None = None
     #: The synthesis service's self-critique. Both were computed and then dropped on the

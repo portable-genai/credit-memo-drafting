@@ -496,6 +496,10 @@ class Container:
         return self._bind("analysis_bundle")
 
     @cached_property
+    def spread_extraction(self) -> Any:
+        return self._bind("spread_extraction")
+
+    @cached_property
     def extraction(self) -> Any:
         return self._bind("extraction")
 

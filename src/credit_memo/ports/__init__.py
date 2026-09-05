@@ -20,6 +20,7 @@ from .observability import (
 from .peer_data import PeerDataPort
 from .review_router import ReviewRouterPort
 from .safety import GuardrailPort, PIIRedactionPort
+from .spread_extraction import SpreadExtractionPort as SpreadExtractionPort
 
 __all__ = [
     "DocumentExtractionPort",

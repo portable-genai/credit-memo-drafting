@@ -24,6 +24,7 @@ from .models import (
     CovenantOperator,
     CovenantStatus,
     CovenantType,
+    LlmDocument,
     LlmMessage,
     LlmRequest,
     LlmResponse,
@@ -274,6 +275,7 @@ def build_llm_request(
     thinking: ThinkingLevel = ThinkingLevel.HIGH,
     temperature: float = 0.0,
     max_output_tokens: int = 4096,
+    documents: tuple[LlmDocument, ...] = (),
 ) -> LlmRequest:
     """Assemble an ``LlmRequest`` with a single user message and a system prompt.
 
@@ -288,6 +290,7 @@ def build_llm_request(
         temperature=temperature,
         max_output_tokens=max_output_tokens,
         response_schema=response_schema,
+        documents=tuple(documents),
     )
 
 

@@ -20,7 +20,7 @@ TF_DIR      := infra/terraform
 export CREDIT_MEMO_PROFILE := $(PROFILE)
 
 .DEFAULT_GOAL := help
-.PHONY: help install install-demo install-gcp lock fmt lint test check memo demo demo-server demo-selftest eval run-api run-ui \
+.PHONY: help install install-demo install-gcp lock fmt lint test check memo demo demo-server demo-selftest eval eval-adversarial run-api run-ui \
 	demo-browser ui-install ui-check tf-plan clean
 
 help: ## Show this help.
@@ -85,6 +85,9 @@ demo-server: ## Live presenter-controlled demo server (offline) on :8094.
 
 eval: ## Run the A4 eval gate (groundedness / covenant / citations / pii_safety).
 	$(PYTHON) eval/run_eval.py
+
+eval-adversarial: ## Prove the gate catches a fabricating model (a PASS here is the bug).
+	CREDIT_MEMO_PROFILE=local PYTHONPATH=src $(PYTHON) eval/run_eval.py --adversarial
 
 run-api: ## Run the FastAPI service (PROFILE=$(PROFILE)).
 	uvicorn $(API_APP) --host $(API_HOST) --port $(API_PORT) --reload

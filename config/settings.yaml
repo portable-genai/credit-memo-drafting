@@ -156,6 +156,16 @@ adapters:
   # no Document AI processor: it routed borrower financials to the `us` multi-region on the
   # rc channel, and reading a PDF's text layer needs no cloud service at all. Structured
   # SPREAD extraction is a different problem and gets its own port.
+  # Spread extraction is a different problem from text extraction: which line of the
+  # spread does this number belong to, for which period, and on which page. gcp sends the
+  # PDF itself to Gemini in region; local reads a CSV the analyst supplies. Both return a
+  # CANDIDATE that no engine will accept until a person confirms it.
+  spread_extraction:
+    gcp: credit_memo.adapters.gcp.gemini_spread_extraction:GeminiSpreadExtractionAdapter
+    platform: credit_memo.adapters.gcp.gemini_spread_extraction:GeminiSpreadExtractionAdapter
+    local: credit_memo.adapters.local.spread_extraction:LocalCsvSpreadExtractionAdapter
+    live: credit_memo.adapters.local.spread_extraction:LocalCsvSpreadExtractionAdapter
+    onprem: credit_memo.adapters.onprem.spread_extraction:OnPremSpreadExtractionAdapter
   extraction:
     gcp: credit_memo.adapters.local.extraction:LocalDocumentExtractionAdapter
     platform: credit_memo.adapters.local.extraction:LocalDocumentExtractionAdapter

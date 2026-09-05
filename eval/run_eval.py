@@ -49,7 +49,7 @@ from pathlib import Path
 # The --mode smoke|gate scaffold + aligned report rendering come from the shared
 # agent-eval-kit commons; this script keeps only its own offline
 # evaluator and gate runner.
-from agent_eval_kit import eval_main
+from agent_eval_kit import eval_main, print_report
 
 # The pii_safety gate runs the REAL local redactor (not a fake) over the SAME shared pii-kit
 # rows the runtime uses, and scores the leak-check two independent ways: pack_leak (the same
@@ -110,6 +110,12 @@ THRESHOLDS: dict[str, float] = {
     # named formula. Correctness of the operands arrives with extraction receipts in
     # Wave 2 (spread_accuracy).
     "ratio_reproducibility": 1.0,
+    # The operands, not just the arithmetic: a perfectly reproducible ratio over the
+    # wrong EBITDA is still the wrong ratio.
+    "spread_accuracy": 0.90,
+    # Both directions. A tie-out that cries wolf on a clean file gets switched off, and
+    # one that never fires was never a control.
+    "tie_out_precision": 0.95,
 }
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -171,6 +177,11 @@ class GoldenExample:
     spread: dict = field(default_factory=dict)
     #: {formula_id: {period: expected value}} — what the catalogue must reproduce.
     expected_ratios: dict = field(default_factory=dict)
+    #: {line_item_code: {period: expected value}} — the operands, not the arithmetic.
+    expected_spread: dict = field(default_factory=dict)
+    #: Tie-out checks this case is built to trip. Empty means "this file is clean and
+    #: nothing should fire", which is scored just as strictly.
+    expected_tie_out: tuple[str, ...] = ()
 
 
 def load_golden(path: Path) -> list[GoldenExample]:
@@ -193,6 +204,8 @@ def load_golden(path: Path) -> list[GoldenExample]:
                 evidence=tuple(obj.get("evidence", []) or ()),
                 spread=dict(obj.get("spread", {}) or {}),
                 expected_ratios=dict(obj.get("expected_ratios", {}) or {}),
+                expected_spread=dict(obj.get("expected_spread", {}) or {}),
+                expected_tie_out=tuple(obj.get("expected_tie_out", []) or ()),
                 expected_metrics=dict(obj.get("expected_metrics", {}) or {}),
                 expected_covenants=tuple(obj.get("expected_covenants", []) or ()),
                 expected_risk_categories=tuple(obj.get("expected_risk_categories", []) or ()),
@@ -328,13 +341,31 @@ class FakeLLM:
     values, so the covenant statuses the service computes match the golden expectations.
     """
 
-    def __init__(self, by_borrower: dict[str, GoldenExample]) -> None:
+    #: When set, the fake fabricates: it cites source ids that were never retrieved and
+    #: states figures the spread does not support. Without this the gate scores a model
+    #: that never misbehaves, which is a gate that proves nothing about the one that
+    #: might. ``make eval-adversarial`` runs with it on and EXPECTS a failure.
+    ADVERSARIAL_IDS = ("src-fabricated-annual-report", "src-invented-filing")
+
+    def __init__(self, by_borrower: dict[str, GoldenExample], adversarial: bool = False) -> None:
         self._by_borrower = by_borrower
+        self._adversarial = adversarial
         self.model = "gemini-3.5-flash"
+        #: Every source id this fake CLAIMED for the example currently being scored,
+        #: before the pipeline dropped the ones it did not recognise. The citation metric
+        #: scores this rather than what survived. Reset per example by the runner: a
+        #: cumulative set would score each case against every other case's ids.
+        self.asserted_source_ids: set[str] = set()
 
     def generate(self, request: LlmRequest) -> LlmResponse:
         user = request.messages[-1].content if request.messages else ""
         source_ids = self._source_ids(user)
+        if self._adversarial:
+            # Cite two ids that are not in EVIDENCE, and drop one that is. A scorer that
+            # still returns 1.0 here is measuring the drop-unknown-ids filter rather than
+            # the model.
+            source_ids = [*self.ADVERSARIAL_IDS, *source_ids[1:]]
+        self.asserted_source_ids.update(source_ids)
         example = self._example_for(user)
         schema = request.response_schema or {}
         props = (schema.get("properties") or {}) if isinstance(schema, dict) else {}
@@ -448,13 +479,13 @@ class _Adapters:
     audit: FakeAudit
 
 
-def _build_adapters(examples: list[GoldenExample]) -> _Adapters:
+def _build_adapters(examples: list[GoldenExample], adversarial: bool = False) -> _Adapters:
     by_borrower = {ex.borrower_name: ex for ex in examples}
     return _Adapters(
         extraction=FakeExtraction(),
         knowledge_base=FakeKnowledgeBase(by_borrower),
         peer_data=FakePeerData(by_borrower),
-        llm=FakeLLM(by_borrower),
+        llm=FakeLLM(by_borrower, adversarial=adversarial),
         guardrail=FakeGuardrail(),
         redaction=_real_redactor(),
         tracer=FakeTracer(),
@@ -568,19 +599,113 @@ def _claim_sentences(text: str) -> list[str]:
 
 
 def score_groundedness(memo: CreditMemo) -> float:
-    """Every memo claim must be backed by at least one citation."""
-    sentences = _claim_sentences(memo.summary)
-    if not sentences:
-        return 1.0
-    return 1.0 if memo.citations else 0.0
+    """What fraction of the figures in the prose the bank can actually account for.
+
+    The previous version returned 1.0 if the memo carried ANY citation at all, which is
+    a boolean wearing a percentage: a memo whose every number was invented scored the
+    same as one where every number was checked, as long as one citation existed
+    somewhere. It could not go below 1.0 for a real defect.
+
+    This counts claims. Every figure written with a thousands separator or a decimal in
+    the summary and rationale must correspond to something the bank stands behind: a
+    computed ratio, a confirmed spread line, or a metric the model cited. A figure
+    matching none of those is a number the drafter supplied itself.
+    """
+    claims = _figures_in(f"{memo.summary}\n{memo.recommendation_rationale}")
+    if not claims:
+        # No figures asserted is not the same as no evidence. A memo that says only
+        # "the evidence does not support a view" is fully grounded and correctly cautious.
+        return 1.0 if memo.citations or not _claim_sentences(memo.summary) else 0.0
+
+    supported = {round(abs(r.value), 2) for r in memo.ratios if r.value is not None}
+    for spread in memo.spreads:
+        supported |= {round(abs(i.value), 2) for i in spread.items}
+    supported |= {round(abs(m.value), 2) for m in memo.financial_metrics}
+    supported |= {round(abs(c.threshold), 2) for c in memo.covenants}
+    supported |= {
+        round(abs(c.current_value), 2) for c in memo.covenants if c.current_value is not None
+    }
+
+    hits = sum(1 for claim in claims if any(_close_enough(claim, s) for s in supported))
+    return round(hits / len(claims), 4)
 
 
-def score_citation_accuracy(memo: CreditMemo, retrieved_ids: set[str]) -> float:
-    """No cited source outside the retrieved/derived set (fabrication check)."""
-    cited = {c.source_id for c in memo.citations}
-    if not cited:
+def score_citation_accuracy(memo: CreditMemo, retrieved_ids: set[str], asserted: set[str]) -> float:
+    """What fraction of the ids the MODEL asserted were real.
+
+    ``asserted`` is what the model said before ``citations_for_source_ids`` dropped the
+    ones it did not recognise. Scoring the surviving citations instead measured the
+    filter: unknown ids are removed on the way through, so the set that reached the memo
+    was correct by construction and the metric could not fall. A fabricated citation is
+    exactly the failure this number exists to catch, so it has to be counted where it
+    still exists.
+    """
+    if not asserted:
         return 0.0 if _claim_sentences(memo.summary) else 1.0
-    return round(len(cited & retrieved_ids) / len(cited), 4)
+    return round(len(asserted & retrieved_ids) / len(asserted), 4)
+
+
+def _figures_in(text: str) -> list[float]:
+    """Figures a reader would take as a financial claim.
+
+    Thousands separators and decimals only. Bare integers in prose are years, counts,
+    percentages and page numbers far more often than they are spread lines, and counting
+    them would make the metric noise.
+    """
+    out: list[float] = []
+    for raw in re.findall(r"\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b|\b\d+\.\d+\b", text):
+        try:
+            out.append(round(abs(float(raw.replace(",", ""))), 2))
+        except ValueError:
+            continue
+    return out
+
+
+def _close_enough(claim: float, supported: float) -> bool:
+    """A figure rounded for prose still counts as the figure it was rounded from."""
+    scale = max(abs(claim), abs(supported), 1.0)
+    return abs(claim - supported) <= scale * 0.01
+
+
+def score_spread_accuracy(memo: CreditMemo, expected: dict) -> float:
+    """Did the confirmed spread carry the line items the golden case says it should?
+
+    Distinct from ratio_reproducibility, which proves the arithmetic is stable. This
+    proves the operands are the right ones: a perfectly reproducible ratio over the wrong
+    EBITDA is still the wrong ratio.
+    """
+    if not expected:
+        return 1.0
+    total = 0
+    hits = 0
+    for code, per_period in expected.items():
+        for period, want in per_period.items():
+            total += 1
+            for spread in memo.spreads:
+                got = next(
+                    (i.value for i in spread.items if i.code.value == code and i.period == period),
+                    None,
+                )
+                if got is not None and abs(got - float(want)) <= 1e-9:
+                    hits += 1
+                    break
+    return round(hits / total, 4) if total else 1.0
+
+
+def score_tie_out_precision(memo: CreditMemo, expected_findings: tuple[str, ...]) -> float:
+    """Did the reconciliations fire on the cases that should fail, and stay quiet elsewhere?
+
+    Precision in both directions, because a tie-out that cries wolf gets switched off and
+    one that never fires was never a control. A case declaring no expected findings scores
+    0.0 if any HIGH or CRITICAL finding appears: a false alarm on a clean file is the
+    failure mode that destroys trust in the gutter.
+    """
+    raised = {f.check.value for f in memo.tie_out}
+    wanted = set(expected_findings)
+    if not wanted:
+        loud = {f.check.value for f in memo.tie_out if f.severity.value in {"high", "critical"}}
+        return 0.0 if loud else 1.0
+    return round(len(wanted & raised) / len(wanted), 4)
 
 
 def score_covenant_accuracy(memo: CreditMemo, expected: tuple[dict, ...]) -> float:
@@ -671,14 +796,17 @@ class _PerMetric:
         return sum(self.scores) / len(self.scores) if self.scores else 0.0
 
 
-def run_offline(dataset: Path, thresholds: dict[str, float]) -> EvalReport:
+def run_offline(
+    dataset: Path, thresholds: dict[str, float], adversarial: bool = False
+) -> EvalReport:
     examples = load_golden(dataset)
-    adapters = _build_adapters(examples)
+    adapters = _build_adapters(examples, adversarial=adversarial)
     service = _make_service(adapters)
 
     agg: dict[str, _PerMetric] = {m: _PerMetric() for m in THRESHOLDS}
     print(f"Running offline eval gate over {len(examples)} golden cases (CreditMemoService).\n")
     for example in examples:
+        adapters.llm.asserted_source_ids.clear()
         memo = service.build(_memo_input(example), actor="eval-bot")
         retrieved_ids = {
             p.citation.source_id
@@ -690,13 +818,19 @@ def run_offline(dataset: Path, thresholds: dict[str, float]) -> EvalReport:
             )
         }
         agg["groundedness"].scores.append(score_groundedness(memo))
-        agg["citation_accuracy"].scores.append(score_citation_accuracy(memo, retrieved_ids))
+        agg["citation_accuracy"].scores.append(
+            score_citation_accuracy(memo, retrieved_ids, adapters.llm.asserted_source_ids)
+        )
         agg["covenant_accuracy"].scores.append(
             score_covenant_accuracy(memo, example.expected_covenants)
         )
         agg["pii_safety"].scores.append(score_pii_safety(memo, example, adapters.audit.events))
         agg["ratio_reproducibility"].scores.append(
             score_ratio_reproducibility(memo, example.expected_ratios)
+        )
+        agg["spread_accuracy"].scores.append(score_spread_accuracy(memo, example.expected_spread))
+        agg["tie_out_precision"].scores.append(
+            score_tie_out_precision(memo, example.expected_tie_out)
         )
 
     results = tuple(
@@ -712,6 +846,8 @@ def run_offline(dataset: Path, thresholds: dict[str, float]) -> EvalReport:
             "citation_accuracy",
             "pii_safety",
             "ratio_reproducibility",
+            "spread_accuracy",
+            "tie_out_precision",
         )
     )
     return EvalReport(dataset=str(dataset), results=results, n_examples=len(examples))
@@ -748,6 +884,28 @@ def main(argv: list[str] | None = None) -> int:
     for ``--mode gate``.
     """
     args = sys.argv[1:] if argv is None else list(argv)
+
+    # --adversarial is handled here rather than by the shared scaffold's parser, and it
+    # INVERTS the verdict: the run is expected to fail, so exiting 0 means the gate
+    # caught a fabricating model and exiting 1 means it did not notice. A gate that
+    # passes a model citing sources that were never retrieved is measuring its own
+    # drop-unknown-ids filter, which is how this repo's citation metric read 1.000 for
+    # as long as it existed.
+    if "--adversarial" in args:
+        dataset = DEFAULT_DATASET
+        if "--dataset" in args:
+            dataset = Path(args[args.index("--dataset") + 1])
+        report = run_offline(dataset, load_thresholds_from_rubrics(), adversarial=True)
+        print_report(report, "adversarial (fabricating model; a PASS here is the bug)")
+        if report.passed:
+            print(
+                "\nADVERSARIAL RUN PASSED, WHICH IS THE FAILURE. The model cited sources "
+                "that were never retrieved and the gate did not notice."
+            )
+            return 1
+        print("\nThe gate refused a fabricating model, which is what it is for.")
+        return 0
+
     if "--use-gcp" in args:
         args = [a for a in args if a != "--use-gcp"] + ["--mode", "gate"]
     return eval_main(
