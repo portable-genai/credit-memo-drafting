@@ -170,6 +170,17 @@ adapters:
   # The committee pack. DOCX and HTML from the standard library on every profile; the
   # managed adapter adds PDF via reportlab, in region. Not Google Docs: that path leaves
   # the deploy region and caps at 10 MB.
+  # Public-web context for the ANALYST ONLY. Grounded results may be shown only to the
+  # person who ran the query (Service Specific Terms 20(k)), so they never enter the memo,
+  # an export or a review payload; and the search leg is served from the global endpoint,
+  # which is a recorded residency deviation about where a QUERY goes. Off unless
+  # CREDIT_MEMO_RESEARCH_ENABLED is set.
+  web_research:
+    gcp: credit_memo.adapters.gcp.gemini_web_research:GeminiWebResearchAdapter
+    platform: credit_memo.adapters.gcp.gemini_web_research:GeminiWebResearchAdapter
+    local: credit_memo.adapters.local.web_research:LocalFixtureWebResearchAdapter
+    live: credit_memo.adapters.local.web_research:LocalFixtureWebResearchAdapter
+    onprem: credit_memo.adapters.onprem.web_research:OnPremWebResearchAdapter
   export:
     gcp: credit_memo.adapters.gcp.export:GcpExportAdapter
     platform: credit_memo.adapters.gcp.export:GcpExportAdapter

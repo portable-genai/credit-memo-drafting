@@ -20,6 +20,7 @@ from .observability import (
 )
 from .peer_data import PeerDataPort
 from .policy_pack import PolicyPackPort as PolicyPackPort
+from .research import WebResearchPort as WebResearchPort
 from .review_router import ReviewRouterPort
 from .safety import GuardrailPort, PIIRedactionPort
 from .spread_extraction import SpreadExtractionPort as SpreadExtractionPort
