@@ -39,7 +39,9 @@ from ..domain.errors import (
     GuardrailBlockedError,
     RetrievalEmptyError,
 )
+from ..domain.revision_service import EDITABLE_SECTIONS, RevisionService
 from ..domain.services import CreditMemoService
+from ..domain.spread_service import SpreadService
 from ..envread import boolean_setting, read_env_setting, setting_or_default
 from ..ports.identity import VERIFIED
 from . import deps
@@ -52,9 +54,17 @@ from .schemas import (
     CreditMemoRequest,
     CreditMemoResponse,
     DocumentUploadResponse,
+    FinancialSpreadModel,
     HealthResponse,
+    MemoAmendRequest,
+    MemoRevisionModel,
+    RevisionListResponse,
     RiskFlagListResponse,
     RiskFlagRequest,
+    SpreadCandidateModel,
+    SpreadConfirmRequest,
+    SpreadExtractRequest,
+    SpreadsResponse,
     to_domain_memo,
 )
 from .security import CurrentPrincipal
@@ -585,11 +595,26 @@ def build_analysis_memo(
     except BorrowerAccessDeniedError as exc:
         return _denied_response(exc)
 
+    # The confirmed spread this analysis already holds, unless the caller sent one. A
+    # caller who confirmed through spreads/confirm should not have to send the figures
+    # back to have them used, and the stored one is the copy with a named confirmer on it.
+    spreads = [s.to_domain(manifest.borrower_id) for s in body.spreads]
+    if not spreads:
+        stored_spread = None
+        with contextlib.suppress(Exception):
+            stored_spread = container.analysis_bundle.get_artifact(
+                analysis_id, _SPREAD_ARTIFACT, principals
+            )
+        if stored_spread is not None:
+            spreads = [
+                FinancialSpreadModel.model_validate(stored_spread).to_domain(manifest.borrower_id)
+            ]
+
     try:
         memo_input = m.MemoInput(
             borrower=m.Borrower(id=manifest.borrower_id, name=manifest.borrower_id),
             request=body.request.to_domain() if body.request is not None else None,
-            spreads=tuple(s.to_domain(manifest.borrower_id) for s in body.spreads),
+            spreads=tuple(spreads),
             analysis_id=analysis_id,
         )
     except ValueError as exc:
@@ -611,10 +636,20 @@ def build_analysis_memo(
         return _ungrounded_response(f"No borrower evidence available to ground the memo: {exc}")
 
     response = CreditMemoResponse.from_domain(memo)
+    memo_json = response.model_dump(mode="json")
     # The memo lives in the bundle with the evidence it was built from, and dies with it.
+    # Revision 1 is opened here rather than on the first edit, so the chain starts at the
+    # draft nobody has touched: "a person wrote this" and "a person tidied the model's
+    # version of this" are different levels of assurance, and a chain that begins at the
+    # first edit cannot express the difference.
     with contextlib.suppress(Exception):
+        container.analysis_bundle.put_artifact(analysis_id, "memo", memo_json, principals)
+        first = RevisionService().first(memo_json, actor=principal.actor)
         container.analysis_bundle.put_artifact(
-            analysis_id, "memo", response.model_dump(mode="json"), principals
+            analysis_id,
+            _REVISIONS_ARTIFACT,
+            {"revisions": [MemoRevisionModel.from_domain(first).model_dump(mode="json")]},
+            principals,
         )
     return response
 
@@ -672,6 +707,301 @@ def export_formats(analysis_id: str, principal: CurrentPrincipal) -> Any:
     except BorrowerAccessDeniedError as exc:
         return _denied_response(exc)
     return {"formats": list(deps.get_container().export.formats())}
+
+
+# --------------------------------------------------------------------------- #
+# Spreading: propose, review, confirm
+# --------------------------------------------------------------------------- #
+#: Artifact names inside the bundle. The candidate and the confirmed spread are kept
+#: apart forever rather than one overwriting the other: "what the model read" and "what
+#: the analyst accepted" are different claims, and a reconciliation that cannot see both
+#: cannot tell you which figures a person changed.
+_CANDIDATE_ARTIFACT = "spread-candidate"
+_SPREAD_ARTIFACT = "spread"
+_REVISIONS_ARTIFACT = "revisions"
+
+
+def _extraction_documents(
+    container: Any,
+    analysis_id: str,
+    manifest: Any,
+    principals: tuple[str, ...],
+    wanted: list[str],
+) -> tuple[m.LlmDocument, ...]:
+    """The uploaded bytes for the documents named, or all of them when none are named."""
+    records = [d for d in manifest.documents if not wanted or d.id in wanted]
+    out: list[m.LlmDocument] = []
+    for record in records:
+        content = container.analysis_bundle.get_document(analysis_id, record.id, principals)
+        if content:
+            out.append(
+                m.LlmDocument(
+                    content=content,
+                    mime_type=record.mime_type or "application/pdf",
+                    document_id=record.id,
+                )
+            )
+    return tuple(out)
+
+
+@app.post(
+    "/v1/analyses/{analysis_id}/spreads/extract",
+    response_model=SpreadCandidateModel,
+    tags=["analyses"],
+)
+def extract_spread(
+    analysis_id: str, body: SpreadExtractRequest, principal: CurrentPrincipal
+) -> SpreadCandidateModel | JSONResponse:
+    """Propose the figures, with the page and the quote each came from.
+
+    A proposal, not a spread. Nothing here may reach a ratio: every item is EXTRACTED,
+    which the ``FinancialSpread`` type refuses, so the only route from here to a computed
+    number runs through a person confirming it.
+    """
+    container = deps.get_container()
+    principals = _analysis_principals(principal)
+    try:
+        manifest = _read_analysis(analysis_id, principal)
+    except AnalysisNotFoundError as exc:
+        return _analysis_gone(exc)
+    except BorrowerAccessDeniedError as exc:
+        return _denied_response(exc)
+
+    documents = _extraction_documents(
+        container, analysis_id, manifest, principals, body.document_ids
+    )
+    if not documents:
+        return _ungrounded_response(
+            "no documents to read: upload the financial statements to this analysis first"
+        )
+
+    try:
+        candidate = container.spread_extraction.extract_spread(
+            borrower_id=manifest.borrower_id,
+            documents=documents,
+            periods=tuple(p.to_domain() for p in body.periods),
+            currency=body.currency,
+            unit=body.unit,
+        )
+    except NotImplementedError as exc:
+        return _ungrounded_response(str(exc))
+
+    if not candidate.items:
+        # An empty candidate stored and returned as a success is the silent failure this
+        # step exists to prevent: the console renders an empty grid, the analyst confirms
+        # it, and the memo comes out with no ratios and no reason given.
+        return _ungrounded_response(
+            "no figures were read from these documents"
+            + (
+                ""
+                if body.periods
+                else ". Some extractors need the periods you want spread (FY2025, FY2024): "
+                "name them in 'periods' and try again"
+            )
+        )
+
+    model = SpreadCandidateModel.from_domain(candidate)
+    with contextlib.suppress(Exception):
+        container.analysis_bundle.put_artifact(
+            analysis_id, _CANDIDATE_ARTIFACT, model.model_dump(mode="json"), principals
+        )
+    return model
+
+
+@app.post(
+    "/v1/analyses/{analysis_id}/spreads/confirm",
+    response_model=FinancialSpreadModel,
+    tags=["analyses"],
+)
+def confirm_spread(
+    analysis_id: str, body: SpreadConfirmRequest, principal: CurrentPrincipal
+) -> FinancialSpreadModel | JSONResponse:
+    """Accept the candidate, and become the person who stands behind these figures.
+
+    Confirmation applies to the candidate this analysis already holds, not to a table the
+    caller composes. Otherwise a "confirmed" spread could hold figures nobody ever saw
+    beside a document, which is the one thing the confirm step exists to prevent.
+
+    The confirming actor is the server-verified principal. An unattributed confirmation
+    says a person looked without saying which person, and that is what a committee asks.
+    """
+    container = deps.get_container()
+    principals = _analysis_principals(principal)
+    try:
+        _read_analysis(analysis_id, principal)
+        stored = container.analysis_bundle.get_artifact(
+            analysis_id, _CANDIDATE_ARTIFACT, principals
+        )
+    except AnalysisNotFoundError as exc:
+        return _analysis_gone(exc)
+    except BorrowerAccessDeniedError as exc:
+        return _denied_response(exc)
+    if stored is None:
+        return _ungrounded_response(
+            "this analysis has no extracted figures to confirm; run spreads/extract first"
+        )
+
+    candidate = _candidate_from_stored(stored)
+    try:
+        spread = SpreadService().confirm(
+            candidate,
+            actor=principal.actor,
+            rejected=tuple((m.LineItemCode(r.code), r.period) for r in body.rejected),
+            adjustments=tuple(a.to_domain(principal.actor) for a in body.adjustments),
+            added=tuple(i.to_domain() for i in body.added),
+        )
+    except ValueError as exc:
+        return _ungrounded_response(str(exc))
+
+    model = FinancialSpreadModel.from_domain(spread)
+    with contextlib.suppress(Exception):
+        container.analysis_bundle.put_artifact(
+            analysis_id, _SPREAD_ARTIFACT, model.model_dump(mode="json"), principals
+        )
+    return model
+
+
+@app.get("/v1/analyses/{analysis_id}/spreads", response_model=SpreadsResponse, tags=["analyses"])
+def read_spreads(analysis_id: str, principal: CurrentPrincipal) -> SpreadsResponse | JSONResponse:
+    """Both halves, so a console can show what was read next to what was accepted."""
+    container = deps.get_container()
+    principals = _analysis_principals(principal)
+    try:
+        _read_analysis(analysis_id, principal)
+        candidate = container.analysis_bundle.get_artifact(
+            analysis_id, _CANDIDATE_ARTIFACT, principals
+        )
+        confirmed = container.analysis_bundle.get_artifact(
+            analysis_id, _SPREAD_ARTIFACT, principals
+        )
+    except AnalysisNotFoundError as exc:
+        return _analysis_gone(exc)
+    except BorrowerAccessDeniedError as exc:
+        return _denied_response(exc)
+    return SpreadsResponse(
+        candidate=SpreadCandidateModel.model_validate(candidate) if candidate else None,
+        confirmed=FinancialSpreadModel.model_validate(confirmed) if confirmed else None,
+    )
+
+
+def _candidate_from_stored(stored: dict) -> m.SpreadCandidate:
+    """The stored candidate as the domain type the confirm gate takes."""
+    model = SpreadCandidateModel.model_validate(stored)
+    return m.SpreadCandidate(
+        borrower_id=model.borrower_id,
+        periods=tuple(p.to_domain() for p in model.periods),
+        items=tuple(
+            m.CandidateLineItem(
+                code=m.LineItemCode(i.code),
+                period=i.period,
+                value=i.value,
+                currency=i.currency,
+                document_id=i.document_id,
+                page=i.page,
+                quote=i.quote,
+                confidence=i.confidence,
+            )
+            for i in model.items
+        ),
+        currency=model.currency,
+        unit=model.unit,
+        extractor=model.extractor,
+        extractor_version=model.extractor_version,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Revisions: which version the committee read, and who wrote which sentence
+# --------------------------------------------------------------------------- #
+def _stored_revisions(container: Any, analysis_id: str, principals: tuple[str, ...]) -> list[dict]:
+    stored = container.analysis_bundle.get_artifact(analysis_id, _REVISIONS_ARTIFACT, principals)
+    return list(stored.get("revisions", [])) if stored else []
+
+
+@app.patch("/v1/analyses/{analysis_id}/memo", response_model=MemoRevisionModel, tags=["analyses"])
+def amend_memo(
+    analysis_id: str, body: MemoAmendRequest, principal: CurrentPrincipal
+) -> MemoRevisionModel | JSONResponse:
+    """Rewrite the prose, and record who rewrote it.
+
+    Only the narrative sections. The figures are the deterministic engines' and are not
+    editable here: a memo whose leverage could be typed over by hand would put a number in
+    front of a committee that no formula produced.
+
+    The edit lands as a new revision chained to the last one, and the memo the export
+    reads is moved forward with it, so the pack a committee receives is the version that
+    was actually edited rather than the draft underneath it.
+    """
+    container = deps.get_container()
+    principals = _analysis_principals(principal)
+    try:
+        _read_analysis(analysis_id, principal)
+        stored_memo = container.analysis_bundle.get_artifact(analysis_id, "memo", principals)
+    except AnalysisNotFoundError as exc:
+        return _analysis_gone(exc)
+    except BorrowerAccessDeniedError as exc:
+        return _denied_response(exc)
+    if stored_memo is None:
+        return _ungrounded_response("this analysis has no memo yet; build one before editing it")
+
+    unknown = sorted(set(body.sections) - set(EDITABLE_SECTIONS))
+    if unknown:
+        return _ungrounded_response(
+            f"not an editable section: {', '.join(unknown)}. The prose is editable "
+            f"({', '.join(EDITABLE_SECTIONS)}); the figures belong to the engines."
+        )
+
+    service = RevisionService()
+    history = _stored_revisions(container, analysis_id, principals)
+    revisions = [MemoRevisionModel.model_validate(r).to_domain() for r in history]
+    if not revisions:
+        # A memo built before this analysis had a revision chain still gets an honest
+        # revision 1: the draft as it stood, authored by the model, before this edit.
+        revisions = [service.first(stored_memo, actor=principal.actor)]
+
+    amended = {**stored_memo, **body.sections}
+    edits = service.edits_between(stored_memo, amended, principal.actor, reason=body.reason)
+    if not edits:
+        return _ungrounded_response(
+            "nothing changed: every section you sent already reads exactly that way"
+        )
+
+    revision = service.amend(revisions[-1], amended, principal.actor, edits=edits, note=body.note)
+    revisions.append(revision)
+
+    payload = {
+        "revisions": [MemoRevisionModel.from_domain(r).model_dump(mode="json") for r in revisions]
+    }
+    with contextlib.suppress(Exception):
+        container.analysis_bundle.put_artifact(
+            analysis_id, _REVISIONS_ARTIFACT, payload, principals
+        )
+        container.analysis_bundle.put_artifact(analysis_id, "memo", amended, principals)
+    return MemoRevisionModel.from_domain(revision)
+
+
+@app.get(
+    "/v1/analyses/{analysis_id}/revisions", response_model=RevisionListResponse, tags=["analyses"]
+)
+def read_revisions(
+    analysis_id: str, principal: CurrentPrincipal
+) -> RevisionListResponse | JSONResponse:
+    """Every version, and whether the chain from the first to the last still holds."""
+    container = deps.get_container()
+    principals = _analysis_principals(principal)
+    try:
+        _read_analysis(analysis_id, principal)
+    except AnalysisNotFoundError as exc:
+        return _analysis_gone(exc)
+    except BorrowerAccessDeniedError as exc:
+        return _denied_response(exc)
+
+    models = [
+        MemoRevisionModel.model_validate(r)
+        for r in _stored_revisions(container, analysis_id, principals)
+    ]
+    intact, detail = RevisionService().verify(tuple(r.to_domain() for r in models))
+    return RevisionListResponse(revisions=models, chain_intact=intact, chain_detail=detail)
 
 
 def _tenant_tags(principal: Any) -> tuple[str, ...]:

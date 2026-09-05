@@ -269,6 +269,141 @@ class FinancialSpreadModel(BaseModel):
         )
 
 
+class CandidateLineItemModel(BaseModel):
+    """One figure extraction proposed, with where it says it read it.
+
+    Outbound only. A candidate is what a MODEL asserted, so there is no inbound shape for
+    it: a caller who wants to assert a figure supplies a ``LineItemModel``, which lands as
+    ``user_entered`` and is theirs.
+    """
+
+    code: str
+    period: str
+    value: float
+    currency: str = "SGD"
+    document_id: str = ""
+    page: int | None = None
+    quote: str = ""
+    confidence: float = 0.0
+    provenance: str = "extracted"
+
+    @classmethod
+    def from_domain(cls, item: m.CandidateLineItem) -> CandidateLineItemModel:
+        return cls(
+            code=item.code.value,
+            period=item.period,
+            value=item.value,
+            currency=item.currency,
+            document_id=item.document_id,
+            page=item.page,
+            quote=item.quote,
+            confidence=item.confidence,
+            provenance=item.provenance.value,
+        )
+
+
+class SpreadCandidateModel(BaseModel):
+    """What extraction proposes, before a person has looked at it."""
+
+    borrower_id: str = ""
+    periods: list[PeriodModel] = Field(default_factory=list)
+    items: list[CandidateLineItemModel] = Field(default_factory=list)
+    currency: str = "SGD"
+    unit: str = "thousands"
+    extractor: str = ""
+    extractor_version: str = ""
+    extracted_at: str = ""
+
+    @classmethod
+    def from_domain(cls, candidate: m.SpreadCandidate) -> SpreadCandidateModel:
+        return cls(
+            borrower_id=candidate.borrower_id,
+            periods=[PeriodModel.from_domain(p) for p in candidate.periods],
+            items=[CandidateLineItemModel.from_domain(i) for i in candidate.items],
+            currency=candidate.currency,
+            unit=candidate.unit,
+            extractor=candidate.extractor,
+            extractor_version=candidate.extractor_version,
+            extracted_at=candidate.extracted_at.isoformat(),
+        )
+
+
+class SpreadExtractRequest(BaseModel):
+    """Which documents to read the figures off, and which periods were asked for."""
+
+    #: Empty means every document in the bundle. Naming them narrows an expensive call to
+    #: the statements, rather than sending the facility letter to the extractor too.
+    document_ids: list[str] = Field(default_factory=list)
+    periods: list[PeriodModel] = Field(default_factory=list)
+    currency: str = "SGD"
+    unit: str = "thousands"
+
+
+class RejectedLineModel(BaseModel):
+    """A (code, period) slot the analyst threw out."""
+
+    code: str
+    period: str
+
+
+class AdjustmentModel(BaseModel):
+    """An analyst's replacement for an extracted figure, and why.
+
+    There is no ``actor`` field: the adjustment is attributed to the server-verified
+    principal. An adjustment whose author is whatever the body claimed is not an audit
+    trail, and this is precisely the record a committee asks about.
+    """
+
+    code: str
+    period: str
+    before: float | None = None
+    after: float
+    reason: str = Field(..., min_length=1)
+
+    def to_domain(self, actor: str) -> m.Adjustment:
+        return m.Adjustment(
+            code=m.LineItemCode(self.code),
+            period=self.period,
+            before=self.before,
+            after=self.after,
+            reason=self.reason,
+            actor=actor,
+        )
+
+    @classmethod
+    def from_domain(cls, adjustment: m.Adjustment) -> AdjustmentModel:
+        return cls(
+            code=adjustment.code.value,
+            period=adjustment.period,
+            before=adjustment.before,
+            after=adjustment.after,
+            reason=adjustment.reason,
+        )
+
+
+class SpreadConfirmRequest(BaseModel):
+    """The analyst's verdict on the candidate this analysis already holds.
+
+    Deliberately NOT a spread the caller composes. Confirmation applies to the recorded
+    proposal, so the confirmed figures are provably the ones that were reviewed — a
+    caller who could post their own table could produce a "confirmed" spread nobody ever
+    saw next to a document.
+    """
+
+    rejected: list[RejectedLineModel] = Field(default_factory=list)
+    adjustments: list[AdjustmentModel] = Field(default_factory=list)
+    #: Figures extraction never proposed. They land as ``user_entered``: the analyst typed
+    #: them, so they are the analyst's.
+    added: list[LineItemModel] = Field(default_factory=list)
+
+
+class SpreadsResponse(BaseModel):
+    """Both halves of the spread step, so a console can render the review grid."""
+
+    candidate: SpreadCandidateModel | None = None
+    confirmed: FinancialSpreadModel | None = None
+
+
 class AnalysisBuildRequest(BaseModel):
     """Build the memo for an analysis that already holds its uploaded evidence.
 
@@ -762,6 +897,109 @@ class CovenantListResponse(BaseModel):
             borrower_id=borrower_id,
             covenants=[CovenantModel.from_domain(c) for c in covenants],
         )
+
+
+class SectionEditModel(BaseModel):
+    """One analyst change to one section, with what it said before."""
+
+    section: str
+    before: str
+    after: str
+    actor: str
+    at: str = ""
+    reason: str = ""
+
+    @classmethod
+    def from_domain(cls, edit: m.SectionEdit) -> SectionEditModel:
+        return cls(
+            section=edit.section,
+            before=edit.before,
+            after=edit.after,
+            actor=edit.actor,
+            at=edit.at.isoformat(),
+            reason=edit.reason,
+        )
+
+
+class MemoRevisionModel(BaseModel):
+    """One saved version, chained to the one before it.
+
+    ``memo_json`` is the whole memo as it stood, not a patch: a committee that approved
+    revision 3 approved a document, and reconstructing it from deltas is a chance to
+    reconstruct it wrongly.
+    """
+
+    revision: int
+    memo_json: dict = Field(default_factory=dict)
+    actor: str
+    digest: str = ""
+    parent_digest: str = ""
+    edits: list[SectionEditModel] = Field(default_factory=list)
+    authorship: dict[str, str] = Field(default_factory=dict)
+    at: str = ""
+    note: str = ""
+
+    def to_domain(self) -> m.MemoRevision:
+        return m.MemoRevision(
+            revision=self.revision,
+            memo_json=self.memo_json,
+            actor=self.actor,
+            digest=self.digest,
+            parent_digest=self.parent_digest,
+            edits=tuple(
+                m.SectionEdit(
+                    section=e.section,
+                    before=e.before,
+                    after=e.after,
+                    actor=e.actor,
+                    at=datetime.fromisoformat(e.at) if e.at else m.utcnow(),
+                    reason=e.reason,
+                )
+                for e in self.edits
+            ),
+            authorship=dict(self.authorship),
+            at=datetime.fromisoformat(self.at) if self.at else m.utcnow(),
+            note=self.note,
+        )
+
+    @classmethod
+    def from_domain(cls, revision: m.MemoRevision) -> MemoRevisionModel:
+        return cls(
+            revision=revision.revision,
+            memo_json=revision.memo_json,
+            actor=revision.actor,
+            digest=revision.digest,
+            parent_digest=revision.parent_digest,
+            edits=[SectionEditModel.from_domain(e) for e in revision.edits],
+            authorship=dict(revision.authorship),
+            at=revision.at.isoformat(),
+            note=revision.note,
+        )
+
+
+class MemoAmendRequest(BaseModel):
+    """Rewrite one or more prose sections of the memo.
+
+    Only the prose. The figures belong to the deterministic engines, and a memo whose
+    leverage could be typed over by hand would put a number in front of a committee that
+    no formula produced. An unknown section name is a 422 rather than a silent no-op.
+    """
+
+    sections: dict[str, str] = Field(..., min_length=1)
+    reason: str = ""
+    note: str = ""
+
+
+class RevisionListResponse(BaseModel):
+    """The chain, and whether it still holds.
+
+    ``chain_intact`` is recomputed on read rather than stored. A stored flag says what
+    was true when it was written, which is the one moment nobody is asking about.
+    """
+
+    revisions: list[MemoRevisionModel] = Field(default_factory=list)
+    chain_intact: bool = True
+    chain_detail: str = ""
 
 
 class RiskFlagListResponse(BaseModel):

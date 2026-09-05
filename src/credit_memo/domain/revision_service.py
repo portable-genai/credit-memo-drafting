@@ -163,10 +163,16 @@ class RevisionService:
 #: The parts of a memo an analyst writes rather than an engine computes. Editing anywhere
 #: else is refused upstream: a ratio is COMPUTED by type and a covenant status is tested,
 #: so neither has an editable form to offer.
-_EDITABLE_SECTIONS = (
+#: The sections a person may rewrite. Public because the API refuses an edit to anything
+#: else and has to be able to say what IS editable; the figures belong to the engines, and
+#: a memo whose leverage could be typed over by hand would put a number in front of a
+#: committee that no formula produced.
+EDITABLE_SECTIONS: tuple[str, ...] = (
     "summary",
     "recommendation_rationale",
 )
+
+_EDITABLE_SECTIONS = EDITABLE_SECTIONS
 
 
 def _sections_of(memo_json: dict) -> tuple[str, ...]:

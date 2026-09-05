@@ -37,64 +37,127 @@ autonomous action on a facility.
 ## 3. Architecture
 
 Hexagonal ports-and-adapters. The domain core (`domain/`) is pure standard library: frozen
-dataclasses, enums, pure orchestration services that take explicit port instances, the
-maker-checker policy, prompts, serialization, and a shared grounded helper. Ports
-(`ports/`) are `@runtime_checkable` Protocols. Adapters live under
-`adapters/{gcp,platform,onprem}`; all google-cloud / genai / adk imports are lazy, never at
-module import time. Wiring layers: `api/` (FastAPI), `cli/` (Typer), `agent/` (ADK root
-agent + A2A card + MCP tools), all import-safe.
+dataclasses, enums, the ratio catalogue, pure services that take explicit port instances or
+none at all, the maker-checker policy, prompts, serialization, and a shared grounded
+helper. Ports (`ports/`) are `@runtime_checkable` Protocols. Adapters live under
+`adapters/{gcp,platform,local,live,onprem}`; all google-cloud / genai / adk imports are
+lazy, never at module import time. Wiring layers: `api/` (FastAPI), `cli/` (Typer),
+`agent/` (ADK root agent + A2A card + MCP tools), all import-safe.
+
+Provenance is a type, not a convention. `Provenance` marks where every figure came from;
+`ENGINE_READABLE` is the subset an engine may compute on; and the invariants live in the
+constructors, so the boundary is enforced at build time rather than at review time. That is
+what makes "the model never supplied this number" a property rather than a promise.
 
 ## 4. Artifacts
 
 1. **CreditMemo**: borrower overview, financial analysis, covenant section, risk
-   assessment, peer comparison, recommendation rationale. `requires_human_review=True`.
+   assessment, peer comparison, recommendation rationale, the ask, the computed ratios,
+   the reconciliations, the policy exceptions, the proposed grade, and the input manifest.
+   `requires_human_review=True`.
 2. **Covenant[]**: type, threshold + operator, current value, status
-   (`COMPLIANT` | `AT_RISK` | `BREACH`), citations. Status is deterministic.
+   (`COMPLIANT` | `AT_RISK` | `BREACH`), citations. Status is deterministic, and tested
+   against the COMPUTED value wherever the confirmed spread supports it.
 3. **RiskFlag[]**: category, severity, detail, citations.
 4. **PeerComparison**: borrower metric vs peer set (median, percentile, deltas).
+5. **SpreadCandidate -> FinancialSpread**: what extraction proposed, and what a named
+   person accepted. Kept apart forever: "what the model read" and "what the analyst
+   confirmed" are different claims.
+6. **Ratio[]**: every catalogue formula over every period, computable or not. One that
+   could not be computed is returned carrying the line and period that were missing,
+   because omitting it reads as "we did not think leverage was worth stating".
+7. **TieOutFinding[]**: the reconciliations a credit file is expected to survive — quote
+   on page, balance sheet, sources = uses, certificate vs computed, period continuity.
+8. **PolicyException[]** and **RiskRatingProposal**: the bank's own uploaded limits and
+   scorecard, applied arithmetically. The grade is a proposal, never a grade of record.
+9. **AnalysisManifest**: every uploaded file with sha256, type, pages and the uploader's
+   own as-of date, plus the date the analysis stops being readable.
+10. **MemoRevision[]**: each saved version, digest-chained, with per-section authorship
+    (model / edited / analyst) and what each section said before.
 
 ## 5. Services and the build pipeline
 
-- `CreditMemoService(extraction, knowledge_base, peer_data, llm, guardrail, redaction,
-  tracer, audit, review_policy=None).build(memo_input, actor, principals=()) -> CreditMemo`.
+- `CreditMemoService(...).build(memo_input, actor, principals=(), tenant="") -> CreditMemo`.
   `actor` is the server-verified audit subject and `principals` are the verified entitlement
   principals (from the `IdentityPort`); both come from the resolved `Principal`, never a
   client-asserted value (see Section 10).
-- `MemoSynthService` (LLM: summary + normalised metrics + rationale, with a self-critique
-  groundedness pass), `CovenantService` (extract + deterministic status),
-  `RiskFlagService`, `PeerCompService` (arithmetic median/percentile).
+- **Model services**: `MemoSynthService` (summary + normalised metrics + rationale, with a
+  self-critique groundedness pass), `CovenantService` (extract, then deterministic status),
+  `RiskFlagService`.
+- **Deterministic services, no ports and no model**: `RatioService` over
+  `ratio_catalogue` (nine versioned formulas), `SpreadService` (the confirm gate),
+  `TieOutService`, `PolicyExceptionService`, `RiskRatingService`, `PeerCompService`
+  (arithmetic median/percentile), `GlobalCashFlowService`, `ScenarioService`,
+  `RenewalDiffService`, `RevisionService`.
 - `CreditReviewPolicy`: a memo always `requires_human_review=True`; any BREACH covenant or
-  HIGH/CRITICAL risk flag escalates.
+  HIGH/CRITICAL risk flag escalates. Routing that escalation to the Hrz7 console is
+  OPT-IN (`CREDIT_MEMO_REVIEW_ENABLED`); the flag and the audit record stand either way.
 
-The deterministic guarantee: covenant status is computed by
+The deterministic guarantee has two halves. Covenant status is computed by
 `_grounded.covenant_status(current_value, threshold, operator)`, the single auditable place
-where compliance is decided. The LLM drafts prose and never overrides a breach.
+where compliance is decided. And a `Ratio` is constructible only as `COMPUTED` while a
+`FinancialSpread` refuses any item an engine may not read, so between those two refusals
+there is no route by which a model-asserted number becomes a ratio in the memo. The LLM
+drafts prose and never overrides a breach.
 
 Pipeline (R1 full safety; each step in `tracer.span`; audited at the end):
 
 ```
-redact -> guardrail(INPUT) -> per-doc extract + ingest (Hrz2, borrower ACL)
--> Hrz2 retrieve (filings + credit-policy/sector context)
--> llm normalise financials + draft memo
--> deterministic covenant status + risk flags -> peer comps
--> assemble CreditMemo -> guardrail(OUTPUT) -> review (always) -> audit
+redact -> guardrail(INPUT)
+-> per-doc extract + ingest into the per-request index (borrower + tenant ACL)
+-> retrieve (filings + credit-policy/sector context)          [empty -> hard error]
+-> refuse an unconfirmed spread, then COMPUTE the ratios      [before any drafting]
+-> llm draft memo, handed the ask and the computed ratios as authoritative
+-> covenant status against the computed value where the spread supports it; risk flags
+-> the bank's own policy limits and scorecard, arithmetically
+-> reconcile (quote on page, balance sheet, sources = uses, certificate, continuity)
+-> peer comps -> assemble CreditMemo (with its input manifest)
+-> guardrail(OUTPUT) -> review policy -> audit -> optional escalation routing
 ```
 
-A blocked input and an empty retrieval are hard errors so a memo is never built on
-screened-out or absent evidence.
+Order is load-bearing in two places. Ratios are computed **before** drafting so the
+narrative is written around numbers the bank calculated rather than numbers the model
+inferred. Policy and rating run before assembly so the drafter's rationale explains drivers
+it did not pick.
+
+A blocked input, an empty retrieval and an unconfirmed spread are hard errors, so a memo is
+never built on screened-out evidence, absent evidence, or figures nobody looked at.
 
 ## 6. Interfaces
 
 ### 6.1 Endpoints this repo DEFINES (consumed by the UI, CLI, peers)
 
+An analysis is the unit of work: open one with its evidence, spread it, confirm it, build,
+edit, export, and let it expire. The stateless artifact routes remain for a caller that
+carries its own documents in the body.
+
 | Method | Path | Body -> Response |
 | --- | --- | --- |
-| POST | `/v1/credit-memo` | `{borrower, documents[]}` -> CreditMemo |
+| POST | `/v1/analyses` | multipart `{borrower_id, files[], doc_types, declared_as_of}` -> AnalysisManifest |
+| GET | `/v1/analyses/{id}` | -> AnalysisManifest (what was given, and until when) |
+| GET | `/v1/analyses/{id}/documents/{doc}` | -> the file inline, so `#page=N` opens the cited page |
+| DELETE | `/v1/analyses/{id}` | -> 204, without waiting for the retention window |
+| POST | `/v1/analyses/{id}/spreads/extract` | `{document_ids[], periods[], currency, unit}` -> SpreadCandidate |
+| POST | `/v1/analyses/{id}/spreads/confirm` | `{rejected[], adjustments[], added[]}` -> FinancialSpread |
+| GET | `/v1/analyses/{id}/spreads` | -> `{candidate, confirmed}` |
+| POST | `/v1/analyses/{id}/build` | `{request?, spreads[]?}` -> CreditMemo |
+| PATCH | `/v1/analyses/{id}/memo` | `{sections{}, reason, note}` -> MemoRevision |
+| GET | `/v1/analyses/{id}/revisions` | -> `{revisions[], chain_intact, chain_detail}` |
+| POST | `/v1/analyses/{id}/export?fmt=` | -> the committee pack as bytes |
+| GET | `/v1/analyses/{id}/export/formats` | -> `{formats[]}` this deployment can actually produce |
+| POST | `/v1/documents` | multipart borrower evidence -> `{chunks, borrower_id}` |
+| GET | `/v1/documents/template` | -> the upload CSV template |
+| POST | `/v1/credit-memo` | `{borrower, documents[], request?, spreads[]?}` -> CreditMemo |
 | POST | `/v1/covenants` | `{borrower, documents[]}` -> Covenant[] |
 | POST | `/v1/risk-flags` | `{borrower, documents[]}` -> RiskFlag[] |
 | GET | `/v1/personas` | -> `[{id, subject, tenant, principals}]` (local profile only) |
 | GET | `/healthz` | -> `{status, profile, region}` |
 | GET | `/.well-known/agent-card.json` | -> AgentCard |
+
+Two rules the analysis routes enforce and the table cannot show. Confirmation applies to
+the candidate the analysis already holds, never to a table the caller composes, so a
+"confirmed" spread cannot hold figures nobody saw beside a document. And `PATCH .../memo`
+accepts the prose sections only: the figures belong to the deterministic engines.
 
 There is no `actor` in any request body: identity is server-verified (Section 10). In the
 `local` profile a demo/test selects a seeded persona with the `X-Dev-Persona` header;
@@ -119,18 +182,28 @@ Peer data is public filing data read over HTTPS: no platform HTTP adapter of our
 
 | Port | gcp | local | platform | onprem |
 | --- | --- | --- | --- | --- |
-| DocumentExtractionPort | local parser (pypdf/text) | local parser (pypdf/text) | n/a | stub |
+| DocumentExtractionPort | local parser (pypdf/text) | local parser (pypdf/text) | same as gcp | stub |
+| SpreadExtractionPort | Gemini, PDF parts + schema | analyst CSV | same as gcp | stub |
 | KnowledgeBaseClientPort | per-request SQLite FTS5 | SQLite FTS5 (BM25) | Hrz2 `/v1/*` | stub |
 | AnalysisBundlePort | regional CMEK bucket, 15-day lifecycle | directory | regional CMEK bucket | stub |
-| PeerDataPort | SEC EDGAR | in-process peer table | n/a | stub |
-| LLMPort | Gemini | deterministic schema-driven | n/a | stub |
+| PolicyPackPort | uploaded YAML/JSON | uploaded YAML/JSON | same as gcp | stub |
+| ExportPort | DOCX/HTML + PDF (reportlab, in process) | DOCX/HTML (stdlib) | same as gcp | stub |
+| WebResearchPort | Gemini grounding at `global`, opt-in | fixture | same as gcp | stub |
+| PeerDataPort | SEC EDGAR | in-process peer table | same as gcp | stub |
+| LLMPort | Gemini | deterministic schema-driven | same as gcp | stub |
 | GuardrailPort | Model Armor | heuristic injection screen | Hrz1 | stub |
 | PIIRedactionPort | DLP | regex de-identify | Hrz1 | stub |
 | AuditSinkPort | Cloud Logging | append-only SQLite | Hrz5 | stub |
-| ObservabilityTracerPort | Cloud Trace | no-op spans | n/a | stub |
+| ReviewRouterPort | Hrz7 console (opt-in) | in-process recorder | Hrz7 console | stub |
+| IdentityPort | IAP assertion | seeded persona | IAP assertion | stub |
+| ObservabilityTracerPort | Cloud Trace | no-op spans | same as gcp | stub |
 | EvaluationGatePort | Gen AI eval | in-repo offline gate | Hrz4 | stub |
 | AgentRegistryPort | A2A card | in-process registry | Hrz3 | stub |
-| ToolCatalogPort | MCP catalog | in-process catalog | n/a | stub |
+| ToolCatalogPort | MCP catalog | in-process catalog | same as gcp | stub |
+
+A fifth profile, `live`, sits beside these: SDK-free but not offline. It reads real SEC
+EDGAR filings for both retrieval and peers and calls a real model, which is how a claim
+about real data gets tested without a managed deployment.
 
 Under `local`, the platform-client ports (knowledge base, guardrail, redaction, audit,
 eval, registry) use in-process implementations, not HTTP to sibling services: a laptop
@@ -141,9 +214,24 @@ unconditionally SDK-free; the registry can opt into the Firestore emulator.
 ## 8. Eval gate (Hrz4 / P-08)
 
 `eval/run_eval.py` drives the real `CreditMemoService` against the offline local adapters
-over a golden JSONL set and scores: `groundedness` (>= 0.80), `covenant_accuracy`
-(>= 0.90), `citation_accuracy` (>= 0.90), `pii_safety` (>= 0.99). Exit non-zero on fail;
-CI runs it. The local `EvaluationGatePort` adapter delegates to this same gate.
+over a golden JSONL set and scores nine metrics:
+
+| metric | threshold | what it would catch |
+| --- | --- | --- |
+| `groundedness` | >= 0.80 | prose asserting what the evidence does not say |
+| `covenant_accuracy` | >= 0.90 | a status that disagrees with the arithmetic |
+| `citation_accuracy` | >= 0.90 | a citation pointing at a source that does not support it |
+| `pii_safety` | >= 0.99 | borrower personal data reaching a model, an index or the log |
+| `ratio_reproducibility` | == 1.0 | the same spread and catalogue version giving two answers |
+| `spread_accuracy` | >= 0.90 | a figure read off the wrong row |
+| `tie_out_precision` | >= 0.95 | a reconciliation that passes something it should flag |
+| `revision_integrity` | == 1.0 | an edited memo whose chain still claims to be intact |
+| `research_isolation` | == 1.0 | a web-grounded result reaching the memo or an export |
+
+Exit non-zero on fail; CI runs it. The local `EvaluationGatePort` adapter delegates to this
+same gate. `--adversarial` inverts the verdict and runs the same set against planted
+defects: a metric that cannot be shown RED has not been shown to measure anything, so every
+threshold above was demonstrated failing before it was trusted.
 
 ## 9. Test gate (offline, no GCP SDK)
 

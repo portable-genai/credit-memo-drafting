@@ -95,6 +95,33 @@ def test_a_candidate_cannot_be_computed_on_without_passing_through_confirm() -> 
         )
 
 
+def test_a_candidate_cannot_hold_a_figure_for_a_period_it_does_not_declare() -> None:
+    """The failure this catches is silent, which is why it is caught by type.
+
+    Both shipped extractors echoed the requested periods back. A caller who named none
+    got a candidate carrying FY2025 figures under no columns at all; the confirmed spread
+    inherited that, the ratio engine iterated zero periods, and the memo came out with no
+    ratios and no reason given. Nothing raised, nothing logged.
+    """
+    with pytest.raises(ValueError, match="did not declare"):
+        SpreadCandidate(
+            borrower_id="acme",
+            periods=(),
+            items=(CandidateLineItem(code=LineItemCode.EBITDA, period="FY2025", value=18.0),),
+        )
+
+
+def test_a_spread_cannot_hold_a_figure_for_a_period_it_does_not_declare() -> None:
+    """Held at both ends: an adapter is not the only way to build one of these."""
+    with pytest.raises(ValueError, match="does not declare"):
+        FinancialSpread(
+            borrower_id="acme",
+            periods=(Period(label="FY2024"),),
+            items=(LineItem(code=LineItemCode.EBITDA, period="FY2025", value=18.0),),
+            confirmed_by=ANALYST,
+        )
+
+
 def test_confirming_requires_a_named_person() -> None:
     """An unattributed confirmation says somebody looked without saying who."""
     with pytest.raises(ValueError, match="named actor"):
