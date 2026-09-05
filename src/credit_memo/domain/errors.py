@@ -67,3 +67,13 @@ class AnalysisExpiredError(AnalysisNotFoundError):
     holds a manifest with an expiry it can read). Managed adapters rely on the bucket's
     lifecycle rule, where an expired bundle is simply gone and surfaces as not-found.
     """
+
+
+class SpreadNotConfirmedError(CreditMemoError):
+    """Raised when a build is asked to compute on figures nobody has reviewed (HTTP 422).
+
+    The confirm step is the control experts describe as the one they will not give up:
+    the model reads a table well and misreads one occasionally, and the difference is
+    visible to an analyst in seconds and invisible to everyone downstream forever. So a
+    candidate reaching the build is an error with a clear remedy, not a degraded mode.
+    """

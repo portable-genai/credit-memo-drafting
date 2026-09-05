@@ -141,6 +141,20 @@ class LlmMessage:
 
 
 @dataclass(frozen=True, slots=True)
+class LlmDocument:
+    """A file attached to a model request, sent as bytes rather than as pasted text.
+
+    Pasting a PDF's text layer into a prompt loses the two things extraction most needs:
+    the layout that tells a table from a paragraph, and the page a figure sat on. Sending
+    the file lets the model answer with a page number the reader can click.
+    """
+
+    content: bytes
+    mime_type: str = "application/pdf"
+    document_id: str = ""  # so an answer can name which file it came from
+
+
+@dataclass(frozen=True, slots=True)
 class LlmRequest:
     messages: tuple[LlmMessage, ...]
     system_instruction: str | None = None
@@ -149,6 +163,7 @@ class LlmRequest:
     temperature: float = 0.0  # omitted at a call site means this value; it must not sample
     max_output_tokens: int = 4096
     response_schema: dict | None = None  # JSON schema for structured output
+    documents: tuple[LlmDocument, ...] = ()  # files sent alongside the prompt
 
 
 # ``TokenUsage`` is NOT declared here. It is re-exported from

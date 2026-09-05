@@ -43,6 +43,7 @@ _BUNDLE_ROOT = tempfile.mkdtemp(prefix="credit-memo-parity-analyses-")
 PORT_PROTOCOLS: dict[str, type] = {
     "analysis_bundle": ports.AnalysisBundlePort,
     "extraction": ports.DocumentExtractionPort,
+    "spread_extraction": ports.SpreadExtractionPort,
     "knowledge_base": ports.KnowledgeBaseClientPort,
     "peer_data": ports.PeerDataPort,
     "llm": ports.LLMPort,

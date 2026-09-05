@@ -72,11 +72,19 @@ def test_groundedness_can_go_red(memo_and_sources: tuple[CreditMemo, set[str]]) 
 
 
 def test_citation_accuracy_can_go_red(memo_and_sources: tuple[CreditMemo, set[str]]) -> None:
+    """The red case is a model CITING something that was never retrieved.
+
+    It used to be an empty retrieved-set, which scored the citations that survived
+    ``citations_for_source_ids``. Those are correct by construction: unknown ids are
+    dropped on the way through, so the metric was measuring the filter and could not fall
+    for the defect it exists to catch. The metric now takes what the model ASSERTED, and
+    the red case is a fabricated id among real ones.
+    """
     memo, retrieved = memo_and_sources
     assert_can_go_red(
-        lambda ids: score_citation_accuracy(memo, ids),
+        lambda asserted: score_citation_accuracy(memo, retrieved, asserted),
         green=retrieved,
-        red=set(),  # nothing the memo cites was ever actually retrieved
+        red={*retrieved, "src-fabricated-annual-report", "src-invented-filing"},
         threshold=THRESHOLDS["citation_accuracy"],
         metric="citation_accuracy",
     )
