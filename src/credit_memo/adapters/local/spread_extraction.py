@@ -84,7 +84,7 @@ class LocalCsvSpreadExtractionAdapter:
 
         return SpreadCandidate(
             borrower_id=borrower_id,
-            periods=periods,
+            periods=_declared(periods, items),
             items=tuple(items),
             currency=currency,
             unit=unit,
@@ -105,3 +105,23 @@ class LocalCsvSpreadExtractionAdapter:
             ]
         except csv.Error:
             return []
+
+
+def _declared(requested: tuple[Period, ...], items: list[CandidateLineItem]) -> tuple[Period, ...]:
+    """The periods this candidate actually covers.
+
+    Echoing the request back would declare columns the documents did not fill, and
+    declaring nothing when nothing was requested is worse: the ratio engine iterates the
+    declared periods, so every figure read would be invisible and the memo would come out
+    with no ratios and no reason given. Requested periods keep their order and their
+    attributes (a caller who said FY2025 was audited said something the CSV cannot);
+    anything else found is appended in the order it was read.
+    """
+    covered = {item.period for item in items}
+    out = [period for period in requested if period.label in covered]
+    known = {period.label for period in out}
+    for item in items:
+        if item.period not in known:
+            out.append(Period(label=item.period))
+            known.add(item.period)
+    return tuple(out)

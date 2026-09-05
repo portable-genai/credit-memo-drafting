@@ -25,6 +25,7 @@ The kernel names below are re-exported unchanged, so every existing
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -409,6 +410,19 @@ class Period:
     audited: bool = False
 
 
+def _undeclared_periods(
+    periods: tuple[Period, ...], item_periods: Iterable[str]
+) -> tuple[str, ...]:
+    """Period labels the items use that the columns do not declare.
+
+    An empty declaration with figures in it is the worst case rather than a lenient one:
+    everything downstream iterates the declared periods, so those figures are unreachable
+    and nothing says so.
+    """
+    declared = {p.label for p in periods}
+    return tuple(sorted({label for label in item_periods if label not in declared}))
+
+
 @dataclass(frozen=True, slots=True)
 class LineItem:
     """One figure of the spread, for one line and one period.
@@ -458,6 +472,14 @@ class FinancialSpread:
                 "a financial spread may only hold line items an engine may read "
                 f"({', '.join(sorted(p.value for p in ENGINE_READABLE))}); "
                 f"refused: {', '.join(offending)}"
+            )
+        undeclared = _undeclared_periods(self.periods, (i.period for i in self.items))
+        if undeclared:
+            raise ValueError(
+                "a financial spread cannot hold a figure for a period it does not "
+                f"declare: {', '.join(undeclared)}. The ratio engine iterates the declared "
+                "periods, so such a figure is not merely mislabelled — it is invisible, and "
+                "the memo comes out with no ratios and no reason given."
             )
 
     def value(self, code: LineItemCode, period: str) -> float | None:
@@ -512,6 +534,16 @@ class SpreadCandidate:
     extractor: str = ""  # which adapter and model produced this
     extractor_version: str = ""
     extracted_at: datetime = field(default_factory=utcnow)
+
+    def __post_init__(self) -> None:
+        undeclared = _undeclared_periods(self.periods, (i.period for i in self.items))
+        if undeclared:
+            raise ValueError(
+                "an extractor proposed figures for a period it did not declare: "
+                f"{', '.join(undeclared)}. Caught here rather than at the confirm gate "
+                "because the confirmed spread inherits these periods, and a spread that "
+                "declares none computes no ratios while looking perfectly well-formed."
+            )
 
     def value(self, code: LineItemCode, period: str) -> float | None:
         for item in self.items:
