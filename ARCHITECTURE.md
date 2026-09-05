@@ -34,7 +34,7 @@ flowchart TB
     p_id["IdentityPort"]
   end
   subgraph adapters["Adapters (one profile active)"]
-    gcp["gcp: Document AI · Agent Search · BigQuery · Gemini · Model Armor · DLP · Cloud Logging · Cloud Trace"]
+    gcp["gcp: Gemini · Cloud Storage (analysis bundles) · BigQuery · Model Armor · DLP · Cloud Logging · Cloud Trace"]
     local["local: SQLite FTS5 · deterministic LLM · regex DLP · heuristic guardrail · append-only audit"]
     platform["platform: Hrz1 · Hrz2 · Hrz3 · Hrz4 · Hrz5 HTTP clients"]
     onprem["onprem: placeholder stubs"]
@@ -63,7 +63,7 @@ sequenceDiagram
   participant KB as Hrz2 Enterprise KB
   participant LLM as Gemini
   participant Peer as BigQuery peer data
-  participant Audit as Hrz5 WORM audit
+  participant Audit as Hrz5 audit
   Officer->>API: POST borrower, documents (no actor)
   API->>Service: build(memo_input, actor, principals) from verified Principal
   Service->>Safety: redact(case inputs)
@@ -105,8 +105,9 @@ covenant met or breached. A BREACH escalates the memo to enhanced review.
 
 | Concern | gcp | local | platform | onprem |
 | --- | --- | --- | --- | --- |
-| Extraction | Document AI | local parser (pypdf/text) | n/a | placeholder |
-| Governed RAG | Agent Search | SQLite FTS5 (BM25) | Hrz2 KB | placeholder |
+| Extraction | local parser (pypdf/text) | local parser (pypdf/text) | n/a | placeholder |
+| Governed RAG | per-request SQLite FTS5 | SQLite FTS5 (BM25) | Hrz2 KB | placeholder |
+| Analysis custody | regional CMEK bucket (15-day lifecycle) | directory | regional CMEK bucket | placeholder |
 | Peer data | BigQuery | in-process peer table | n/a | placeholder |
 | LLM | Gemini | deterministic schema-driven | n/a | placeholder |
 | Guardrail + redaction | Model Armor + DLP | heuristic + regex | Hrz1 gateway | placeholder |
@@ -130,7 +131,11 @@ fast), so a sovereign migration is "fill in the bodies", not "rewrite the domain
 ## 5. Residency and audit
 
 Every managed resource is provisioned in `asia-southeast1` (see `infra/terraform`). Audit
-records are routed by a Cloud Logging sink to a locked WORM bucket with ~7-year retention.
+records are written to Cloud Logging at the project's own retention. A locked ~7-year
+WORM bucket was removed deliberately: it would have outlived by a factor of a hundred and
+seventy the analyses it describes, whose evidence this deployment deletes after fifteen
+days. An adopter running this as a system of record restores it and raises the retention
+window together.
 Peer data and borrower filings stay in-region; CMEK is applied to the peer dataset and the
 log bucket.
 
@@ -149,7 +154,7 @@ PYTHONPATH=src CREDIT_MEMO_PROFILE=local python scripts/portability_demo.py    #
 
 Not applicable in this repo (stated here so the catalogue cross-references cleanly with the
 [Doc1 reference](../cdd-sow-research/ARCHITECTURE.md)): **PT-10** (the local audit sink is
-an append-only WORM stand-in serialized to open JSON, but it does not implement a per-record
+an append-only stand-in serialized to open JSON, but it does not implement a per-record
 cryptographic hash chain or a `verify`/`export`/`restore` CLI, so there is no tamper-evidence
 proof to show); **PT-13** (the infra is deliberately single-tenant: [`variables.tf`](infra/terraform/variables.tf)
 declares only `project_id` and a few org/billing/toggle values as variables and pins every
@@ -173,10 +178,10 @@ enterprise is a tfvars file" is not this repo's design).
 | # | Principle (generic) | Mechanism in this repo | Proof |
 |---|---------------------|------------------------|-------|
 | PT-8 | **Logical records are separated from physical stores.** The domain owns plain, framework-free record types; serialization to an open format is a documented, deliberate function, not an ORM side effect. | Frozen stdlib dataclasses in [`domain/models.py`](src/credit_memo/domain/models.py); `to_jsonable` in [`domain/serialization.py`](src/credit_memo/domain/serialization.py) (enums to `.value`, datetimes to ISO 8601, dataclasses to field dicts) is the single serialization boundary the remote clients and the audit sink share. | `pytest tests/unit/test_serialization_config_policy.py::test_to_jsonable_serialises_passage_with_enum_and_page -q` |
-| PT-9 | **Search indexes are derived assets:** expensive to compute, cheap to recompute. Never let the index be the only home of the evidence; re-ingesting sources into a new backend must rebuild it. | Borrower filings are ingested into the KB port from source bytes; the local FTS5 index self-seeds and rebuilds from the same ingest call the managed Agent Search adapter receives ([`local/knowledge_base.py`](src/credit_memo/adapters/local/knowledge_base.py)). | The KB parity test ingests the same document into two implementations (and re-runs the local ingest on a fresh store) and gets identical passages back: `tests/contract/test_behavioral_parity.py::test_knowledge_base_parity_same_passages_across_implementations`. |
+| PT-9 | **Search indexes are derived assets:** expensive to compute, cheap to recompute. Never let the index be the only home of the evidence; re-ingesting sources into a new backend must rebuild it. | Borrower filings are ingested into the KB port from source bytes; the local FTS5 index self-seeds and rebuilds from the same ingest call the per-request managed index receives ([`local/knowledge_base.py`](src/credit_memo/adapters/local/knowledge_base.py)). | The KB parity test ingests the same document into two implementations (and re-runs the local ingest on a fresh store) and gets identical passages back: `tests/contract/test_behavioral_parity.py::test_knowledge_base_parity_same_passages_across_implementations`. |
 
 > **PT-10** is not applicable in this repo (see the section intro): the local audit is an
-> append-only, open-format WORM stand-in ([`local/audit.py`](src/credit_memo/adapters/local/audit.py)),
+> append-only, open-format stand-in ([`local/audit.py`](src/credit_memo/adapters/local/audit.py)),
 > but it has no per-record hash chain or `verify`/`export`/`restore` capability, so the
 > tamper-evidence proof the reference shows cannot be reproduced here. The open-format
 > read-back half of the story (records serialize to JSON and reload unchanged) is exercised
@@ -247,7 +252,7 @@ alert policies are not provisioned in this repo's Terraform).
 
 | # | Principle (generic) | Mechanism in this repo | Proof |
 |---|---------------------|------------------------|-------|
-| SC-11 | **WORM immutability of the audit trail.** Records are append-only and immutable at rest, protecting against deletion or edit, and are written already-redacted so nothing raw is retained. | Locked Cloud Logging bucket (`locked = true`, retention a variable) in [`infra/terraform/logging_worm.tf`](infra/terraform/logging_worm.tf); the `local` stand-in is an append-only SQLite table with no update/delete path ([`local/audit.py`](src/credit_memo/adapters/local/audit.py)); both persist only redacted events. (The per-record hash chain the reference adds is not implemented here, see PT-10.) | `terraform -chdir=infra/terraform validate`; `pytest "tests/unit/test_memo_service.py::test_redacted_audit_has_no_raw_pii" -q`; Act 3 of the portability tour reads records back unchanged. |
+| SC-11 | **An audit trail proportionate to what it describes.** Records are written already-redacted so nothing raw is retained, and the `local` stand-in is append-only with no update/delete path. The managed profile writes to Cloud Logging at the project's own retention: the locked ~7-year bucket this stack used to create was removed because it would outlive by a factor of a hundred and seventy the analyses it describes, whose evidence is deleted after 15 days. An adopter running this as a system of record restores it and raises `analysis_retention_days` together, in that order. | [`infra/terraform/logging.tf`](infra/terraform/logging.tf) (data-access logging on, no locked bucket); [`local/audit.py`](src/credit_memo/adapters/local/audit.py). | `terraform -chdir=infra/terraform validate`; `pytest "tests/unit/test_memo_service.py::test_redacted_audit_has_no_raw_pii" -q`; `pytest tests/unit/test_retention_promise_is_enforced.py -q`. |
 | SC-13 | **Traces carry telemetry, not content.** Spans and token metrics support debugging and FinOps; message-content capture stays OFF because borrower PII must never reach the tracing backend. | The `ObservabilityTracerPort` in [`ports/observability.py`](src/credit_memo/ports/observability.py) has only `span` and `record_token_usage` (counts), no content-bearing method; the local tracer is a no-op ([`local/tracer.py`](src/credit_memo/adapters/local/tracer.py)). | Port contract: `grep -n "def " src/credit_memo/ports/observability.py` shows no content parameter on any tracer method. |
 
 ### 7.5 Residency and platform hardening
@@ -255,7 +260,7 @@ alert policies are not provisioned in this repo's Terraform).
 | # | Principle (generic) | Mechanism in this repo | Proof |
 |---|---------------------|------------------------|-------|
 | SC-14 | **Residency by construction.** The deploy region is validated so an out-of-region value fails before any resource is created; every service uses regional identifiers, never global. | The `region` variable in [`infra/terraform/variables.tf`](infra/terraform/variables.tf) has a `validation` block that fails unless the value is in the `allowed_regions` residency allowlist (default `["asia-southeast1"]`) (P-05); all service resources use `var.region`. | `terraform -chdir=infra/terraform plan -var 'project_id=demo' -var 'org_id=123' -var 'region=us-central1'` exits non-zero with the "must be one of var.allowed_regions (residency allowlist)" message (validation runs before any GCP call, so this is offline). Extending `allowed_regions` is the deliberate residency review point, not an accident. |
-| SC-15 | **CMEK does not cascade: bind it everywhere, explicitly.** Each service that touches the data gets its own key binding; assume nothing inherits encryption. | [`infra/terraform/kms.tf`](infra/terraform/kms.tf): one regional key ring/key with `prevent_destroy`, wired per-resource (Document AI, BigQuery, Agent Runtime, Logging) rather than relying on inheritance. | `terraform -chdir=infra/terraform validate`; every CMEK-capable resource in the stack names `google_kms_crypto_key.credit_memo`. |
+| SC-15 | **CMEK does not cascade: bind it everywhere, explicitly.** Each service that touches the data gets its own key binding; assume nothing inherits encryption. | [`infra/terraform/kms.tf`](infra/terraform/kms.tf): one regional key ring/key with `prevent_destroy`, wired per-resource (the analysis-bundle bucket, BigQuery, Agent Runtime, Logging) rather than relying on inheritance. | `terraform -chdir=infra/terraform validate`; every CMEK-capable resource in the stack names `google_kms_crypto_key.credit_memo`. |
 | SC-16 | **Blast-radius controls default on, with an explicit staged rollout.** A VPC-SC perimeter around the AI/data APIs is on by default and rolled out in a documented enable-later sequence, behind least-privilege per-workload service accounts. | [`infra/terraform/vpc_sc.tf`](infra/terraform/vpc_sc.tf) (`enable_vpc_sc` toggle defaulting to `true`, `count`-guarded perimeter, with the apply-false-then-enforce sequence documented in the file header); [`infra/terraform/iam.tf`](infra/terraform/iam.tf) provisions two scoped service accounts (serving and Agent Runtime) with only the roles each needs. | `terraform -chdir=infra/terraform validate`; `grep -n "enable_vpc_sc\|roles/" infra/terraform/vpc_sc.tf infra/terraform/iam.tf`. |
 | SC-17 | **Graceful degradation is a design decision, listed per step.** Best-effort steps (extraction, ingestion) degrade with the memo still built; safety-critical steps (guardrail, grounding, review) hard-fail. Write the list down so nobody "fixes" a hard failure into a silent skip. | `CreditMemoService`: extraction/ingestion failures are caught per document and degrade; a blocked input, empty retrieval and the review gate raise or hold ([`memo_service.py`](src/credit_memo/domain/memo_service.py)). | `pytest "tests/unit/test_memo_service.py::test_blocked_input_raises_and_audits" "tests/unit/test_memo_service.py::test_empty_knowledge_base_raises" "tests/unit/test_memo_service.py::test_memo_builds_without_documents" -q` |
 

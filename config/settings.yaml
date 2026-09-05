@@ -1,8 +1,9 @@
 # Credit-Memo / Underwriting Assistant (B2) — runtime configuration.
 #
 # Three deployment profiles share one domain (P-02, no vendor lock-in):
-#   gcp    : Google Cloud managed services (Document AI, Agent Search, BigQuery,
-#            Model Armor, DLP, Cloud Logging WORM, Cloud Trace, Gen AI eval).
+#   gcp    : Google Cloud managed services (Gemini, a regional analysis-bundle bucket,
+#            BigQuery, Model Armor, DLP, Cloud Logging, Cloud Trace, Gen AI eval).
+#            Extraction and retrieval run in-process on every profile.
 #   local  : a WORKING offline laptop stack (SQLite FTS5 retrieval + a deterministic
 #            schema-driven LLM, regex DLP, heuristic guardrail, append-only audit),
 #            SDK-free, no API key, no emulator required. The dev / test default.
@@ -45,22 +46,6 @@ models:
   hard_reasoning: gemini-3.5-flash  # in-region SG commitment; no Gemini 3 PRO tier serves any location
   use_hard_reasoning: false
 
-document_ai:
-  processor_id: ${CREDIT_MEMO_DOCAI_PROCESSOR:-}
-  # NOT the deploy region, and not a silent inheritance of it. Document AI does not run in
-  # every Cloud region: creating a processor in an unsupported one 404s at apply.
-  #
-  # It DOES serve asia-southeast1 -- and notably serves no us-central1 endpoint at all -- but
-  # Singapore is "limited support": a subset of processors, several in Preview, and access is
-  # gated behind Google's Document AI Single Region Request Form. Until that request is
-  # granted this routes to the `us` MULTI-REGION, which is a stated residency deviation:
-  # document bytes are extracted in the United States while the rest of the stack stays in
-  # region. Set CREDIT_MEMO_DOCAI_LOCATION to asia-southeast1 the day access lands.
-  #
-  # `us` is a multi-region, not `global`: it names one jurisdiction. Never widen this to a
-  # region the service does not serve just to make an apply succeed.
-  location: ${CREDIT_MEMO_DOCAI_LOCATION:-us}
-  processor_version: rc
 
 analysis_bundle:
   # The retention window the console states to the user. On gcp/platform the bucket's own
@@ -73,19 +58,11 @@ analysis_bundle:
   max_documents: 40
 
 knowledge_base:
-  base_url_env: KNOWLEDGE_BASE_URL             # A2 Enterprise KB (B2's governed RAG store)
-  data_store_id: credit-memo-kb        # only used by the standalone GCP adapter
-  # NOT the deploy region, and it cannot be. Agent Search serves exactly `global`, `us` and
-  # `eu` and no Cloud region at all, so `asia-southeast1` -- pinned here until 2026-08-27 --
-  # could never provision: the apply fails, or the SDK resolves a hostname that does not
-  # exist. See docs/gcp-service-region-availability.md in org-metadata.
-  #
-  # `global` is a DELIBERATE residency deviation, recorded rather than absorbed: it carries no
-  # residency guarantee, so the index is unlocated while everything around it stays in region.
-  # `us` or `eu` would confine the index to one jurisdiction and is the stronger choice where a
-  # residency obligation bites; an installation under one sets this accordingly. The
-  # gcp.resourceLocations Org Policy must be wide enough to permit whichever is chosen.
-  location: global
+  base_url_env: KNOWLEDGE_BASE_URL             # A2 Enterprise KB, when a deployment delegates
+  # Retrieval is per-request and in-process: the analysis bundle's documents are extracted,
+  # chunked by page and searched for this build only, then discarded with the request. There
+  # is no standing index to place, which is what removed the residency problem Agent Search
+  # could not solve (it serves global/us/eu and no Cloud region at all).
   top_k: 10
 
 peer_data:
@@ -175,14 +152,23 @@ adapters:
     local: credit_memo.adapters.local.analysis_bundle:LocalAnalysisBundleAdapter
     live: credit_memo.adapters.local.analysis_bundle:LocalAnalysisBundleAdapter
     onprem: credit_memo.adapters.onprem.analysis_bundle:OnPremAnalysisBundleAdapter
+  # Text extraction is pypdf over the bytes the user uploaded, on every profile. There is
+  # no Document AI processor: it routed borrower financials to the `us` multi-region on the
+  # rc channel, and reading a PDF's text layer needs no cloud service at all. Structured
+  # SPREAD extraction is a different problem and gets its own port.
   extraction:
-    gcp: credit_memo.adapters.gcp.document_ai_extraction:DocumentAiExtractionAdapter
-    platform: credit_memo.adapters.gcp.document_ai_extraction:DocumentAiExtractionAdapter
+    gcp: credit_memo.adapters.local.extraction:LocalDocumentExtractionAdapter
+    platform: credit_memo.adapters.local.extraction:LocalDocumentExtractionAdapter
     local: credit_memo.adapters.local.extraction:LocalDocumentExtractionAdapter
     live: credit_memo.adapters.local.extraction:LocalDocumentExtractionAdapter
     onprem: credit_memo.adapters.onprem.extraction:OnPremExtractionAdapter
+  # Retrieval is an in-process FTS index over the documents of the analysis being built,
+  # discarded with the container. Agent Search is gone: it serves global/us/eu and no Cloud
+  # region, so a standing index of borrower evidence could not be held in Singapore by any
+  # configuration. The index that does not exist between requests is also the index nobody
+  # has to place, secure or pay for.
   knowledge_base:
-    gcp: credit_memo.adapters.gcp.agent_search_kb:AgentSearchKnowledgeBaseAdapter
+    gcp: credit_memo.adapters.local.knowledge_base:LocalFtsKnowledgeBaseAdapter
     platform: credit_memo.adapters.platform.remote_knowledge_base:RemoteKnowledgeBaseAdapter
     local: credit_memo.adapters.local.knowledge_base:LocalFtsKnowledgeBaseAdapter
     live: credit_memo.adapters.live.knowledge_base:LiveEdgarKnowledgeBaseAdapter

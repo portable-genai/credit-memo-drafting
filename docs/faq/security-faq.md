@@ -90,7 +90,8 @@ The `local` audit store (`LocalAppendOnlyAuditAdapter`) wraps the shared
 `UPDATE` / `DELETE` blocked by triggers, JSONL export / restore with per-line verification, and
 a `verify_chain()` method. The module docstring states exactly which tamper classes are and are
 not caught (a hash chain with no external anchor cannot detect a full-rewrite by itself). In
-production the `gcp` profile uses a locked WORM bucket, which provides non-rewritability itself.
+production the `gcp` profile writes to Cloud Logging at the project's retention. A locked WORM
+bucket was removed deliberately: see the note in `infra/terraform/logging.tf`.
 This repo does not *replace* the platform audit system (Hrz5); see
 [features-faq.md](features-faq.md). Proven by `tests/unit/test_audit_chain.py`.
 
@@ -115,6 +116,8 @@ scan over `src/` and `config/` is clean, and every fixture and figure is obvious
 - The security-header baseline is partial (check C6): nosniff / Referrer-Policy / HSTS /
   scoped-CSP are not yet emitted.
 - The in-app posture assumes an edge WAF / rate limiter in front on the secure profiles.
-- The hash chain needs the WORM bucket (or an external anchor) to resist a full rewrite.
+- The hash chain needs an append-only sink or an external anchor to resist a full rewrite.
+  This deployment has neither by default, which is stated rather than papered over: it is a
+  demo whose evidence is deleted after 15 days, not a system of record.
 - This is a reference build: run your own pen-test, threat model and model-risk review before
   any live-data deployment (stated throughout the docs).

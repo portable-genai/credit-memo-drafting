@@ -161,18 +161,16 @@ class ModelSettings:
 
 
 @dataclass(frozen=True)
-class DocumentAiSettings:
-    processor_id: str = ""  # projects/.../locations/.../processors/...
-    location: str = "asia-southeast1"
-    processor_version: str = "rc"
-
-
-@dataclass(frozen=True)
 class KnowledgeBaseSettings:
-    # B2's governed RAG store IS A2; default top_k for borrower retrieval.
+    """Retrieval settings. There is no standing store to locate any more.
+
+    Retrieval is an in-process index over the documents of the analysis being built,
+    discarded with the container, so ``data_store_id`` and ``location`` are gone with the
+    Agent Search adapter that needed them. ``base_url_env`` remains for a deployment that
+    delegates retrieval to the shared knowledge platform instead.
+    """
+
     base_url_env: str = "KNOWLEDGE_BASE_URL"
-    data_store_id: str = "credit-memo-kb"  # only used by the standalone GCP adapter
-    location: str = "asia-southeast1"
     top_k: int = 10
 
 
@@ -332,7 +330,6 @@ def _live_settings(raw: dict[str, Any]) -> LiveSettings:
 #: Multi-regions Document AI may use as a STATED residency deviation from the deploy region.
 #: Each names one jurisdiction and carries an ML-processing commitment for it. `global` is
 #: deliberately absent: it names no jurisdiction at all.
-_DOCUMENT_AI_MULTI_REGIONS = frozenset({"us", "eu"})
 
 
 @dataclass(frozen=True)
@@ -343,7 +340,6 @@ class Settings:
     kms_key: str = ""  # projects/.../cryptoKeys/... (regional)
     grounding_enabled: bool = False
     models: ModelSettings = field(default_factory=ModelSettings)
-    document_ai: DocumentAiSettings = field(default_factory=DocumentAiSettings)
     knowledge_base: KnowledgeBaseSettings = field(default_factory=KnowledgeBaseSettings)
     peer_data: PeerDataSettings = field(default_factory=PeerDataSettings)
     model_armor: ModelArmorSettings = field(default_factory=ModelArmorSettings)
@@ -366,24 +362,22 @@ class Settings:
     profile_explicit: bool = True
 
     def __post_init__(self) -> None:
-        # Document AI may sit in the deploy region, or in a NAMED MULTI-REGION as a stated
-        # deviation, and in nothing else. Singapore is "limited support" for Document AI and
-        # access is gated behind Google's Single Region Request Form, so until that is granted
-        # the bytes are extracted in the `us` multi-region while the rest of the stack stays in
-        # region. That is a disclosed residency deviation, not a widening: a multi-region names
-        # one jurisdiction and carries an ML-processing commitment for it.
-        #
-        # `global` is refused by name because it names NO jurisdiction, and it is precisely what
-        # someone reaches for to make an apply succeed. A different single region is refused too:
-        # it is neither the deploy region nor a multi-region commitment. `infra/terraform`
-        # validates `docai_location` by the same rule; this is the runtime half of it, so
-        # setting CREDIT_MEMO_DOCAI_LOCATION cannot reach a location the processor half refused.
-        if self.document_ai.location not in {self.region, *_DOCUMENT_AI_MULTI_REGIONS}:
+        """The retention this deployment promises must be one the storage layer can keep.
+
+        The Document AI residency check that used to live here is gone with the processor:
+        text extraction is pypdf over the uploaded bytes, in-process, so there is no
+        location left to validate. What replaced it guards the one number this deployment
+        states to a user. A window Terraform will not enforce is a promise the console
+        should not print, so an out-of-range value fails at load rather than at the moment
+        somebody goes looking for evidence that was deleted early -- or never deleted.
+        """
+        retention = self.analysis_bundle.retention_days
+        if not 1 <= retention <= 90:
             raise ValueError(
-                f"Document AI location {self.document_ai.location!r} must be the deploy region "
-                f"({self.region}) or a named multi-region "
-                f"({', '.join(sorted(_DOCUMENT_AI_MULTI_REGIONS))}). `global` names no "
-                "jurisdiction and is never acceptable here."
+                f"analysis_bundle.retention_days {retention} must be between 1 and 90. It "
+                "is the window the console promises the user, and infra/terraform enforces "
+                "it as a bucket lifecycle rule (var.analysis_retention_days validates the "
+                "same range). The two must agree."
             )
 
     @property
@@ -437,7 +431,6 @@ class Settings:
         raw = raw or {}
         nested: dict[str, Any] = {
             "models": ModelSettings(**(raw.pop("models", {}) or {})),
-            "document_ai": DocumentAiSettings(**(raw.pop("document_ai", {}) or {})),
             "knowledge_base": KnowledgeBaseSettings(**(raw.pop("knowledge_base", {}) or {})),
             "peer_data": PeerDataSettings(**(raw.pop("peer_data", {}) or {})),
             "model_armor": ModelArmorSettings(**(raw.pop("model_armor", {}) or {})),

@@ -35,7 +35,8 @@ for a live build.
 
 1. `make install-gcp`
 2. Provision infra: `cd infra/terraform && terraform init && terraform apply` (sets up
-   Document AI, BigQuery peer dataset, DLP, Model Armor, KMS, the WORM log bucket, IAM and
+   the analysis-bundle bucket (regional, CMEK, 15-day lifecycle), BigQuery peer dataset, DLP,
+   Model Armor, KMS, IAM and
    VPC-SC, all in `asia-southeast1`).
 3. Build and push the image (`Dockerfile`), deploy to Agent Runtime / Cloud Run.
 4. Register the agent card with Hrz3 and confirm Hrz4 eval gate is green before promotion.
@@ -44,7 +45,8 @@ for a live build.
 
 - `GET /healthz` reports `{status, profile, region}`.
 - Traces: Cloud Trace via OpenTelemetry, message-content capture OFF.
-- Audit: Cloud Logging `credit-memo-audit` routed to the locked WORM bucket.
+- Audit: Cloud Logging `credit-memo-audit` at the project's own retention. No locked WORM
+  bucket: it would outlive the analyses it describes, which are deleted after 15 days.
 - FinOps: token usage is recorded as span attributes per LLM call.
 
 ## Triage

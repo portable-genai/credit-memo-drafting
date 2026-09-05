@@ -21,14 +21,23 @@ managed GCP stack.
 from __future__ import annotations
 
 import importlib
+import tempfile
 from typing import Protocol, get_type_hints
 
 import pytest
 
 from credit_memo import config, ports
-from credit_memo.config import LocalSettings, Settings, instantiate
+from credit_memo.config import (
+    AnalysisBundleSettings,
+    LocalSettings,
+    Settings,
+    instantiate,
+)
 
 CONFIG_PATH = "config/settings.yaml"
+
+#: One temporary root for the contract run; the OS reclaims it.
+_BUNDLE_ROOT = tempfile.mkdtemp(prefix="credit-memo-parity-analyses-")
 
 # Every port name in settings.adapters mapped to its Protocol.
 PORT_PROTOCOLS: dict[str, type] = {
@@ -64,7 +73,6 @@ def _settings(profile: str) -> Settings:
         kms_key=base.kms_key,
         grounding_enabled=base.grounding_enabled,
         models=base.models,
-        document_ai=base.document_ai,
         knowledge_base=base.knowledge_base,
         peer_data=base.peer_data,
         model_armor=base.model_armor,
@@ -72,6 +80,9 @@ def _settings(profile: str) -> Settings:
         logging=base.logging,
         agent_engine=base.agent_engine,
         local=LocalSettings(db_path=":memory:", audit_path=":memory:"),
+        # A real directory: the bundle adapter holds uploaded bytes, so ":memory:" has no
+        # meaning for it. Temporary, so a contract run never touches a developer's home.
+        analysis_bundle=AnalysisBundleSettings(root=_BUNDLE_ROOT),
         adapters=base.adapters,
     )
 

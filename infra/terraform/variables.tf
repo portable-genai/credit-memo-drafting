@@ -57,14 +57,31 @@ variable "zone" {
   default     = "asia-southeast1-a"
 }
 
-variable "retention_days" {
-  description = "WORM audit-log retention in days. Default ~7 years. Lock is irreversible."
+variable "analysis_retention_days" {
+  description = <<-EOT
+    How long an analysis and the evidence it used survive, in days.
+
+    This is the number the console prints to the user ("available until ..."), and the
+    bucket's lifecycle rule is what keeps the promise. It must equal
+    `analysis_bundle.retention_days` in config/settings.yaml: the application states the
+    window and the storage layer enforces it, and if the two disagree the application is
+    lying to the user. `terraform test` asserts they match.
+
+    This service is not a system of record. It holds one analysis at a time so that a
+    user brings the evidence to each question and can see exactly what was used; a long
+    window would quietly turn it into the document store it is deliberately not.
+  EOT
   type        = number
-  default     = 2557 # ~7 years; mirrors config/settings.yaml logging.retention_days
+  default     = 15
 
   validation {
-    condition     = var.retention_days >= 2557
-    error_message = "Compliance retention must be at least 2557 days (~7 years) (P-07)."
+    condition     = var.analysis_retention_days >= 1 && var.analysis_retention_days <= 90
+    error_message = <<-EOT
+      analysis_retention_days must be between 1 and 90. Below 1 a lifecycle rule cannot be
+      expressed; above 90 this stops being a per-analysis window and becomes a document
+      store, which needs the retention, deletion and personal-data decisions this
+      deployment posture explicitly does not make.
+    EOT
   }
 }
 
@@ -105,27 +122,26 @@ variable "enable_vpc_sc" {
 
 variable "resource_location_values" {
   description = <<-EOT
-    Value groups for the gcp.resourceLocations Org Policy. Empty (the default) derives the
-    strictest form from the deploy region: that region and its sub-locations, nothing else.
+    Value groups for the gcp.resourceLocations Org Policy.
 
-    Widen it ONLY where a service this stack genuinely needs has no presence at single-region
-    granularity, and treat the width as the residency claim rather than as plumbing. Two
-    services in this catalog force the question:
+    Empty (the default) derives the strictest form from the deploy region: that region and
+    its sub-locations, nothing else. Every resource this stack CREATES fits inside it. The
+    analysis bundle is a regional bucket, the peer dataset is a regional dataset, the key
+    ring is regional; the Agent Search data store and the Document AI processor that used
+    to force a wider boundary are both gone.
 
-      * Agent Search serves `global`, `us` and `eu` and NO Cloud region at all.
-      * Document AI serves the deploy region only once Google grants single-region access,
-        and routes to the `us` multi-region until then.
+    `global` is admitted for grounded model calls, deliberately and as a recorded
+    deviation. Vertex serves web grounding only from the global endpoint, so an analyst
+    research panel means a call whose search leg is processed outside the deploy region.
+    That is a decision about where a QUERY goes, not about where borrower evidence lives:
+    the uploaded documents, the bundle, the memo and the audit trail all stay in region,
+    and grounded results never enter the memo, the export or any engine input. Record the
+    deviation in org-metadata/docs/deployment-posture.md, not only here.
 
-    Move to the smallest value group that still describes ONE JURISDICTION -- `in:us-locations`
-    keeps every resource inside the United States -- and state the residency claim at that
-    granularity rather than pretending it is still single-region. NEVER list an individual
-    foreign region to unblock one service: that turns a jurisdiction boundary into a list of
-    exceptions nobody can reason about.
-
-    NOT YET VERIFIED BY EXECUTION: whether a `global` Agent Search data store is subject to
-    this constraint at all, or is exempt as a global resource. Confirm at first apply and
-    record the answer rather than guessing; the failure mode if it IS subject is an apply
-    error naming discoveryengine, which is the good kind of failure.
+    Widen further ONLY to a value group that still describes ONE JURISDICTION
+    (`in:us-locations` keeps everything inside the United States). NEVER list an individual
+    foreign region to unblock one service: that turns a jurisdiction boundary into a list
+    of exceptions nobody can reason about.
   EOT
   type        = list(string)
   default     = []
@@ -136,36 +152,20 @@ variable "resource_location_values" {
   }
 }
 
-variable "docai_location" {
+variable "allow_global_endpoints" {
   description = <<-EOT
-    Where the Document AI processor is CREATED. Deliberately NOT var.region.
+    Admit `global` to the gcp.resourceLocations allowlist.
 
-    Document AI does not serve every Cloud region, and creating a processor in one it does not
-    serve 404s at apply. It DOES serve asia-southeast1 -- and serves no us-central1 endpoint at
-    all -- but Singapore is "limited support": a subset of processors, several in Preview, and
-    access is gated behind Google's Document AI Single Region Request Form. Until that request
-    is granted this routes to the `us` MULTI-REGION, which is a stated residency deviation:
-    document bytes are extracted in the United States while the rest of the stack stays in
-    region. Set this to asia-southeast1 the day access lands.
+    Required for Vertex web grounding, which is served from the global endpoint only. Set
+    false for a deployment that runs no grounded research panel and wants the strictest
+    possible boundary.
 
-    Keep it equal to the runtime's CREDIT_MEMO_DOCAI_LOCATION, which selects the same location for
-    the adapter. If the two disagree, Terraform creates the processor in one location and the
-    adapter looks for it in another, and the failure surfaces as a confusing 404 at request
-    time rather than at apply.
-
-    `us` and `eu` are multi-regions, not `global`: each names ONE jurisdiction. Never widen
-    this to a location the service does not serve just to make an apply succeed. Whichever is
-    chosen, gcp.resourceLocations must be wide enough to permit it (see var.resource_location_values), and the
-    residency claim must be stated at that width rather than at var.region's.
+    What this does and does not permit is the whole point. It permits a model call whose
+    search leg leaves the region. It does not move any stored data: the analysis bundle,
+    the peer dataset and the keys stay regional by their own configuration, and no
+    resource in this stack is created in `global`.
   EOT
-  type        = string
-  default     = "us"
-
-  validation {
-    # Mirrors the runtime rule: the deploy region, or a NAMED multi-region. `global` is refused
-    # by name because it names no jurisdiction, and so is any other single region -- an
-    # out-of-region single region would be a silent jurisdiction change dressed as a fix.
-    condition     = contains(["us", "eu"], var.docai_location) || var.docai_location == var.region
-    error_message = "docai_location must be the deploy region (var.region) or a named Document AI multi-region (us, eu). `global` names no jurisdiction and is refused."
-  }
+  type        = bool
+  default     = true
 }
+

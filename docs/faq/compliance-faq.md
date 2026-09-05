@@ -28,7 +28,7 @@ SG / HK / JP / AU rather than a single market. The runtime guardrail / DLP itsel
 Every run writes an immutable, already-redacted `AuditEvent` with the decision and the citation
 set (P-07), and every memo statement carries a source-and-page `Citation` (P-10). The
 consequential math (covenant status, peer median / percentile) is deterministic, so an auditor
-can recompute any figure or decision from the same inputs. The enterprise WORM audit system is
+can recompute any figure or decision from the same inputs. The enterprise audit system is
 **Hrz5**; the in-repo hash-chained store is the offline / local stand-in (see
 [security-faq.md](security-faq.md) for its exact tamper-evidence limits). Escalations route to
 the **Hrz7** maker-checker console (rule R8) via the shared `review-kit`.
@@ -69,11 +69,15 @@ table.
 ### Is data residency enforced?
 
 At deploy time via `infra/terraform/*`: a single in-country region (default `asia-southeast1`),
-CMEK (`kms.tf`), a VPC-SC perimeter (`vpc_sc.tf`), WORM audit logging (`logging_worm.tf`) and a
+CMEK (`kms.tf`), a VPC-SC perimeter (`vpc_sc.tf`), data-access audit logging (`logging.tf`) and a
 `gcp.resourceLocations` Org Policy (`org_policy.tf`), with region and tenant as variables (P-03,
-P-09). **Two services do not follow the region, and cannot:** Document AI extracts in the `us`
-multi-region until Google grants single-region access, and Agent Search serves only `global` /
-`us` / `eu`. Widening the location policy to permit them (`resource_location_values`) is a
+P-09). **The two services that could not follow the region are gone.** Document AI extracted
+in the `us` multi-region on the `rc` channel, and Agent Search serves only `global` /
+`us` / `eu`, so neither could hold borrower evidence in Singapore under any configuration.
+Text extraction is now pypdf over the uploaded bytes in-process and retrieval is a per-request
+index, so every resource this stack creates is regional. `gcp.resourceLocations` admits
+`global` for grounded model calls only (`allow_global_endpoints`): a statement about where a
+QUERY may go, not where data lives. Widening it further (`resource_location_values`) is a
 jurisdiction statement, not plumbing — state the residency claim at that width. The remaining
 open gap (check D5) is that there is no CI Terraform validate job, so close that before you rely
 on the pin in automation. The residency-violation CI gate is the sibling **Rsk3**

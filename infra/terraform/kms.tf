@@ -41,13 +41,6 @@ data "google_project" "this" {
   project_id = var.project_id
 }
 
-# Document AI service agent.
-resource "google_kms_crypto_key_iam_member" "documentai" {
-  crypto_key_id = google_kms_crypto_key.credit_memo.id
-  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
-  member        = "serviceAccount:service-${data.google_project.this.number}@gcp-sa-prod-dai-core.iam.gserviceaccount.com"
-}
-
 # BigQuery service agent (CMEK on the peer-financials dataset).
 resource "google_kms_crypto_key_iam_member" "bigquery" {
   crypto_key_id = google_kms_crypto_key.credit_memo.id

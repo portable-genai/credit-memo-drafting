@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { api, DOCUMENT_UPLOAD_TEMPLATE_URL, uploadBorrowerDocument, type Persona } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { api, type Persona } from "@/lib/api";
 import {
   isBlocked,
+  type AnalysisManifest,
   type BlockedEnvelope,
   type CreditMemo,
   type CreditRequest,
@@ -12,6 +13,7 @@ import {
 import { MemoView } from "@/components/MemoView";
 import { emptyRequest, FacilityForm } from "@/components/FacilityForm";
 import { emptySpread, SpreadGrid } from "@/components/SpreadGrid";
+import { DocumentPanel, type PendingDocument } from "@/components/DocumentPanel";
 
 const IS_EMBEDDED = process.env.NEXT_PUBLIC_EMBED === "1";
 
@@ -35,14 +37,13 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [selectedPersona, setSelectedPersona] = useState("");
-  const [uploadTitle, setUploadTitle] = useState("");
-  const [uploading, setUploading] = useState(false);
-  const [uploadNote, setUploadNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [documents, setDocuments] = useState<PendingDocument[]>([]);
+  const [manifest, setManifest] = useState<AnalysisManifest | null>(null);
+  const [stage, setStage] = useState("");
   const [request, setRequest] = useState<CreditRequest>(emptyRequest);
   const [spread, setSpread] = useState<FinancialSpread>(() =>
     emptySpread("acme-manufacturing-pte-ltd-fictional"),
   );
-  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,21 +79,32 @@ export default function Home() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!documents.length) {
+      setError(
+        "Add the borrower's documents to the credit file first. A memo is only ever built " +
+          "on evidence you supply.",
+      );
+      return;
+    }
     setLoading(true);
     setError(null);
     setMemo(null);
     setBlocked(null);
+    setManifest(null);
     try {
       const borrowerId = name.toLowerCase().replace(/\s+/g, "-");
-      const result = await api.buildCreditMemo({
-        borrower: { id: borrowerId, name, sector, jurisdiction },
+
+      setStage("Uploading the credit file");
+      const opened = await api.openAnalysis(borrowerId, documents);
+      setManifest(opened);
+
+      setStage("Reading the documents, computing the ratios, drafting the memo");
+      const result = await api.buildAnalysisMemo(opened.analysis_id, {
         request,
-        // Only send a spread that has figures in it. An empty grid would be a spread
-        // with no line items, which computes nothing and reads as though the engine
-        // failed rather than as though nobody typed anything.
-        spreads: spread.items.length
-          ? [{ ...spread, borrower_id: borrowerId }]
-          : [],
+        // Only send a spread that has figures in it. An empty grid computes nothing and
+        // would read as though the engine failed rather than as though nobody typed
+        // anything.
+        spreads: spread.items.length ? [{ ...spread, borrower_id: borrowerId }] : [],
       });
       if (isBlocked(result)) {
         setBlocked(result);
@@ -102,6 +114,7 @@ export default function Home() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
+      setStage("");
       setLoading(false);
     }
   }
@@ -160,6 +173,18 @@ export default function Home() {
         </label>
         <div className="xl:col-span-3">
           <span className="mb-2 block text-sm font-semibold text-ink-900">
+            The credit file
+          </span>
+          <DocumentPanel
+            pending={documents}
+            onChange={setDocuments}
+            manifest={manifest}
+            disabled={loading}
+          />
+        </div>
+
+        <div className="xl:col-span-3">
+          <span className="mb-2 block text-sm font-semibold text-ink-900">
             The ask
           </span>
           <FacilityForm request={request} onChange={setRequest} />
@@ -181,86 +206,10 @@ export default function Home() {
         </button>
       </form>
 
-      <div className="mb-6 rounded-xl border border-ink-200 bg-white p-4 shadow-panel">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-semibold text-ink-900">
-            Upload borrower evidence
-          </span>
-          <a
-            href={DOCUMENT_UPLOAD_TEMPLATE_URL}
-            download
-            className="text-xs font-medium text-regblue-600 underline decoration-dotted"
-          >
-            Download upload template
-          </a>
-        </div>
-        <p className="mt-1 text-xs text-ink-500">
-          For a borrower without public filings, upload its financial statements
-          (PDF or text); the memo grounds on the uploaded evidence for the borrower
-          named above.
-        </p>
-        <form
-          className="mt-3 flex flex-wrap items-end gap-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const file = fileRef.current?.files?.[0];
-            if (!file || !uploadTitle.trim() || uploading) return;
-            const borrowerId = name.toLowerCase().replace(/\s+/g, "-");
-            setUploading(true);
-            setUploadNote(null);
-            uploadBorrowerDocument(file, borrowerId, uploadTitle.trim())
-              .then((r) =>
-                setUploadNote({
-                  ok: true,
-                  text: `Indexed ${r.chunks} passage${r.chunks === 1 ? "" : "s"} as ${r.document_id} for ${r.borrower_id}`,
-                }),
-              )
-              .catch((err) =>
-                setUploadNote({
-                  ok: false,
-                  text: err instanceof Error ? err.message : String(err),
-                }),
-              )
-              .finally(() => setUploading(false));
-          }}
-        >
-          <label className="min-w-64 flex-1 text-sm">
-            <span className="mb-1 block text-ink-500">Document title</span>
-            <input
-              value={uploadTitle}
-              onChange={(e) => setUploadTitle(e.target.value)}
-              placeholder="2025 Audited Financial Statements"
-              className="w-full rounded border border-ink-300 px-2 py-1.5"
-            />
-          </label>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".pdf,.txt,application/pdf,text/plain"
-            className="text-xs text-ink-500 file:mr-2 file:rounded file:border file:border-ink-300 file:bg-white file:px-2 file:py-1 file:text-xs"
-          />
-          <button
-            type="submit"
-            disabled={uploading || !uploadTitle.trim()}
-            className="rounded bg-ink-900 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
-          >
-            {uploading ? "Uploading..." : "Upload"}
-          </button>
-        </form>
-        {uploadNote ? (
-          <p
-            className={`mt-2 text-xs ${uploadNote.ok ? "text-emerald-600" : "text-red-600"}`}
-          >
-            {uploadNote.text}
-          </p>
-        ) : null}
-      </div>
 
       <div aria-live="polite" aria-atomic="true">
         {loading ? (
-          <p className="mb-4 text-sm text-ink-500">
-            Building the memo: computing ratios, then drafting from the evidence.
-          </p>
+          <p className="mb-4 text-sm text-ink-500">{stage || "Working"}…</p>
         ) : null}
 
         {error ? (
@@ -268,10 +217,10 @@ export default function Home() {
             <strong>Could not build the memo.</strong> {error}
             {/* 422 means the service had nothing to ground on. Point at the fix rather
                 than restating the status code. */}
-            {error.includes("422") || error.toLowerCase().includes("evidence") ? (
+            {error.toLowerCase().includes("evidence") ? (
               <p className="mt-1">
-                Upload the borrower&apos;s financial statements below, then build again.
-                The memo grounds only on evidence you supply.
+                Add the borrower&apos;s financial statements to the credit file above, then
+                build again.
               </p>
             ) : null}
           </div>

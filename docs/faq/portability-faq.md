@@ -23,8 +23,10 @@ implement them, and `config/settings.yaml` binds one adapter per port per profil
 - `local`: a WORKING offline stack (SQLite FTS5 retrieval, a deterministic LLM, regex DLP, a
   heuristic guardrail, append-only local audit). No Google Cloud SDK. The default for
   dev / test / CI; runs the whole memo pipeline end to end.
-- `gcp`: real managed services (Document AI extraction, the Enterprise KB, Gemini, DLP, a
-  BigQuery peer dataset, Cloud Logging WORM, Cloud Trace, Gen AI Evals), with lazy SDK imports.
+- `gcp`: real managed services (Gemini, DLP, Model Armor, a regional analysis-bundle bucket, a
+  BigQuery peer dataset, Cloud Logging, Cloud Trace, Gen AI Evals), with lazy SDK imports.
+  Extraction and retrieval are in-process on every profile: there is no processor to call and
+  no standing index to place.
 - `platform`: thin HTTP clients delegating to the sibling horizontal-platform and
   de-risking services.
 - `onprem`: fail-fast Google Distributed Cloud placeholders that still satisfy every Protocol

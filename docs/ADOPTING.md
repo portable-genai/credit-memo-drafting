@@ -98,7 +98,7 @@ human decisions below.
    vertical: a fork inherits a green gate that measures the WRONG thing until you do. The gate
    structure is generic; the golden cases are yours.
 7. **Deployment posture.** Review the Dockerfile (digest-pinned base, non-root `appuser`, port
-   `8093`), `infra/terraform/` (CMEK, VPC-SC, WORM logging), and the loopback-by-default binding
+   `8093`), `infra/terraform/` (CMEK, VPC-SC, the 15-day analysis bucket), and the loopback-by-default binding
    before you expose anything. CI now runs Terraform fmt/init/validate and the module carries an
    Org Policy resource-location allowlist; named apply and live enforcement evidence remain yours.
 
@@ -108,7 +108,7 @@ This repo is one system in a catalog of composable GRC systems. Several concerns
 owned by sibling platform services, and you should integrate rather than rebuild them (see
 [`docs/faq/features-faq.md`](faq/features-faq.md) for the full map): the guardrail gateway
 (Hrz1), the governed knowledge base (Hrz2), the agent registry (Hrz3), the AI-quality / eval gate
-(Hrz4), observability + WORM audit (Hrz5), the maker-checker review console (Hrz7, rule R8), the
+(Hrz4), observability + audit (Hrz5), the maker-checker review console (Hrz7, rule R8), the
 compliance assistant (Rsk1), and the on-prem DLP gate (Rsk6). The `platform` profile's adapters
 are already thin HTTP clients to those services.
 

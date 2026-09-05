@@ -6,9 +6,9 @@
 #         + DLP, write audit + traces). No shared "kitchen-sink" SA.
 #   P-05 (residency): the identity is project-scoped; data access is to in-region services.
 #   CMEK explicit: the SA that touches CMEK-encrypted data gets its own cryptoKey binding.
-#   R3 (borrower-scoped ACL): filings are ingested into A2 with borrower:<id> ACL tags; the
-#         app reads only borrower-scoped principals. ACL enforcement lives in A2, but the
-#         agent SA carries only the discoveryengine roles it needs.
+#   R3 (borrower-scoped ACL): uploaded evidence carries borrower:<id> ACL tags inside the
+#         analysis bundle, and the application enforces the fail-closed subset check on
+#         every read. The SA's bucket-level role is the outer boundary only.
 
 resource "google_service_account" "app" {
   account_id   = "credit-memo-app"
@@ -19,18 +19,19 @@ resource "google_service_account" "app" {
 }
 
 locals {
-  # Serving path: extract filings (Document AI), ingest + query the A2 governed RAG store,
-  # read peer data (BigQuery), call models + DLP, write audit + traces, run evals, read
-  # secrets. No org-wide writes.
+  # Serving path: hold one analysis bundle, read peer data (BigQuery), call models + DLP,
+  # write audit + traces, run evals, read secrets. No org-wide writes.
+  #
+  # documentai.apiUser and discoveryengine.editor are gone with the services themselves:
+  # extraction is Gemini reading the uploaded PDF in-region, and retrieval is per-request
+  # and in-process, so there is no processor to call and no index to write to.
   app_roles = [
-    "roles/aiplatform.user",        # Gemini reasoning + Gen AI evals
-    "roles/documentai.apiUser",     # process filings
-    "roles/discoveryengine.editor", # ingest filings into A2 (borrower-scoped ACL)
-    "roles/bigquery.dataViewer",    # read the peer-financials dataset
-    "roles/bigquery.jobUser",       # run peer-comparison queries
-    "roles/dlp.user",               # deidentifyContent (P-04, R1)
-    "roles/logging.logWriter",      # write redacted audit events to WORM sink (R2)
-    "roles/cloudtrace.agent",       # OpenTelemetry spans (content OFF)
+    "roles/aiplatform.user",     # Gemini reasoning + Gen AI evals
+    "roles/bigquery.dataViewer", # read the peer-financials dataset
+    "roles/bigquery.jobUser",    # run peer-comparison queries
+    "roles/dlp.user",            # deidentifyContent (P-04, R1)
+    "roles/logging.logWriter",   # write redacted audit events (R2)
+    "roles/cloudtrace.agent",    # OpenTelemetry spans (content OFF)
     "roles/secretmanager.secretAccessor",
     "roles/run.invoker",
   ]

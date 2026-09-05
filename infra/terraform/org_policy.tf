@@ -7,11 +7,18 @@ resource "google_org_policy_policy" "resource_locations" {
   spec {
     rules {
       values {
-        # var.resource_location_values overrides this only where a required service has no
-        # single-region presence (Agent Search has none at all; Document AI has none until
-        # in-region access is granted). See that variable: widening is a jurisdiction
-        # statement, not an exception list.
-        allowed_values = length(var.resource_location_values) > 0 ? var.resource_location_values : ["in:${var.region}-locations"]
+        # The deploy region and its sub-locations, plus `global` when this deployment runs
+        # a grounded research panel (Vertex serves web grounding from the global endpoint
+        # only). Admitting `global` is a statement about where a QUERY may go: every
+        # resource this stack creates is still regional, and borrower evidence never
+        # leaves the region. See var.allow_global_endpoints.
+        #
+        # var.resource_location_values overrides both, and widening it is a jurisdiction
+        # statement rather than an exception list.
+        allowed_values = length(var.resource_location_values) > 0 ? var.resource_location_values : concat(
+          ["in:${var.region}-locations"],
+          var.allow_global_endpoints ? ["is:global"] : [],
+        )
       }
     }
   }
