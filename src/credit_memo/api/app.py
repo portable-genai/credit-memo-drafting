@@ -62,6 +62,7 @@ from .schemas import (
     EntityGroupModel,
     FinancialSpreadModel,
     HealthResponse,
+    MarketContextModel,
     MemoAmendRequest,
     MemoCommentModel,
     MemoRevisionModel,
@@ -987,6 +988,69 @@ def suggest_group(
             "declare the entities yourself and upload their statements."
         )
     return EntityGroupModel.from_domain(group)
+
+
+@app.get(
+    "/v1/analyses/{analysis_id}/research",
+    response_model=MarketContextModel,
+    tags=["analyses"],
+)
+def research_public_context(
+    analysis_id: str, principal: CurrentPrincipal, query: str = "", purpose: str = ""
+) -> MarketContextModel | JSONResponse:
+    """Public-web context on this borrower, for the analyst who asked and nobody else.
+
+    The sector outlook, a recent filing, a regulatory action: what an analyst would
+    otherwise open a browser for, run from inside the console so the question and its
+    answer are at least logged.
+
+    **Nothing here reaches the memo.** Google's Service Specific Terms section 20(k)
+    permit Grounded Results to be displayed only to the End User who submitted the
+    prompt, and a credit memo is read by a checker, a committee and later an examiner --
+    none of whom submitted anything. So results are returned to this caller and go no
+    further: no memo field can hold them (``research_isolation`` in the eval gate scores
+    that structurally), no export carries them, and nothing is persisted beyond the query
+    log. An analyst who wants a fact from here in the memo types it and cites the URL,
+    which makes it USER_ENTERED and theirs to stand behind.
+
+    Off unless the deployment switched it on: the search leg is served from the global
+    endpoint, so it leaves the deploy region, and grounding is billed per query.
+    """
+    container = deps.get_container()
+    try:
+        manifest = _read_analysis(analysis_id, principal)
+    except AnalysisNotFoundError as exc:
+        return _analysis_gone(exc)
+    except BorrowerAccessDeniedError as exc:
+        return _denied_response(exc)
+
+    researcher = container.web_research
+    if researcher is None:
+        return _ungrounded_response(
+            "public-web research is switched off in this deployment. The search leg is "
+            "served from the global endpoint, so it leaves the deploy region, and it is "
+            "billed per query -- a deviation a deployment enables deliberately "
+            "(CREDIT_MEMO_RESEARCH_ENABLED)."
+        )
+
+    # Public identity only. The borrower's registered name and sector are public; the
+    # facility terms, the guarantors and any identifier are the bank's business and must
+    # not leave the region in a search string.
+    asked = query.strip() or f"{manifest.borrower_name or manifest.borrower_id} recent news"
+    try:
+        found = researcher.research(asked, purpose=purpose.strip() or "credit analyst context")
+    except NotImplementedError as exc:
+        return _ungrounded_response(str(exc))
+    if found is None:
+        # "We could not look" and "we looked and found nothing" lead an analyst to do
+        # different things next, so they are different answers here. A MarketContext with
+        # no evidence is the second; this is the first.
+        return _ungrounded_response(
+            "the search could not be run for that query. It may have been refused because "
+            "it carried an account number or another identifier, or the per-analysis query "
+            "budget is spent. This is not a finding that nothing was published."
+        )
+    return MarketContextModel.from_domain(found)
 
 
 # --------------------------------------------------------------------------- #

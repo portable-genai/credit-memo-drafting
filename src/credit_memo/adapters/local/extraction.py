@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from ...config import Settings
 from ...domain.models import DocumentExtract, Filing
+from ._seed import SEED_DOCUMENT_TEXT
 
 
 class LocalDocumentExtractionAdapter:
@@ -25,12 +26,13 @@ class LocalDocumentExtractionAdapter:
         text = "\n\n".join(pages_text)
         pages = len(pages_text)
         if not text:
-            # No bytes supplied (ingest-by-reference): synthesise a deterministic body so
-            # the local KB has something to index and the memo run stays grounded.
-            text = (
-                f"{document.title or document.id} ({document.doc_type.value}). "
-                "Synthetic local extract: borrower financials, covenants and credit-policy "
-                "context for offline grounding."
+            # No bytes supplied (ingest-by-reference: the CLI and the presenter demo both
+            # do this). For a document the offline corpus knows, hand back what that
+            # document actually says; the placeholder below carries no figures, and a memo
+            # built on it can only report figures nobody supplied.
+            body = SEED_DOCUMENT_TEXT.get(document.id, "")
+            text = f"{document.title or document.id} ({document.doc_type.value}). " + (
+                body or "Synthetic local extract: no content was supplied for this filing."
             )
             pages = 1
             pages_text = (text,)

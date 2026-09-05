@@ -18,6 +18,7 @@ import { emptyRequest, FacilityForm } from "@/components/FacilityForm";
 import { emptySpread, SpreadGrid } from "@/components/SpreadGrid";
 import { confirmBody, SpreadReview } from "@/components/SpreadReview";
 import { groupBody, GroupPanel, type GroupEntityDraft } from "@/components/GroupPanel";
+import { PublicContext } from "@/components/PublicContext";
 import { DocumentPanel, type PendingDocument } from "@/components/DocumentPanel";
 
 const IS_EMBEDDED = process.env.NEXT_PUBLIC_EMBED === "1";
@@ -336,6 +337,23 @@ export default function Home() {
             disabled={loading || busy !== ""}
           />
         </div>
+
+        {/* Deliberately its own panel, outside the memo. Grounded results may be shown
+            only to the person who ran the search, so they must not be interspersed with
+            the memo's own cited evidence — and a committee reading them beside the
+            memo's sections would take them for evidence the bank stands behind. */}
+        {analysisId ? (
+          <div className="xl:col-span-3">
+            <span className="mb-2 block text-sm font-semibold text-ink-900">
+              Public context (analyst only)
+            </span>
+            <PublicContext
+              analysisId={analysisId}
+              borrower={name}
+              disabled={loading || busy !== ""}
+            />
+          </div>
+        ) : null}
 
         <button
           type="submit"

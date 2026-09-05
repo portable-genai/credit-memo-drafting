@@ -20,6 +20,7 @@ import type {
   LineItemCode,
   Period,
   EntityGroup,
+  MarketContext,
   RiskFlag,
   SpreadCandidate,
 } from "./types";
@@ -293,6 +294,35 @@ export async function suggestGroup(
   return (await parseJsonOrThrow(res)) as EntityGroup;
 }
 
+/**
+ * Public-web context on this borrower, for the analyst who asked and nobody else.
+ *
+ * Google's Service Specific Terms section 20(k) permit Grounded Results to be displayed
+ * only to the End User who submitted the prompt. A memo is read by a checker, a committee
+ * and later an examiner, so nothing from here is sent back to the server, written into
+ * the memo or carried into an export. An analyst who wants one of these facts in the memo
+ * types it and cites the URL, which makes it theirs.
+ *
+ * Off unless the deployment switched it on: the search leg leaves the deploy region and
+ * is billed per query.
+ */
+export async function research(
+  analysisId: string,
+  query = "",
+  purpose = "",
+  signal?: AbortSignal,
+): Promise<MarketContext> {
+  const params = new URLSearchParams();
+  if (query) params.set("query", query);
+  if (purpose) params.set("purpose", purpose);
+  const suffix = params.toString() ? `?${params}` : "";
+  const res = await fetch(
+    `${API_BASE}/v1/analyses/${encodeURIComponent(analysisId)}/research${suffix}`,
+    { method: "GET", headers: jsonHeaders(), signal },
+  );
+  return (await parseJsonOrThrow(res)) as MarketContext;
+}
+
 /** Where one uploaded file can be read back, so a citation can open its page. */
 export function analysisDocumentUrl(
   analysisId: string,
@@ -357,6 +387,7 @@ export const api = {
   extractSpread,
   confirmSpread,
   suggestGroup,
+  research,
   buildAnalysisMemo,
   analysisDocumentUrl,
   buildCreditMemo,

@@ -57,6 +57,17 @@ FILINGS: tuple[Filing, ...] = (
         title="Acme Q4 Covenant Compliance Certificate (FICTIONAL)",
         acl_tags=("borrower:borr-acme-mfg",),
     ),
+    # The sector policy is part of the credit file, not background: the memo's
+    # concentration flag is raised BECAUSE this document is in front of it, and cites the
+    # page. Leaving it out and still showing the flag would be the assistant asserting a
+    # risk no evidence in the file supports.
+    Filing(
+        id="policy-mfg-concentration",
+        doc_type=DT.POLICY_PACK,
+        uri="dataroom://policy/manufacturing-concentration.pdf",
+        title="Manufacturing Sector Credit Policy (FICTIONAL)",
+        acl_tags=("borrower:borr-acme-mfg",),
+    ),
 )
 ACTOR = "rm.tan@bank.test"
 

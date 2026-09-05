@@ -172,11 +172,15 @@ adapters:
   # an export or a review payload; and the search leg is served from the global endpoint,
   # which is a recorded residency deviation about where a QUERY goes. Off unless
   # CREDIT_MEMO_RESEARCH_ENABLED is set.
+  # `live` searches for real. It is the profile that grounds on real SEC filings for a
+  # real listed borrower, and a fixture answering "Singapore manufacturing output
+  # (FICTIONAL FIXTURE)" beside genuine filings teaches an audience to trust a search
+  # that never happened -- the one thing this adapter family exists to prevent.
   web_research:
     gcp: credit_memo.adapters.gcp.gemini_web_research:GeminiWebResearchAdapter
     platform: credit_memo.adapters.gcp.gemini_web_research:GeminiWebResearchAdapter
     local: credit_memo.adapters.local.web_research:LocalFixtureWebResearchAdapter
-    live: credit_memo.adapters.local.web_research:LocalFixtureWebResearchAdapter
+    live: credit_memo.adapters.gcp.gemini_web_research:GeminiWebResearchAdapter
     onprem: credit_memo.adapters.onprem.web_research:OnPremWebResearchAdapter
   # Who else a PUBLIC REGISTER says is in the borrower's group. A suggestion about who
   # exists, never a figure: every entity comes back VENDOR-provenanced and a related entity

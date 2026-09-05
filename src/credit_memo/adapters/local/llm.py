@@ -33,6 +33,33 @@ from ._seed import PRIMARY_SOURCE_ID
 # the ids the service actually grounded on so the answer cites only retrieved sources.
 _SOURCE_HEADER_RE = re.compile(r"\[([a-z0-9][a-z0-9\-]*?)(?:\s+p\.[^\]]+)?\]")
 
+# The borrower block the synthesis service renders: "id=..., name=..., sector=...".
+_NAME_RE = re.compile(r"\bname=([^,\n]+)")
+_SECTOR_RE = re.compile(r"\bsector=([^,\n]+)")
+
+# Figures as the evidence states them. This adapter READS its prompt rather than
+# asserting a fixed answer: it stood in for the model, and a stand-in that replies
+# "Acme ... revenue of USD 120m" whatever borrower it was handed is not a quiet
+# simplification. It is the one failure a grounded assistant must never show, wired in
+# by default, and it hid behind a demo whose borrower really was Acme.
+_MONEY_RE = re.compile(
+    r"\b(revenue|EBITDA|net debt|total debt|interest expense)\b[^.\n]{0,40}?"
+    r"\bUSD\s+([0-9][0-9,]*(?:\.[0-9]+)?)\s*m\b",
+    re.I,
+)
+_COMPUTED_RE = re.compile(r"^- ([a-z][a-z /_-]*?) \(([^)]*)\) = ([0-9,.]+)(x?) \[", re.I | re.M)
+_MAX_LEVERAGE_RE = re.compile(
+    r"maximum\s+(?:net[- ])?leverage[^0-9\n]{0,40}([0-9]+(?:\.[0-9]+)?)\s*x", re.I
+)
+_MIN_DSCR_RE = re.compile(
+    r"minimum\s+debt[- ]service\s+coverage[^0-9\n]{0,60}([0-9]+(?:\.[0-9]+)?)\s*x", re.I
+)
+_CURRENT_LEVERAGE_RE = re.compile(
+    r"current\s+(?:net\s+)?leverage[^0-9\n]{0,30}([0-9]+(?:\.[0-9]+)?)\s*x", re.I
+)
+_CURRENT_DSCR_RE = re.compile(r"current\s+DSCR[^0-9\n]{0,30}([0-9]+(?:\.[0-9]+)?)\s*x", re.I)
+_CONCENTRATION_RE = re.compile(r"concentration", re.I)
+
 
 def _schema_properties(schema: dict | None) -> dict[str, Any]:
     if not schema:
@@ -60,12 +87,17 @@ class LocalDeterministicLLMAdapter:
         self._triage_model = settings.models.triage or self.TRIAGE_MODEL
         # When set, used as the citation fallback; otherwise recovered from the prompt.
         self._used_source_ids = used_source_ids or [PRIMARY_SOURCE_ID]
+        #: The user content of the request being answered. Held on the instance rather
+        #: than threaded through ``_body_for_schema`` so subclasses that override it with
+        #: the documented one-argument signature keep working.
+        self._prompt = ""
 
     # ------------------------------------------------------------------ #
     # LLMPort
     # ------------------------------------------------------------------ #
     def generate(self, request: LlmRequest) -> LlmResponse:
         self._used_source_ids = self._source_ids_from_request(request)
+        self._prompt = self._user_content(request)
         body = self._body_for_schema(request.response_schema)
         return LlmResponse(
             text=json.dumps(body),
@@ -97,82 +129,165 @@ class LocalDeterministicLLMAdapter:
     def _body_for_schema(self, schema: dict | None) -> dict[str, Any]:
         props = _schema_properties(schema)
         sid = list(self._used_source_ids)
+        prompt = self._prompt
 
         if "summary" in props:  # credit-memo synthesis
-            return {
-                "summary": (
-                    "Acme is a profitable manufacturer with revenue of USD 120m and EBITDA "
-                    "of USD 24m, operating at 2.5x net leverage with comfortable covenant "
-                    "headroom."
-                ),
-                "financial_metrics": [
-                    {
-                        "name": "revenue",
-                        "value": 120.0,
-                        "period": "FY2025",
-                        "currency": "USD",
-                        "used_source_ids": sid,
-                    },
-                    {
-                        "name": "ebitda",
-                        "value": 24.0,
-                        "period": "FY2025",
-                        "currency": "USD",
-                        "used_source_ids": sid,
-                    },
-                    {
-                        "name": "leverage",
-                        "value": 2.5,
-                        "period": "FY2025",
-                        "currency": "x",
-                        "used_source_ids": sid,
-                    },
-                ],
-                "recommendation_rationale": (
-                    "The borrower's leverage and coverage are within covenant limits and "
-                    "near the peer median; a credit officer should confirm concentration "
-                    "exposure before relying on this memo."
-                ),
-                "confidence": 0.87,
-                "used_source_ids": sid,
-            }
+            return self._memo_body(prompt, sid)
 
         if "items" in props:
             item_props = _item_props(schema)
             if "threshold" in item_props:  # covenant extraction
-                return {
-                    "items": [
-                        {
-                            "type": "leverage",
-                            "description": "Maximum net leverage covenant.",
-                            "threshold": 3.0,
-                            "operator": "<=",
-                            "current_value": 2.5,
-                            "period": "Q4",
-                            "used_source_ids": sid,
-                        },
-                        {
-                            "type": "dscr",
-                            "description": "Minimum debt-service coverage ratio.",
-                            "threshold": 1.25,
-                            "operator": ">=",
-                            "current_value": 1.40,
-                            "period": "Q4",
-                            "used_source_ids": sid,
-                        },
-                    ]
-                }
-            # risk-flag identification
-            return {
-                "items": [
-                    {
-                        "category": "concentration",
-                        "severity": "medium",
-                        "detail": "Sector policy flags single-customer concentration risk.",
-                        "used_source_ids": sid,
-                    }
-                ]
-            }
+                return {"items": self._covenant_items(prompt, sid)}
+            return {"items": self._risk_items(prompt, sid)}
 
         # Flat object (self-critique).
         return {"grounded": True, "confidence": 0.86, "caveats": []}
+
+    # ------------------------------------------------------------------ #
+    # Reading the prompt
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _user_content(request: LlmRequest) -> str:
+        for message in reversed(request.messages):
+            if message.role == "user":
+                return message.content or ""
+        return ""
+
+    @staticmethod
+    def _number(text: str) -> float:
+        return float(text.replace(",", ""))
+
+    @classmethod
+    def _figures(cls, prompt: str) -> dict[str, float]:
+        """USD-million figures the evidence states, keyed by the line they belong to."""
+        out: dict[str, float] = {}
+        for line, amount in _MONEY_RE.findall(prompt):
+            out.setdefault(line.strip().lower(), cls._number(amount))
+        return out
+
+    @classmethod
+    def _computed(cls, prompt: str) -> dict[str, tuple[float, str, str]]:
+        """The engine's own ratios, as the COMPUTED block renders them.
+
+        The bank calculated these before a word was drafted, so where one exists it is
+        what the drafter should repeat. Repeating the engine is the whole discipline:
+        a stand-in that states its own leverage is the thing the memo must never do.
+        """
+        out: dict[str, tuple[float, str, str]] = {}
+        for name, period, value, unit in _COMPUTED_RE.findall(prompt):
+            out.setdefault(name.strip().lower(), (cls._number(value), period.strip(), unit))
+        return out
+
+    def _memo_body(self, prompt: str, sid: list[str]) -> dict[str, Any]:
+        name = (_NAME_RE.search(prompt) or [None, "the borrower"])[1].strip()
+        sector = (_SECTOR_RE.search(prompt) or [None, ""])[1].strip()
+        figures = self._figures(prompt)
+        computed = self._computed(prompt)
+        period = next((p for _, p, _ in computed.values() if p), "")
+
+        metrics: list[dict[str, Any]] = [
+            {
+                "name": line,
+                "value": value,
+                "period": period,
+                "currency": "USD",
+                "used_source_ids": sid,
+            }
+            for line, value in figures.items()
+        ]
+        leverage = computed.get("leverage")
+        if leverage is not None:
+            metrics.append(
+                {
+                    "name": "leverage",
+                    "value": leverage[0],
+                    "period": leverage[1] or period,
+                    "currency": "x",
+                    "used_source_ids": sid,
+                }
+            )
+
+        stated = ", ".join(f"{line} of USD {value:,.1f}m" for line, value in figures.items())
+        descriptor = f"a {sector} borrower" if sector and sector != "unknown" else "the borrower"
+        if stated:
+            summary = f"{name}, {descriptor}, reports {stated} in the evidence supplied"
+            summary += f" for {period}." if period else "."
+        else:
+            summary = (
+                f"{name}, {descriptor}. The evidence supplied states no headline figures, "
+                "so this draft asserts none."
+            )
+        if leverage is not None:
+            summary += (
+                f" On those figures the bank's own arithmetic puts leverage at {leverage[0]:,.2f}x."
+            )
+
+        return {
+            "summary": summary,
+            "financial_metrics": metrics,
+            # Deliberately no verdict on covenant compliance. ``covenant_status()`` is the
+            # single auditable place that is decided, and a drafter that volunteered
+            # "comfortable covenant headroom" — as this one used to, for every borrower —
+            # puts a second, unearned answer in front of the reader beside the real one.
+            "recommendation_rationale": (
+                "The figures above are the evidence's and the ratios are the bank's own "
+                "arithmetic on the confirmed spread. A credit officer should confirm the "
+                "covenant definitions and the concentration exposure before relying on "
+                "this memo."
+            ),
+            "confidence": 0.87 if metrics else 0.3,
+            "used_source_ids": sid,
+        }
+
+    def _covenant_items(self, prompt: str, sid: list[str]) -> list[dict[str, Any]]:
+        """Covenant terms as the evidence states them — never invented.
+
+        ``current_value`` is what the EVIDENCE reports, which is exactly the figure the
+        engine then disagrees with when the borrower measures on a different definition.
+        Fabricating it would fabricate the disagreement the reconciliation exists to
+        report.
+        """
+        items: list[dict[str, Any]] = []
+        max_leverage = _MAX_LEVERAGE_RE.search(prompt)
+        if max_leverage is not None:
+            reported = _CURRENT_LEVERAGE_RE.search(prompt)
+            items.append(
+                {
+                    "type": "leverage",
+                    "description": "Maximum net leverage covenant.",
+                    "threshold": self._number(max_leverage.group(1)),
+                    "operator": "<=",
+                    "current_value": self._number(reported.group(1)) if reported else None,
+                    "period": "Q4",
+                    "used_source_ids": sid,
+                }
+            )
+        min_dscr = _MIN_DSCR_RE.search(prompt)
+        if min_dscr is not None:
+            reported = _CURRENT_DSCR_RE.search(prompt)
+            items.append(
+                {
+                    "type": "dscr",
+                    "description": "Minimum debt-service coverage ratio.",
+                    "threshold": self._number(min_dscr.group(1)),
+                    "operator": ">=",
+                    "current_value": self._number(reported.group(1)) if reported else None,
+                    "period": "Q4",
+                    "used_source_ids": sid,
+                }
+            )
+        return items
+
+    @staticmethod
+    def _risk_items(prompt: str, sid: list[str]) -> list[dict[str, Any]]:
+        """A flag only where the evidence supports one. No evidence, no flag."""
+        if _CONCENTRATION_RE.search(prompt) is None:
+            return []
+        return [
+            {
+                "category": "concentration",
+                "severity": "medium",
+                "detail": "The retrieved policy and filing evidence raises concentration risk.",
+                "used_source_ids": sid,
+            }
+        ]

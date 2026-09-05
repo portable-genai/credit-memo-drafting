@@ -15,13 +15,18 @@ API_APP     := credit_memo.api.app:app
 API_HOST    ?= 127.0.0.1  # no-auth local dev binds loopback; override deliberately
 API_PORT    ?= 8093
 UI_DIR      := ui
+# The console's API base is inlined at BUILD time (ui/lib/api.ts) and its CSP connect-src is
+# built from the same value (ui/lib/csp.mjs), so the build and the run must agree on it.
+CONSOLE_API_BASE ?= http://localhost:8093
+# One use case by name or number, e.g. `make walkthrough ACT="The checker"`. Empty runs all.
+ACT         ?=
 TF_DIR      := infra/terraform
 
 export CREDIT_MEMO_PROFILE := $(PROFILE)
 
 .DEFAULT_GOAL := help
 .PHONY: help install install-demo install-gcp lock fmt lint test check memo demo demo-server demo-selftest eval eval-adversarial run-api run-ui \
-	demo-browser ui-install ui-check tf-plan clean
+	demo-browser demo-console walkthrough walkthrough-list ui-build ui-install ui-check tf-plan clean
 
 help: ## Show this help.
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -46,13 +51,15 @@ fmt: ## Auto-format and auto-fix lint issues.
 
 lint: ## Lint (ruff) and type-check (mypy).
 	ruff check $(SRC) $(TESTS) eval scripts/demo_selftest.py scripts/portability_demo.py \
-		scripts/render_credit_memo_ui.py
+		scripts/render_credit_memo_ui.py scripts/credit_memo_console_walkthrough.py \
+		scripts/demo_console
 	ruff format --check $(SRC) $(TESTS) eval scripts/demo_selftest.py scripts/portability_demo.py \
-		scripts/render_credit_memo_ui.py
+		scripts/render_credit_memo_ui.py scripts/credit_memo_console_walkthrough.py \
+		scripts/demo_console
 	mypy $(SRC)
 
 test: ## Run unit + contract tests on the local profile (no GCP SDK required).
-	CREDIT_MEMO_PROFILE=local pytest -m 'not integration' -q
+	CREDIT_MEMO_PROFILE=local pytest -m 'not integration and not console' -q
 
 portability: ## Execute the bounded offline/profile portability proof.
 	PYTHONPATH=src $(PYTHON) scripts/portability_demo.py
@@ -69,7 +76,21 @@ demo-selftest: ## Prove the served presenter states and evidence hooks cannot ro
 	PYTHONPATH=src:scripts $(PYTHON) scripts/demo_selftest.py
 
 demo-browser: ## Drive the SERVED demo through pinned headless Chromium (needs the [demo] extra).
-	CREDIT_MEMO_PROFILE=local $(PYTHON) -m pytest $(TESTS)/browser -q -rs
+	CREDIT_MEMO_PROFILE=local $(PYTHON) -m pytest $(TESTS)/browser -m 'not console' -q -rs
+
+demo-console: ui-build ## Walk the 17 business use cases through the BUILT console and assert each.
+	CREDIT_MEMO_PROFILE=local $(PYTHON) -m pytest \
+		$(TESTS)/browser/test_console_use_cases.py -m console -q -rs
+
+ui-build: ## Build the console the demo presents from (never `next dev`: see ui/lib/csp.mjs).
+	NEXT_PUBLIC_API_BASE=$(CONSOLE_API_BASE) NEXT_TELEMETRY_DISABLED=1 \
+		npm --prefix $(UI_DIR) run build
+
+walkthrough: ui-build ## Presenter-paced walkthrough of the same 17 acts (ACT="..." for just one).
+	$(PYTHON) scripts/credit_memo_console_walkthrough.py $(if $(ACT),--act "$(ACT)",)
+
+walkthrough-list: ## Name the use cases `make walkthrough ACT=...` can show.
+	@$(PYTHON) scripts/credit_memo_console_walkthrough.py --list
 
 memo: ## End-to-end smoke: build a cited memo offline under the local profile.
 	CREDIT_MEMO_PROFILE=local credit-memo build "Acme Manufacturing Pte Ltd" \

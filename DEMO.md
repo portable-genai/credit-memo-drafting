@@ -122,6 +122,24 @@ deterministic status pills, the citation chips on every section, and the peer ba
 options (`SLOWMO_MS`, `HEADLESS`, `CHROME_PATH`, ...) are in
 [`scripts/README.md`](scripts/README.md).
 
+### 2.1b The FULL business walkthrough (every use case, in the real console)
+
+Section 2.1 walks the original four artifacts on the presenter server. The product has
+since grown the whole credit-file lifecycle, and
+[`docs/demo-use-cases.md`](docs/demo-use-cases.md) is the walkthrough that shows it: one
+deal through the REAL console and service, in seventeen acts — upload the credit file,
+extract and confirm the spread, state the ask, build, watch the engine's arithmetic
+override what the model read off the page, add the group, run the checker's comment thread,
+export the committee pack, and delete the evidence.
+
+```bash
+make walkthrough      # builds the console, opens a browser, waits for Enter at each act
+```
+
+The same acts run asserted and headless as `make demo-console`, so the demo cannot rot
+between presentations. A run writes screenshots, a video and a Playwright trace to
+`out/demo/`.
+
 ### 2.2 Manual, click-through (no Playwright)
 
 Run only the server and drive it yourself in any browser:

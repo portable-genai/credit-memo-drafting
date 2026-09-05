@@ -484,6 +484,32 @@ export interface GlobalCashFlow {
 }
 
 /** A public register's view of who else is in the group. Suggestions, never figures. */
+/** One thing a public-web search found. Carries no number, and that is the mechanism. */
+export interface WebEvidence {
+  title: string;
+  url: string;
+  snippet: string;
+  retrieved_at: string;
+  provenance: Provenance;
+}
+
+/**
+ * What a search found, for the analyst who ran it and nobody else.
+ *
+ * Never written into a memo, never exported. `search_suggestions` are the chips Google
+ * requires rendered verbatim beside grounded results.
+ */
+export interface MarketContext {
+  query: string;
+  purpose: string;
+  evidence: WebEvidence[];
+  search_suggestions: string[];
+  retrieved_at: string;
+  provider: string;
+  /** The search ran and returned nothing — not the same as it could not run. */
+  found_nothing: boolean;
+}
+
 export interface EntityGroup {
   subject: RelatedEntity;
   members: RelatedEntity[];

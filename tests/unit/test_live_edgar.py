@@ -355,3 +355,123 @@ def test_live_kb_purges_fiction_left_by_an_earlier_local_run(tmp_path) -> None:
     live._edgar = _FakeEdgar()  # type: ignore[assignment]
     after = live.search(RetrievalQuery(text="credit policy manufacturing", top_k=5))
     assert all(not p.citation.url.startswith("https://example.test/") for p in after)
+
+
+# --------------------------------------------------------------------------- #
+# Fact selection: one period, and the tag that carries the figure
+# --------------------------------------------------------------------------- #
+def _usd(**kw: object) -> dict:
+    """One companyfacts row, in the shape data.sec.gov actually returns."""
+    row = {"form": "10-K", "fy": 2025, "fp": "FY", "accn": "0000030625-26-000003"}
+    row.update(kw)
+    return row
+
+
+def _client() -> _edgar.EdgarClient:
+    return _edgar.EdgarClient(Settings(profile="live"))
+
+
+def _facts(gaap: dict) -> dict:
+    """``{tag: [rows]}`` in the units/USD nesting data.sec.gov wraps every tag in."""
+    return {"facts": {"us-gaap": {tag: {"units": {"USD": rows}} for tag, rows in gaap.items()}}}
+
+
+def test_every_figure_comes_from_one_reporting_period(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A spread mixing two years reconciles against nothing and misstates every ratio.
+
+    This is the shape the real filings had: the balance sheet had rolled forward to the
+    new year end while an income-statement tag the company had stopped using still held
+    the prior year, and reading each tag's own latest fact silently combined them.
+    """
+    gaap = {
+        # Income statement: reported for both years.
+        "Revenues": [
+            _usd(start="2024-01-01", end="2024-12-31", val=4_000e6),
+            _usd(start="2025-01-01", end="2025-12-31", val=4_729e6),
+        ],
+        # Balance sheet: same two year ends.
+        "Assets": [_usd(end="2024-12-31", val=5_000e6), _usd(end="2025-12-31", val=5_708e6)],
+        # A line the company stopped tagging after 2024. It must be ABSENT, not carried
+        # forward into a 2025 spread as though it were this year's figure.
+        "Liabilities": [_usd(end="2024-12-31", val=3_100e6)],
+    }
+    client = _client()
+    monkeypatch.setattr(client, "companyfacts", lambda cik: _facts(gaap))
+    facts = client.latest_annual_facts("0000030625")
+
+    assert {f["end"] for f in facts.values()} == {"2025-12-31"}
+    assert facts["revenue"]["value"] == 4_729e6
+    assert facts["total_assets"]["value"] == 5_708e6
+    assert "total_liabilities" not in facts
+
+
+def test_a_tag_reporting_zero_loses_to_one_reporting_the_figure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Flowserve's real filing: ``Revenues`` is tagged 0 and the revenue is elsewhere.
+
+    Preferring the first tag that exists grounded the memo on revenue of zero. A total of
+    zero beside a non-zero tag for the same concept is an artifact of how the filer split
+    the line, not a claim that the company earned nothing.
+    """
+    gaap = {
+        "Revenues": [_usd(start="2025-01-01", end="2025-12-31", val=0)],
+        "RevenueFromContractWithCustomerExcludingAssessedTax": [
+            _usd(start="2025-01-01", end="2025-12-31", val=4_729.3e6)
+        ],
+        "Assets": [_usd(end="2025-12-31", val=5_708.2e6)],
+    }
+    client = _client()
+    monkeypatch.setattr(client, "companyfacts", lambda cik: _facts(gaap))
+    facts = client.latest_annual_facts("0000030625")
+
+    assert facts["revenue"]["value"] == 4_729.3e6
+    assert facts["revenue"]["tag"] == "RevenueFromContractWithCustomerExcludingAssessedTax"
+
+
+def test_a_genuine_zero_still_comes_through(monkeypatch: pytest.MonkeyPatch) -> None:
+    """"No current debt" is a fact about the borrower, not a tagging artifact.
+
+    Zero only loses to a non-zero alternative for the SAME concept; with no alternative
+    it is the answer, and must not be dropped into "not supplied".
+    """
+    gaap = {
+        "Revenues": [_usd(start="2025-01-01", end="2025-12-31", val=1_000e6)],
+        "Assets": [_usd(end="2025-12-31", val=2_000e6)],
+        "LongTermDebtCurrent": [_usd(end="2025-12-31", val=0)],
+    }
+    client = _client()
+    monkeypatch.setattr(client, "companyfacts", lambda cik: _facts(gaap))
+    facts = client.latest_annual_facts("0000030625")
+
+    assert facts["current_debt"]["value"] == 0.0
+
+
+def test_a_restated_period_takes_the_later_filing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Two filings report the same period; the restatement is the one that stands."""
+    gaap = {
+        "Revenues": [
+            _usd(start="2025-01-01", end="2025-12-31", val=900e6, accn="0000030625-26-000003"),
+            _usd(start="2025-01-01", end="2025-12-31", val=950e6, accn="0000030625-27-000010"),
+        ],
+        "Assets": [_usd(end="2025-12-31", val=2_000e6)],
+    }
+    client = _client()
+    monkeypatch.setattr(client, "companyfacts", lambda cik: _facts(gaap))
+
+    assert client.latest_annual_facts("0000030625")["revenue"]["value"] == 950e6
+
+
+def test_capex_is_read_from_either_tag_filers_use(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Filers split between two capex tags; reading one left half the peers uncomparable."""
+    gaap = {
+        "Revenues": [_usd(start="2025-01-01", end="2025-12-31", val=1_000e6)],
+        "Assets": [_usd(end="2025-12-31", val=2_000e6)],
+        "PaymentsToAcquireProductiveAssets": [
+            _usd(start="2025-01-01", end="2025-12-31", val=70.9e6)
+        ],
+    }
+    client = _client()
+    monkeypatch.setattr(client, "companyfacts", lambda cik: _facts(gaap))
+
+    assert client.latest_annual_facts("0000030625")["capex"]["value"] == 70.9e6
