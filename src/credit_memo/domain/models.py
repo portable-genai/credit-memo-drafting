@@ -1317,6 +1317,59 @@ class SectionEdit:
 
 
 @dataclass(frozen=True, slots=True)
+class MemoComment:
+    """One reviewer's note against one section of one revision.
+
+    Anchored to a REVISION as well as a section, which is the whole point. A checker who
+    writes "this overstates the headroom" is objecting to a paragraph as it stood when they
+    read it. Attaching that note to whatever the section says three edits later puts an
+    objection next to text its author never saw, and quietly changes what the reviewer said.
+    So the anchor records which version was in front of them, and a comment whose section
+    has since changed is reported as raised against an earlier version rather than silently
+    re-pointed.
+
+    ``resolved_by`` is a person, never a state the system reaches on its own. A comment that
+    closed because the text changed underneath it was not answered; it was lost, and the two
+    look identical in a list afterwards.
+    """
+
+    id: str
+    section: str
+    body: str
+    author: str
+    revision: int
+    at: datetime = field(default_factory=utcnow)
+    #: The digest of the revision this was written against. Cheap and decisive: it survives
+    #: a renumbering, and it is what makes "the text has moved on" checkable rather than
+    #: inferred from a revision number.
+    anchor_digest: str = ""
+    resolved_by: str = ""
+    resolved_at: datetime | None = None
+    resolution: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.body.strip():
+            raise ValueError(
+                "a comment with no body is not a comment. An empty note in a review thread "
+                "reads as an objection nobody can answer."
+            )
+        if not self.author.strip():
+            raise ValueError(
+                "a comment requires a named author. An unattributed objection cannot be "
+                "answered, and a committee asks who raised it."
+            )
+        if bool(self.resolved_by.strip()) != (self.resolved_at is not None):
+            raise ValueError(
+                "a resolution needs both who closed it and when, or neither. Half a "
+                "resolution reads as closed to one query and open to another."
+            )
+
+    @property
+    def open(self) -> bool:
+        return not self.resolved_by.strip()
+
+
+@dataclass(frozen=True, slots=True)
 class MemoRevision:
     """One saved version of a memo, chained to the one before it.
 
