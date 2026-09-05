@@ -55,6 +55,7 @@ from .schemas import (
     HealthResponse,
     RiskFlagListResponse,
     RiskFlagRequest,
+    to_domain_memo,
 )
 from .security import CurrentPrincipal
 
@@ -616,6 +617,61 @@ def build_analysis_memo(
             analysis_id, "memo", response.model_dump(mode="json"), principals
         )
     return response
+
+
+@app.post("/v1/analyses/{analysis_id}/export", tags=["analyses"])
+def export_analysis_memo(
+    analysis_id: str, principal: CurrentPrincipal, fmt: str = "docx"
+) -> Response:
+    """The committee pack, in a format that can leave the application.
+
+    Reads the memo the build stored in the bundle rather than rebuilding it: the pack a
+    committee receives must be the memo that was reviewed, not a fresh one that might
+    differ because a model was asked again.
+    """
+    container = deps.get_container()
+    principals = _analysis_principals(principal)
+    try:
+        _read_analysis(analysis_id, principal)
+        stored = container.analysis_bundle.get_artifact(analysis_id, "memo", principals)
+    except AnalysisNotFoundError as exc:
+        return _analysis_gone(exc)
+    except BorrowerAccessDeniedError as exc:
+        return _denied_response(exc)
+    if stored is None:
+        return _ungrounded_response("this analysis has no memo yet; build one before exporting it")
+
+    try:
+        payload, content_type = container.export.export(
+            to_domain_memo(CreditMemoResponse.model_validate(stored)), fmt
+        )
+    except ValueError as exc:
+        return _ungrounded_response(str(exc))
+    except NotImplementedError as exc:
+        return _ungrounded_response(str(exc))
+
+    filename = f"credit-memo-{_slug(analysis_id)}.{fmt}"
+    return Response(
+        content=payload,
+        media_type=content_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/v1/analyses/{analysis_id}/export/formats", tags=["analyses"])
+def export_formats(analysis_id: str, principal: CurrentPrincipal) -> Any:
+    """Which formats this deployment can actually produce.
+
+    Advertised rather than assumed: the SDK-free profile makes DOCX and HTML and says so,
+    instead of offering a PDF button that fails when pressed.
+    """
+    try:
+        _read_analysis(analysis_id, principal)
+    except AnalysisNotFoundError as exc:
+        return _analysis_gone(exc)
+    except BorrowerAccessDeniedError as exc:
+        return _denied_response(exc)
+    return {"formats": list(deps.get_container().export.formats())}
 
 
 def _tenant_tags(principal: Any) -> tuple[str, ...]:

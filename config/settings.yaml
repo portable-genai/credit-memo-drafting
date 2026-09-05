@@ -167,6 +167,15 @@ adapters:
   # CANDIDATE that no engine will accept until a person confirms it.
   # The bank's own credit policy and rating scorecard. Nothing in this repo decides what
   # a prudent leverage cap is; the pack is uploaded, versioned, and printed on the memo.
+  # The committee pack. DOCX and HTML from the standard library on every profile; the
+  # managed adapter adds PDF via reportlab, in region. Not Google Docs: that path leaves
+  # the deploy region and caps at 10 MB.
+  export:
+    gcp: credit_memo.adapters.gcp.export:GcpExportAdapter
+    platform: credit_memo.adapters.gcp.export:GcpExportAdapter
+    local: credit_memo.adapters.local.export:LocalExportAdapter
+    live: credit_memo.adapters.local.export:LocalExportAdapter
+    onprem: credit_memo.adapters.onprem.export:OnPremExportAdapter
   policy_pack:
     gcp: credit_memo.adapters.local.policy_pack:LocalYamlPolicyPackAdapter
     platform: credit_memo.adapters.local.policy_pack:LocalYamlPolicyPackAdapter

@@ -998,6 +998,114 @@ class Recommendation:
 
 
 # --------------------------------------------------------------------------- #
+# 2c. Revisions: who wrote which sentence, and what changed since
+# --------------------------------------------------------------------------- #
+class Authorship(StrEnum):
+    """Who wrote a section, which a reader is entitled to know before relying on it."""
+
+    MODEL = "model"  # drafted from the evidence, unedited
+    ANALYST = "analyst"  # written or rewritten by a person
+    EDITED = "edited"  # model draft a person changed
+
+
+@dataclass(frozen=True, slots=True)
+class SectionEdit:
+    """One analyst change to one section of the memo.
+
+    ``before`` survives for the same reason an Adjustment keeps its before-value: a
+    committee asking "what did the machine actually say" is asking a fair question, and
+    the answer cannot be reconstructed from the after-text.
+    """
+
+    section: str
+    before: str
+    after: str
+    actor: str
+    at: datetime = field(default_factory=utcnow)
+    reason: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class MemoRevision:
+    """One saved version of a memo, chained to the one before it.
+
+    The chain is the point. A memo is decision-support that a committee relied on, and
+    "which version did they read" has to be answerable months later. ``parent_digest`` and
+    ``digest`` make the sequence tamper-evident: changing any earlier revision's content
+    breaks every digest after it, so a quiet edit to what the committee saw is detectable
+    rather than merely discouraged.
+
+    This is NOT a durable archive. The revision lives in the analysis bundle and dies with
+    it after the retention window, like everything else here. What the chain protects is
+    integrity within that window, not permanence beyond it.
+    """
+
+    revision: int
+    memo_json: dict
+    actor: str
+    digest: str = ""
+    parent_digest: str = ""
+    edits: tuple[SectionEdit, ...] = ()
+    authorship: dict[str, str] = field(default_factory=dict)  # section -> Authorship value
+    at: datetime = field(default_factory=utcnow)
+    note: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class SectionDelta:
+    """How one part of a renewal differs from the memo before it."""
+
+    label: str
+    before: float | None
+    after: float | None
+    unit: str = ""
+    detail: str = ""
+
+    @property
+    def change(self) -> float | None:
+        if self.before is None or self.after is None:
+            return None
+        return self.after - self.before
+
+    @property
+    def direction(self) -> str:
+        """ "up", "down", "unchanged", or "new" — what a reader scans for first."""
+        change = self.change
+        if self.before is None:
+            return "new"
+        if self.after is None:
+            return "gone"
+        if change is None or abs(change) < 1e-9:
+            return "unchanged"
+        return "up" if change > 0 else "down"
+
+
+@dataclass(frozen=True, slots=True)
+class RenewalDelta:
+    """What changed since the last memo, which is the whole point of a renewal.
+
+    A renewal re-underwrites a facility the bank already holds. Its reader knows the
+    borrower and does not need the history again; what they need is the difference, and a
+    renewal that buries it under a repeated borrower overview has buried its own point.
+    """
+
+    prior_version: str = ""
+    prior_at: str = ""
+    ratios: tuple[SectionDelta, ...] = ()
+    spread: tuple[SectionDelta, ...] = ()
+    covenants: tuple[SectionDelta, ...] = ()
+    rating_before: str = ""
+    rating_after: str = ""
+    new_exceptions: tuple[str, ...] = ()
+    cleared_exceptions: tuple[str, ...] = ()
+    unchanged_sections: tuple[str, ...] = ()
+
+    @property
+    def rating_moved(self) -> bool:
+        return bool(self.rating_before) and self.rating_before != self.rating_after
+
+
+# --------------------------------------------------------------------------- #
 # 3. Peer comparison
 # --------------------------------------------------------------------------- #
 @dataclass(frozen=True, slots=True)
@@ -1087,6 +1195,11 @@ class CreditMemo:
     #: The ask, its conditions and the authority it needs; or the structured reasons it
     #: was not supported.
     recommendation: Recommendation | None = None
+    #: Which sections a person wrote or edited. A reader is entitled to know before they
+    #: rely on a paragraph whether a person stood behind it.
+    authorship: dict[str, str] = field(default_factory=dict)
+    #: For a renewal: what moved since the memo before it.
+    renewal_delta: RenewalDelta | None = None
     #: Exactly which uploaded files this memo was assessed on, and when they expire.
     manifest: AnalysisManifest | None = None
     #: The synthesis service's self-critique. Both were computed and then dropped on the

@@ -6,6 +6,7 @@ satisfies the same contract.
 """
 
 from .analysis_bundle import AnalysisBundlePort as AnalysisBundlePort
+from .export import ExportPort as ExportPort
 from .extraction import DocumentExtractionPort
 from .generation import LLMPort
 from .governance import AgentRegistryPort, ToolCatalogPort
