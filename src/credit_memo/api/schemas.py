@@ -267,6 +267,18 @@ class FinancialSpreadModel(BaseModel):
         )
 
 
+class AnalysisBuildRequest(BaseModel):
+    """Build the memo for an analysis that already holds its uploaded evidence.
+
+    The borrower and the documents are not repeated here: they are in the bundle. What
+    the caller supplies is the ask and the confirmed spread, which are the two things a
+    person decides rather than uploads.
+    """
+
+    request: CreditRequestModel | None = None
+    spreads: list[FinancialSpreadModel] = Field(default_factory=list)
+
+
 class CreditMemoRequest(BaseModel):
     """Inbound request to build a full credit memo.
 
@@ -288,6 +300,71 @@ class CreditMemoRequest(BaseModel):
             documents=tuple(d.to_domain() for d in self.documents),
             request=self.request.to_domain() if self.request is not None else None,
             spreads=tuple(s.to_domain(self.borrower.id) for s in self.spreads),
+        )
+
+
+class StoredDocumentModel(BaseModel):
+    """One file this analysis was given, as the manifest states it."""
+
+    id: str
+    filename: str
+    doc_type: str
+    mime_type: str = ""
+    size_bytes: int = 0
+    sha256: str = ""
+    pages: int = 0
+    declared_as_of: str = ""
+    uploaded_at: str = ""
+    uploaded_by: str = ""
+    third_party_sourced: bool = False
+
+    @classmethod
+    def from_domain(cls, document: m.StoredDocument) -> StoredDocumentModel:
+        return cls(
+            id=document.id,
+            filename=document.filename,
+            doc_type=document.doc_type.value,
+            mime_type=document.mime_type,
+            size_bytes=document.size_bytes,
+            sha256=document.sha256,
+            pages=document.pages,
+            declared_as_of=document.declared_as_of,
+            uploaded_at=document.uploaded_at.isoformat(),
+            uploaded_by=document.uploaded_by,
+            third_party_sourced=document.third_party_sourced,
+        )
+
+
+class AnalysisManifestModel(BaseModel):
+    """Exactly which files fed this analysis, and until when it can be reopened."""
+
+    analysis_id: str
+    borrower_id: str
+    documents: list[StoredDocumentModel] = Field(default_factory=list)
+    created_at: str = ""
+    expires_at: str | None = None
+    created_by: str = ""
+    #: Said in words as well as as a date, because "available until 20 September" is what
+    #: a reader needs and an ISO timestamp is what a machine needs.
+    retention_note: str = ""
+
+    @classmethod
+    def from_domain(cls, manifest: m.AnalysisManifest) -> AnalysisManifestModel:
+        expires = manifest.expires_at
+        note = (
+            f"This analysis and the {len(manifest.documents)} file(s) it used are "
+            f"available until {expires.date().isoformat()}, then deleted."
+            if expires
+            else "No retention window is configured for this analysis."
+        )
+        return cls(
+            analysis_id=manifest.analysis_id,
+            borrower_id=manifest.borrower_id,
+            documents=[StoredDocumentModel.from_domain(d) for d in manifest.documents],
+            created_at=manifest.created_at.isoformat(),
+            expires_at=expires.isoformat() if expires else None,
+            created_by=manifest.created_by,
+            retention_note=note,
         )
 
 
@@ -500,6 +577,7 @@ class CreditMemoResponse(BaseModel):
     confidence: float = 0.0
     caveats: list[str] = Field(default_factory=list)
     questions_for_client: list[str] = Field(default_factory=list)
+    manifest: AnalysisManifestModel | None = None
 
     @classmethod
     def from_domain(cls, memo: m.CreditMemo) -> CreditMemoResponse:
@@ -527,6 +605,11 @@ class CreditMemoResponse(BaseModel):
             confidence=memo.confidence,
             caveats=list(memo.caveats),
             questions_for_client=list(memo.questions_for_client),
+            manifest=(
+                AnalysisManifestModel.from_domain(memo.manifest)
+                if memo.manifest is not None
+                else None
+            ),
         )
 
 

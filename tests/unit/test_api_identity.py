@@ -27,6 +27,7 @@ from tests.conftest import (
     _settings,
 )
 
+from credit_memo.adapters.local.analysis_bundle import LocalAnalysisBundleAdapter
 from credit_memo.adapters.local.guardrail import LocalHeuristicGuardrailAdapter
 from credit_memo.adapters.local.identity import LocalPersonaIdentityAdapter
 from credit_memo.adapters.local.knowledge_base import LocalFtsKnowledgeBaseAdapter
@@ -54,6 +55,7 @@ class _RecordingContainer(Container):
         self.tracer = RecordingTracer(settings)  # type: ignore[assignment]
         self.identity = LocalPersonaIdentityAdapter(settings)  # type: ignore[assignment]
         self.review_router = LocalReviewRouter(settings)  # type: ignore[assignment]
+        self.analysis_bundle = LocalAnalysisBundleAdapter(settings)  # type: ignore[assignment]
 
 
 @pytest.fixture

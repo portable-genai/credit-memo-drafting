@@ -59,6 +59,7 @@ def build_credit_memo_service(container: Container) -> CreditMemoService:
         audit=container.audit,
         review_router=container.review_router,
         covenant_at_risk_band=container.settings.policy.covenant_at_risk_band,
+        analysis_bundle=container.analysis_bundle,
     )
 
 

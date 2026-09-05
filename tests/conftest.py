@@ -24,10 +24,13 @@ seedable adapter, per the build brief.
 from __future__ import annotations
 
 import importlib
+import tempfile
+from pathlib import Path
 from typing import Any
 
 import pytest
 
+from credit_memo.adapters.local.analysis_bundle import LocalAnalysisBundleAdapter
 from credit_memo.adapters.local.audit import LocalAppendOnlyAuditAdapter
 from credit_memo.adapters.local.evaluation import LocalOfflineEvalAdapter
 from credit_memo.adapters.local.extraction import LocalDocumentExtractionAdapter
@@ -39,7 +42,7 @@ from credit_memo.adapters.local.redaction import LocalRegexRedactionAdapter
 from credit_memo.adapters.local.registry import LocalAgentRegistryAdapter
 from credit_memo.adapters.local.tool_catalog import LocalToolCatalogAdapter
 from credit_memo.adapters.local.tracer import LocalNoopTracerAdapter
-from credit_memo.config import LocalSettings, Settings
+from credit_memo.config import AnalysisBundleSettings, LocalSettings, Settings
 from credit_memo.domain.models import (
     AuditEvent,
     Borrower,
@@ -61,11 +64,23 @@ from tests.fixtures import sample_cases
 __all__ = ["Direction", "_schema_properties"]
 
 
+#: One temporary root for the whole test session, cleaned up by the OS. Module scope so
+#: a container built twice in one test still sees the bundle the first one wrote.
+_BUNDLE_ROOT = Path(tempfile.mkdtemp(prefix="credit-memo-test-analyses-"))
+
+
 def _settings() -> Settings:
-    """Settings whose local stores are ephemeral in-memory SQLite (deterministic)."""
+    """Settings whose local stores are ephemeral (deterministic, and never ``~``).
+
+    The analysis bundle needs a real directory (it holds uploaded bytes), so it gets a
+    per-process temporary one. Without an explicit root the local adapter would write
+    into ``~/.credit_memo/analyses`` and a test run would leave a developer's home
+    directory holding fixture documents.
+    """
     return Settings(
         profile="local",
         local=LocalSettings(db_path=":memory:", audit_path=":memory:"),
+        analysis_bundle=AnalysisBundleSettings(root=str(_BUNDLE_ROOT)),
     )
 
 
@@ -404,9 +419,10 @@ def credit_memo_service(
     redaction,
     tracer,
     audit,
+    analysis_bundle,
 ):
     """CreditMemoService(extraction, knowledge_base, peer_data, llm, guardrail, redaction,
-    tracer, audit)."""
+    tracer, audit, analysis_bundle)."""
     cls = load_service("CreditMemoService")
     return cls(
         extraction,
@@ -417,4 +433,11 @@ def credit_memo_service(
         redaction,
         tracer,
         audit,
+        analysis_bundle=analysis_bundle,
     )
+
+
+@pytest.fixture
+def analysis_bundle() -> LocalAnalysisBundleAdapter:
+    """Custody for one test's analyses, on the session's temporary root."""
+    return LocalAnalysisBundleAdapter(_settings())

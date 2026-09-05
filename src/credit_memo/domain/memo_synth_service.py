@@ -135,6 +135,15 @@ class MemoSynthService:
         questions = g.as_str_list(parsed.get("questions_for_client"))
 
         caveats: list[str] = []
+        if summary and not citations:
+            # The fallback that used to hide this attached every retrieved passage
+            # instead, which made an uncited draft look like the best-evidenced section
+            # of the memo. Saying it plainly is the honest replacement.
+            caveats.append(
+                "The draft cited no source. Treat every figure in it as unverified and "
+                "check it against the evidence before relying on the memo."
+            )
+            confidence = min(confidence, 0.3)
         if not summary:
             summary = (
                 "The available evidence does not support a confident credit memo for this "

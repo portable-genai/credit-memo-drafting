@@ -48,3 +48,22 @@ class GroundingDisabledError(CreditMemoError):
     Grounding is gated by ``grounding_enabled`` (SPEC §2). Callers that explicitly
     require web grounding can raise this rather than silently skipping it.
     """
+
+
+class AnalysisNotFoundError(CreditMemoError):
+    """Raised when an analysis is absent, expired, or not readable by this caller.
+
+    One error for all three on purpose. A distinct "you may not read this" would confirm
+    that the id exists, which is how an id space gets probed; and a distinct "expired"
+    would leak that a borrower was analysed at all. The message says what a legitimate
+    caller needs: the analysis is not available, and evidence is kept for a fixed window.
+    """
+
+
+class AnalysisExpiredError(AnalysisNotFoundError):
+    """The bundle's retention window has passed. A subclass, so callers may catch either.
+
+    Raised only where the deployment can still tell the difference (the local adapter
+    holds a manifest with an expiry it can read). Managed adapters rely on the bucket's
+    lifecycle rule, where an expired bundle is simply gone and surfaces as not-found.
+    """

@@ -42,6 +42,7 @@ from .entitlements import borrower_acl
 from .errors import GuardrailBlockedError, RetrievalEmptyError
 from .memo_synth_service import MemoSynthService
 from .models import (
+    AnalysisManifest,
     AuditEvent,
     Borrower,
     Citation,
@@ -82,6 +83,7 @@ class CreditMemoService:
         review_policy: CreditReviewPolicy | None = None,
         review_router: Any = None,
         covenant_at_risk_band: float = 0.05,
+        analysis_bundle: Any = None,
     ) -> None:
         self._extraction = extraction
         self._knowledge_base = knowledge_base
@@ -96,6 +98,10 @@ class CreditMemoService:
         # console), not left as a boolean. Optional so unit tests and the CLI can omit it; when
         # unset the escalation still audits ESCALATED, it just is not forwarded to a console.
         self._review_router = review_router
+        # Custody of the files this analysis was given. Optional so the CLI, the agent
+        # and unit tests can build a memo from filings they already hold; when it is
+        # bound, extraction receives the real bytes instead of b"".
+        self._analysis_bundle = analysis_bundle
 
         # Sub-services compose the same ports (explicit-DI per SPEC §5).
         self._synth = MemoSynthService(llm=llm, tracer=tracer)
@@ -156,9 +162,9 @@ class CreditMemoService:
 
         acl_tags = self._acl_tags(borrower.id, tenant)
 
-        # 3) Extract + ingest each filing into the governed RAG store (A2, borrower+tenant ACL).
-        for document in memo_input.documents:
-            self._extract_and_ingest(document, acl_tags)
+        # 3) Extract + ingest each uploaded file into the governed RAG store.
+        manifest = self._manifest(memo_input, (*acl_tags, *principals))
+        self._ingest_all(memo_input, manifest, acl_tags, (*acl_tags, *principals))
 
         # 4) Retrieve grounding passages from A2. Empty -> hard error (never ungrounded).
         #    Scope the ACL to the borrower + tenant tags plus the verified user's entitlement
@@ -217,6 +223,7 @@ class CreditMemoService:
             confidence=draft.confidence,
             caveats=draft.caveats,
             questions_for_client=draft.questions_for_client,
+            manifest=manifest,
         )
 
         # 10) Guardrail screen (OUTPUT) on the assembled prose.
@@ -246,15 +253,89 @@ class CreditMemoService:
     # ------------------------------------------------------------------ #
     # Steps
     # ------------------------------------------------------------------ #
-    def _extract_and_ingest(self, document: Filing, acl_tags: tuple[str, ...]) -> None:
-        """Extract a filing and ingest it into A2; best-effort per document."""
+    def _manifest(
+        self, memo_input: MemoInput, acl_principals: tuple[str, ...]
+    ) -> AnalysisManifest | None:
+        """What this analysis was given, when it came from a bundle."""
+        if self._analysis_bundle is None or not memo_input.analysis_id:
+            return None
         try:
-            extract = self._extraction.extract(document, b"", self._mime_for(document))
+            result = self._analysis_bundle.manifest(memo_input.analysis_id, acl_principals)
+        except Exception:  # noqa: BLE001 - an unreadable bundle degrades to no manifest
+            return None
+        return result if isinstance(result, AnalysisManifest) else None
+
+    def _ingest_all(
+        self,
+        memo_input: MemoInput,
+        manifest: AnalysisManifest | None,
+        acl_tags: tuple[str, ...],
+        acl_principals: tuple[str, ...],
+    ) -> None:
+        """Extract and ingest every document this memo may ground on.
+
+        Two sources, deliberately not merged. When the caller supplied an analysis id the
+        bundle IS the evidence: those are the files the user uploaded for this question,
+        with their real bytes and their real content types. Otherwise the caller passed
+        filings it already holds (the CLI, the agent, a test), and those are ingested as
+        before.
+        """
+        if manifest is not None:
+            for stored in manifest.documents:
+                self._extract_and_ingest(
+                    Filing(
+                        id=stored.id,
+                        doc_type=stored.doc_type,
+                        uri=f"analysis://{memo_input.analysis_id}/{stored.id}",
+                        title=stored.filename,
+                        acl_tags=acl_tags,
+                    ),
+                    acl_tags,
+                    content=self._document_bytes(memo_input.analysis_id, stored.id, acl_principals),
+                    mime_type=stored.mime_type,
+                )
+            return
+        for document in memo_input.documents:
+            self._extract_and_ingest(document, acl_tags)
+
+    def _document_bytes(
+        self, analysis_id: str, document_id: str, acl_principals: tuple[str, ...]
+    ) -> bytes:
+        if self._analysis_bundle is None:
+            return b""
+        try:
+            return bytes(
+                self._analysis_bundle.get_document(analysis_id, document_id, acl_principals)
+            )
+        except Exception:  # noqa: BLE001 - one unreadable file must not fail the memo
+            return b""
+
+    def _extract_and_ingest(
+        self,
+        document: Filing,
+        acl_tags: tuple[str, ...],
+        content: bytes = b"",
+        mime_type: str = "",
+    ) -> None:
+        """Extract a document and ingest it into the KB; best-effort per document.
+
+        ``content`` was ``b""`` at every call site before Wave 1, so the extraction port
+        was handed a filing and no bytes and could only ever return nothing. Every
+        citation page, every extracted figure and the whole source viewer rest on this
+        argument actually carrying the file.
+        """
+        try:
+            extract = self._extraction.extract(
+                document, content, mime_type or self._mime_for(document)
+            )
         except Exception:  # noqa: BLE001 - a single bad document must not fail the memo
             extract = None
         try:
-            content = (extract.text if extract is not None else "").encode("utf-8")
-            self._knowledge_base.ingest(document, content, acl_tags)
+            text = extract.text if extract is not None else ""
+            # Prefer the extracted text; fall back to the raw bytes so an adapter that
+            # does its own parsing (the local KB reads PDFs itself) still gets the file.
+            payload = text.encode("utf-8") if text else content
+            self._knowledge_base.ingest(document, payload, acl_tags)
         except Exception:  # noqa: BLE001 - ingestion is best-effort; retrieval is the gate
             return
 

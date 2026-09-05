@@ -5,6 +5,7 @@ contract tests can verify any adapter (GCP, remote-platform, or on-prem placehol
 satisfies the same contract.
 """
 
+from .analysis_bundle import AnalysisBundlePort as AnalysisBundlePort
 from .extraction import DocumentExtractionPort
 from .generation import LLMPort
 from .governance import AgentRegistryPort, ToolCatalogPort

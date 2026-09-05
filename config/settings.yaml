@@ -62,6 +62,16 @@ document_ai:
   location: ${CREDIT_MEMO_DOCAI_LOCATION:-us}
   processor_version: rc
 
+analysis_bundle:
+  # The retention window the console states to the user. On gcp/platform the bucket's own
+  # lifecycle rule is what enforces it, so this number and the Terraform rule must agree;
+  # infra/terraform validates that they do.
+  retention_days: 15
+  bucket: ${CREDIT_MEMO_ANALYSIS_BUCKET:-}
+  prefix: analyses
+  max_upload_bytes: 20971520
+  max_documents: 40
+
 knowledge_base:
   base_url_env: KNOWLEDGE_BASE_URL             # A2 Enterprise KB (B2's governed RAG store)
   data_store_id: credit-memo-kb        # only used by the standalone GCP adapter
@@ -156,6 +166,15 @@ adapters:
     local: credit_memo.adapters.local.identity:LocalPersonaIdentityAdapter
     live: credit_memo.adapters.local.identity:LocalPersonaIdentityAdapter
     onprem: credit_memo.adapters.onprem.identity:OnPremIdentityAdapter
+  # Custody of ONE analysis: the files a user uploaded for one question, the manifest,
+  # and the artifacts built from them, deleted on a schedule the console prints. There is
+  # no standing document library and no memo of record; see ports/analysis_bundle.py.
+  analysis_bundle:
+    gcp: credit_memo.adapters.gcp.analysis_bundle:GcsAnalysisBundleAdapter
+    platform: credit_memo.adapters.gcp.analysis_bundle:GcsAnalysisBundleAdapter
+    local: credit_memo.adapters.local.analysis_bundle:LocalAnalysisBundleAdapter
+    live: credit_memo.adapters.local.analysis_bundle:LocalAnalysisBundleAdapter
+    onprem: credit_memo.adapters.onprem.analysis_bundle:OnPremAnalysisBundleAdapter
   extraction:
     gcp: credit_memo.adapters.gcp.document_ai_extraction:DocumentAiExtractionAdapter
     platform: credit_memo.adapters.gcp.document_ai_extraction:DocumentAiExtractionAdapter
