@@ -343,6 +343,8 @@ export interface StoredDocument {
 export interface AnalysisManifest {
   analysis_id: string;
   borrower_id: string;
+  /** Display only; the id governs every entitlement check. */
+  borrower_name: string;
   documents: StoredDocument[];
   created_at: string;
   /** When the evidence behind this analysis is deleted. Printed, not buried. */
@@ -479,6 +481,21 @@ export interface GlobalCashFlow {
   entities_without_figures: string[];
   currency: string;
   complete: boolean;
+}
+
+/** A public register's view of who else is in the group. Suggestions, never figures. */
+export interface EntityGroup {
+  subject: RelatedEntity;
+  members: RelatedEntity[];
+  source: string;
+  as_of: string;
+  quality: "exact" | "strong" | "ambiguous";
+  /** Not the same as an empty members list: the company itself reported no parent. */
+  register_reports_no_parent: boolean;
+  /** What the register cannot see, which an empty answer is often really about. */
+  coverage_note: string;
+  candidates: string[];
+  found_nothing: boolean;
 }
 
 export interface ScenarioResult {

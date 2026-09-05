@@ -83,11 +83,13 @@ class GcsAnalysisBundleAdapter:
         borrower_id: str,
         acl_tags: tuple[str, ...],
         created_by: str = "",
+        borrower_name: str = "",
     ) -> AnalysisManifest:
         now = utcnow()
         manifest = AnalysisManifest(
             analysis_id=analysis_id,
             borrower_id=borrower_id,
+            borrower_name=borrower_name,
             documents=(),
             created_at=now,
             # Stated from the deployment's configured retention so the console can print
@@ -155,6 +157,7 @@ class GcsAnalysisBundleAdapter:
             AnalysisManifest(
                 analysis_id=manifest.analysis_id,
                 borrower_id=manifest.borrower_id,
+                borrower_name=manifest.borrower_name,
                 documents=(*manifest.documents, record),
                 created_at=manifest.created_at,
                 expires_at=manifest.expires_at,
@@ -221,6 +224,7 @@ class GcsAnalysisBundleAdapter:
         payload = {
             "analysis_id": manifest.analysis_id,
             "borrower_id": manifest.borrower_id,
+            "borrower_name": manifest.borrower_name,
             "created_at": manifest.created_at.isoformat(),
             "expires_at": manifest.expires_at.isoformat() if manifest.expires_at else None,
             "created_by": manifest.created_by,
@@ -269,6 +273,7 @@ class GcsAnalysisBundleAdapter:
         manifest = AnalysisManifest(
             analysis_id=raw["analysis_id"],
             borrower_id=raw.get("borrower_id", ""),
+            borrower_name=raw.get("borrower_name", ""),
             documents=tuple(
                 StoredDocument(
                     id=d["id"],

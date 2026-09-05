@@ -223,6 +223,11 @@ class AnalysisManifest:
 
     analysis_id: str
     borrower_id: str
+    #: The borrower's name as the person opening the analysis wrote it. Display only: the
+    #: ID governs the ACL and every entitlement check, so this can never be used to point a
+    #: build at a different borrower. It exists because a memo that names the borrower by
+    #: its slug in its own group table is a memo that looks generated.
+    borrower_name: str = ""
     documents: tuple[StoredDocument, ...] = ()
     created_at: datetime = field(default_factory=utcnow)
     expires_at: datetime | None = None

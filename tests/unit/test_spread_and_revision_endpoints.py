@@ -249,6 +249,58 @@ def _confirmed_items(period: str = "FY2025", **values: float) -> dict:
     }
 
 
+def test_the_borrower_is_part_of_its_own_group(client: TestClient) -> None:
+    """A consolidation that omits the borrower totals the parent and calls it the group.
+
+    That figure is wrong by the whole of the operating company, and wrong in the direction
+    that looks conservative — which is why the borrower is added here rather than left to
+    the caller to remember.
+    """
+    analysis_id = _open_analysis(client)
+    _extract(client, analysis_id)
+    _confirm(client, analysis_id)
+    response = client.post(
+        f"/v1/analyses/{analysis_id}/build",
+        headers=ANALYST,
+        json={
+            "related_entities": [{"id": "holdco", "name": "Acme Holdco", "role": "parent"}],
+            "entity_spreads": {"holdco": _confirmed_items(ebitda=15.0)},
+        },
+    )
+    assert response.status_code == 200, response.text
+    gcf = response.json()["global_cash_flow"]
+    ebitda = next(line for line in gcf["lines"] if line["code"] == "ebitda")
+    contributors = {c["entity_name"] for c in ebitda["contributions"]}
+    assert "Acme Holdco" in contributors
+    assert "acme-manufacturing" in contributors, "the borrower's own confirmed figures count"
+    assert ebitda["total"] == 760.0 + 15.0
+
+
+def test_a_caller_who_named_the_borrowing_entity_does_not_get_a_second_one(
+    client: TestClient,
+) -> None:
+    """They have said which entity is the borrower, possibly under an id of their own.
+
+    Adding the analysis's borrower on top would put the same company in the group twice,
+    once with figures and once without, and report it as an entity nobody supplied.
+    """
+    analysis_id = _open_analysis(client)
+    _extract(client, analysis_id)
+    _confirm(client, analysis_id)
+    response = client.post(
+        f"/v1/analyses/{analysis_id}/build",
+        headers=ANALYST,
+        json={
+            "related_entities": [{"id": "opco", "name": "Acme Opco", "role": "borrower"}],
+            "entity_spreads": {"opco": _confirmed_items(ebitda=100.0)},
+        },
+    )
+    assert response.status_code == 200, response.text
+    gcf = response.json()["global_cash_flow"]
+    assert [e["id"] for e in gcf["entities"]] == ["opco"]
+    assert gcf["complete"] is True
+
+
 def test_the_memo_answers_whose_cash_services_the_debt(client: TestClient) -> None:
     """The question a credit officer is actually asking.
 

@@ -58,6 +58,7 @@ from .models import (
     CreditMemo,
     Decision,
     Direction,
+    EntityRole,
     Filing,
     FinancialSpread,
     GlobalCashFlow,
@@ -66,6 +67,7 @@ from .models import (
     PeerComparison,
     PolicyException,
     Ratio,
+    RelatedEntity,
     RetrievedPassage,
     RiskFlag,
     RiskRatingProposal,
@@ -267,7 +269,7 @@ class CreditMemoService:
         #      borrowing entity alone answers a narrower one. Both are arithmetic over
         #      confirmed figures, so a consolidation and a stress test are as replayable
         #      as the ratio underneath them.
-        global_cash_flow = self._consolidate(memo_input)
+        global_cash_flow = self._consolidate(memo_input, spread)
         scenarios = self._stress(memo_input, spread, global_cash_flow, covenants)
 
         # 11) Assemble the memo. The draft's confidence, caveats and questions were
@@ -513,18 +515,46 @@ class CreditMemoService:
         except Exception:  # noqa: BLE001 - a reconciliation must never fail a memo
             return ()
 
-    def _consolidate(self, memo_input: MemoInput) -> GlobalCashFlow | None:
+    def _consolidate(
+        self, memo_input: MemoInput, borrower_spread: FinancialSpread | None
+    ) -> GlobalCashFlow | None:
         """The group's combined position, or None when there is no group to combine.
 
         Absent rather than a one-entity consolidation: a "global cash flow" listing only
-        the borrower asserts that the borrower is the whole group, which is a stronger
+        the borrower asserts that the borrower IS the whole group, which is a stronger
         claim than the analyst made by uploading one set of statements.
+
+        The borrower is added to the group here rather than left to the caller. A
+        consolidation that omitted it would total the parent and the affiliates and call
+        the result the group's cash — a figure that is wrong by the whole of the operating
+        company, and wrong in the direction that looks conservative.
         """
         if not memo_input.related_entities or not memo_input.entity_spreads:
             return None
+
+        borrower_id = memo_input.borrower.id
+        entities = memo_input.related_entities
+        spreads = dict(memo_input.entity_spreads)
+        # Only when the caller has not already said which entity is the borrower. A caller
+        # who declared one has named the borrowing entity themselves, possibly under an id
+        # of their own, and adding a second would put the same company in the group twice.
+        declared_borrower = any(e.role is EntityRole.BORROWER for e in entities)
+        if not declared_borrower and not any(e.id == borrower_id for e in entities):
+            entities = (
+                RelatedEntity(
+                    id=borrower_id,
+                    name=memo_input.borrower.name or borrower_id,
+                    role=EntityRole.BORROWER,
+                    jurisdiction=memo_input.borrower.jurisdiction,
+                ),
+                *entities,
+            )
+        if not declared_borrower and borrower_id not in spreads and borrower_spread is not None:
+            spreads[borrower_id] = borrower_spread
+
         unconfirmed = sorted(
             entity_id
-            for entity_id, spread in memo_input.entity_spreads.items()
+            for entity_id, spread in spreads.items()
             if not self._spreads.is_confirmed(spread)
         )
         if unconfirmed:
@@ -533,10 +563,10 @@ class CreditMemoService:
                 f"unconfirmed: {', '.join(unconfirmed)}"
             )
         return self._group.consolidate(
-            memo_input.related_entities,
-            memo_input.entity_spreads,
+            entities,
+            spreads,
             eliminations=memo_input.eliminations,
-            currency=next(iter(memo_input.entity_spreads.values())).currency,
+            currency=next(iter(spreads.values())).currency,
         )
 
     def _stress(

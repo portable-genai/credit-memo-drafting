@@ -36,6 +36,7 @@ class OnPremAnalysisBundleAdapter:
         borrower_id: str,
         acl_tags: tuple[str, ...],
         created_by: str = "",
+        borrower_name: str = "",
     ) -> AnalysisManifest:
         raise NotImplementedError(_MESSAGE)
 

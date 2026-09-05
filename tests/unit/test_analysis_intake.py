@@ -74,6 +74,27 @@ def test_the_manifest_names_every_file_and_nothing_else(bundle) -> None:
     assert statements.sha256
 
 
+def test_the_manifest_keeps_the_name_the_analyst_wrote(bundle) -> None:
+    """Display only, and it earns its place.
+
+    Without it the memo names the borrower by its slug in its own group table — a small
+    thing that makes the whole document read as generated. The ID still governs the ACL
+    and every entitlement check, so a display name can never point a build at a different
+    borrower.
+    """
+    manifest = bundle.create(
+        "an-name",
+        "acme",
+        TENANT,
+        created_by="analyst@bank.example",
+        borrower_name="Acme Manufacturing Pte Ltd (FICTIONAL)",
+    )
+    assert manifest.borrower_name == "Acme Manufacturing Pte Ltd (FICTIONAL)"
+    assert bundle.manifest("an-name", TENANT).borrower_name == manifest.borrower_name
+    # Absent is the honest default for an analysis opened without one.
+    assert bundle.create("an-plain", "acme", TENANT).borrower_name == ""
+
+
 def test_the_same_file_twice_is_one_document(bundle) -> None:
     """Re-uploading the pack after adding one statement must not duplicate the rest."""
     _open(bundle)
