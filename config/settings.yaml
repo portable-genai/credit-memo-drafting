@@ -185,9 +185,12 @@ adapters:
   # legal name outside the deploy region -- weaker than the peer leg, which sends no
   # borrower identity at all -- so it is off unless CREDIT_MEMO_ENTITY_RESOLUTION_ENABLED
   # is set, and the deviation is recorded rather than inherited.
+  # The platform profile asks the sibling that already resolves ownership rather than a
+  # public register: cdd-sow-research computes every percentage as the product of cited
+  # registry hops, and a second resolver here would be a second answer to one question.
   entity_resolution:
     gcp: credit_memo.adapters.live.gleif_entity_resolution:GleifEntityResolutionAdapter
-    platform: credit_memo.adapters.live.gleif_entity_resolution:GleifEntityResolutionAdapter
+    platform: credit_memo.adapters.platform.cdd_entity_resolution:CddUboEntityResolutionAdapter
     local: credit_memo.adapters.local.entity_resolution:LocalFixtureEntityResolutionAdapter
     live: credit_memo.adapters.live.gleif_entity_resolution:GleifEntityResolutionAdapter
     onprem: credit_memo.adapters.onprem.entity_resolution:OnPremEntityResolutionAdapter

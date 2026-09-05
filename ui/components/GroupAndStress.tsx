@@ -169,7 +169,10 @@ export function GroupRoster({ memo }: { memo: CreditMemo }) {
             {e.role.replace(/_/g, " ")}
           </span>
           {e.ownership_pct == null ? null : (
-            <span className="text-xs text-ink-500"> · {e.ownership_pct}% held</span>
+            <span className="text-xs text-ink-500">
+              {" · "}
+              {e.ownership_pct}% of it held by its parent
+            </span>
           )}
         </li>
       ))}
