@@ -52,7 +52,7 @@ systems, do not rebuild these in a fork:
 | Governed RAG / ACL-aware knowledge base with citations | **Hrz2** `enterprise-knowledge-base` | ingests filings into it, retrieves grounded passages from it |
 | Agent registry, versioning, identity, entitlements | **Hrz3** `agent-registry` | publishes its A2A AgentCard for discovery |
 | AI-quality / eval / model-risk promotion gate | **Hrz4** `model-quality-gate` | its eval metrics gate promotion; the offline gate mirrors it |
-| Observability + immutable WORM prompt/response audit | **Hrz5** `agent-observability` | writes audit events to it; traces spans through it |
+| Observability + redacted prompt/response audit | **Hrz5** `agent-observability` | writes audit events to it; traces spans through it |
 | Maker-checker review console for escalations | **Hrz7** (review console, rule R8) | routes a `requires_human_review` memo to it via `review-kit` |
 | Regulatory Q&A / lending control checklists | **Rsk1** `compliance-advisory` | consumes it for regulatory compliance checks |
 | On-prem, CPU-only DLP scrub before egress | **Rsk6** `onprem-dlp` | the sovereign-DLP option behind the redaction port |

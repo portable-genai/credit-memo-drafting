@@ -52,11 +52,11 @@ flowchart LR
   ports --> peers["PeerDataPort (BigQuery)"]
   ports --> llm["LLMPort (Gemini)"]
   ports --> obs["Audit + Tracer (Hrz5)"]
-  extract --> docai["Document AI"]
+  extract --> parse["pypdf, in-process"]
   kb --> a2["Hrz2 Enterprise KB"]
   peers --> bq["BigQuery peer dataset"]
   llm --> gemini["Gemini 3.5 Flash"]
-  obs --> worm["Cloud Logging WORM bucket"]
+  obs --> logs["Cloud Logging"]
 ```
 
 ## The build pipeline (R1 full safety, audited)

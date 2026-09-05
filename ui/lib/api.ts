@@ -9,6 +9,7 @@
  */
 
 import type {
+  AnalysisManifest,
   BlockedEnvelope,
   Borrower,
   Covenant,
@@ -166,6 +167,62 @@ export async function flagRisks(
   return (obj.risk_flags as RiskFlag[]) ?? [];
 }
 
+/**
+ * Open an analysis: upload the credit file and get back the manifest of what was
+ * received, including the date its evidence is deleted.
+ *
+ * The files go up per analysis rather than into a library. That is what makes the user
+ * responsible for freshness and able to see exactly what fed the memo, and it is why
+ * every upload carries a `declared_as_of` the uploader states rather than one the
+ * service guesses.
+ */
+export async function openAnalysis(
+  borrowerId: string,
+  files: { file: File; docType: string; asOf: string }[],
+  signal?: AbortSignal,
+): Promise<AnalysisManifest> {
+  const form = new FormData();
+  form.append("borrower_id", borrowerId);
+  for (const entry of files) form.append("files", entry.file);
+  form.append("doc_types", files.map((f) => f.docType).join(","));
+  form.append("declared_as_of", files.map((f) => f.asOf).join(","));
+  const headers: Record<string, string> = {};
+  const persona = getDevPersona();
+  if (persona) headers["X-Dev-Persona"] = persona;
+  const res = await fetch(`${API_BASE}/v1/analyses`, {
+    method: "POST",
+    headers,
+    body: form,
+    signal,
+  });
+  return (await parseJsonOrThrow(res)) as AnalysisManifest;
+}
+
+/** Build the memo from evidence already in the analysis. */
+export async function buildAnalysisMemo(
+  analysisId: string,
+  body: Pick<MemoRequestBody, "request" | "spreads">,
+  signal?: AbortSignal,
+): Promise<CreditMemo | BlockedEnvelope> {
+  const res = await fetch(`${API_BASE}/v1/analyses/${encodeURIComponent(analysisId)}/build`, {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify(body),
+    signal,
+  });
+  return (await parseJsonOrThrow(res)) as CreditMemo | BlockedEnvelope;
+}
+
+/** Where one uploaded file can be read back, so a citation can open its page. */
+export function analysisDocumentUrl(
+  analysisId: string,
+  documentId: string,
+  page?: number | null,
+): string {
+  const base = `${API_BASE}/v1/analyses/${encodeURIComponent(analysisId)}/documents/${encodeURIComponent(documentId)}`;
+  return page ? `${base}#page=${page}` : base;
+}
+
 export async function healthz(signal?: AbortSignal): Promise<HealthStatus> {
   const res = await fetch(`${API_BASE}/healthz`, { method: "GET", signal });
   return (await parseJsonOrThrow(res)) as HealthStatus;
@@ -216,6 +273,9 @@ export async function uploadBorrowerDocument(
 }
 
 export const api = {
+  openAnalysis,
+  buildAnalysisMemo,
+  analysisDocumentUrl,
   buildCreditMemo,
   extractCovenants,
   flagRisks,

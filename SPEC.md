@@ -119,13 +119,14 @@ Peer data is internal (BigQuery): no platform HTTP adapter.
 
 | Port | gcp | local | platform | onprem |
 | --- | --- | --- | --- | --- |
-| DocumentExtractionPort | Document AI | local parser (pypdf/text) | n/a | stub |
-| KnowledgeBaseClientPort | Agent Search | SQLite FTS5 (BM25) | Hrz2 `/v1/*` | stub |
+| DocumentExtractionPort | local parser (pypdf/text) | local parser (pypdf/text) | n/a | stub |
+| KnowledgeBaseClientPort | per-request SQLite FTS5 | SQLite FTS5 (BM25) | Hrz2 `/v1/*` | stub |
+| AnalysisBundlePort | regional CMEK bucket, 15-day lifecycle | directory | regional CMEK bucket | stub |
 | PeerDataPort | BigQuery | in-process peer table | n/a | stub |
 | LLMPort | Gemini | deterministic schema-driven | n/a | stub |
 | GuardrailPort | Model Armor | heuristic injection screen | Hrz1 | stub |
 | PIIRedactionPort | DLP | regex de-identify | Hrz1 | stub |
-| AuditSinkPort | Cloud Logging WORM | append-only SQLite | Hrz5 | stub |
+| AuditSinkPort | Cloud Logging | append-only SQLite | Hrz5 | stub |
 | ObservabilityTracerPort | Cloud Trace | no-op spans | n/a | stub |
 | EvaluationGatePort | Gen AI eval | in-repo offline gate | Hrz4 | stub |
 | AgentRegistryPort | A2A card | in-process registry | Hrz3 | stub |
@@ -133,8 +134,8 @@ Peer data is internal (BigQuery): no platform HTTP adapter.
 
 Under `local`, the platform-client ports (knowledge base, guardrail, redaction, audit,
 eval, registry) use in-process implementations, not HTTP to sibling services: a laptop
-runs one app, not the whole platform. There is no Google emulator for Agent Search,
-Gemini, Model Armor, DLP, Document AI or BigQuery, so those local adapters are
+runs one app, not the whole platform. There is no Google emulator for
+Gemini, Model Armor, DLP or BigQuery, so those local adapters are
 unconditionally SDK-free; the registry can opt into the Firestore emulator.
 
 ## 8. Eval gate (Hrz4 / P-08)

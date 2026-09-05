@@ -165,6 +165,9 @@ class CreditMemoService:
         # 3) Extract + ingest each uploaded file into the governed RAG store.
         manifest = self._manifest(memo_input, (*acl_tags, *principals))
         self._ingest_all(memo_input, manifest, acl_tags, (*acl_tags, *principals))
+        # Re-read: extraction discovered the page counts, and the manifest the memo
+        # carries should state them rather than the zeros it was opened with.
+        manifest = self._manifest(memo_input, (*acl_tags, *principals)) or manifest
 
         # 4) Retrieve grounding passages from A2. Empty -> hard error (never ungrounded).
         #    Scope the ACL to the borrower + tenant tags plus the verified user's entitlement
@@ -282,7 +285,7 @@ class CreditMemoService:
         """
         if manifest is not None:
             for stored in manifest.documents:
-                self._extract_and_ingest(
+                pages = self._extract_and_ingest(
                     Filing(
                         id=stored.id,
                         doc_type=stored.doc_type,
@@ -294,9 +297,21 @@ class CreditMemoService:
                     content=self._document_bytes(memo_input.analysis_id, stored.id, acl_principals),
                     mime_type=stored.mime_type,
                 )
+                self._record_pages(memo_input.analysis_id, stored.id, pages)
             return
         for document in memo_input.documents:
             self._extract_and_ingest(document, acl_tags)
+
+    def _record_pages(self, analysis_id: str, document_id: str, pages: int) -> None:
+        """Write back the page count extraction found, so the manifest can state it.
+
+        Best-effort: a manifest that says 0 pages is a cosmetic loss, and failing a memo
+        over it would not be.
+        """
+        if self._analysis_bundle is None or not pages:
+            return
+        with contextlib.suppress(Exception):
+            self._analysis_bundle.set_pages(analysis_id, document_id, pages)
 
     def _document_bytes(
         self, analysis_id: str, document_id: str, acl_principals: tuple[str, ...]
@@ -316,8 +331,11 @@ class CreditMemoService:
         acl_tags: tuple[str, ...],
         content: bytes = b"",
         mime_type: str = "",
-    ) -> None:
+    ) -> int:
         """Extract a document and ingest it into the KB; best-effort per document.
+
+        Returns the page count extraction found, so the caller can record it on the
+        manifest.
 
         ``content`` was ``b""`` at every call site before Wave 1, so the extraction port
         was handed a filing and no bytes and could only ever return nothing. Every
@@ -337,7 +355,8 @@ class CreditMemoService:
             payload = text.encode("utf-8") if text else content
             self._knowledge_base.ingest(document, payload, acl_tags)
         except Exception:  # noqa: BLE001 - ingestion is best-effort; retrieval is the gate
-            return
+            return 0
+        return int(getattr(extract, "pages", 0) or 0)
 
     # ------------------------------------------------------------------ #
     # Helpers

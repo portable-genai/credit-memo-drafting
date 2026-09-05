@@ -378,6 +378,18 @@ async def upload_borrower_document(
     )
 
 
+def _header_filename(name: str) -> str:
+    """A filename safe to put in a header, with its extension intact.
+
+    ``_slug`` was the wrong tool here: it lowercases and replaces every non-alphanumeric
+    run with a hyphen, so ``acme-fs.txt`` became ``acme-fs-txt`` and the browser lost the
+    only hint it had about how to display the file. This strips the characters that would
+    break the header (quotes, control characters, path separators) and keeps the rest.
+    """
+    cleaned = "".join(c for c in name if c.isprintable() and c not in '"\\/\r\n').strip()
+    return cleaned[:120] or "document"
+
+
 def _slug(text: str) -> str:
     import re as _re
 
@@ -437,8 +449,14 @@ async def open_analysis(
 
     kinds = [k.strip() for k in doc_types.split(",")] if doc_types else []
     as_of = [d.strip() for d in declared_as_of.split(",")] if declared_as_of else []
-    acl_tags = entitlements.borrower_acl(borrower_id, principal.tenant)
-    acl_principals = (*acl_tags, *principal.principals)
+    # The bundle is tagged by TENANT, not by borrower. A borrower tag here would be
+    # unreadable: a later request knows the analysis id but not yet whose analysis it is,
+    # so it could not hold the tag needed to read the manifest that would tell it. The
+    # analysis id is an unguessable capability, the tenant tag stops it crossing a bank,
+    # and borrower entitlement is checked explicitly on every route against the borrower
+    # the manifest actually names.
+    acl_tags = _tenant_tags(principal)
+    acl_principals = _analysis_principals(principal)
 
     analysis_id = _new_analysis_id()
     bundle = container.analysis_bundle
@@ -517,16 +535,21 @@ def read_analysis_document(
     container = deps.get_container()
     principals = _analysis_principals(principal)
     try:
-        manifest = container.analysis_bundle.manifest(analysis_id, principals)
+        manifest = _read_analysis(analysis_id, principal)
         content = container.analysis_bundle.get_document(analysis_id, document_id, principals)
     except AnalysisNotFoundError as exc:
         return _analysis_gone(exc)
+    except BorrowerAccessDeniedError as exc:
+        return _denied_response(exc)
     record = next((d for d in manifest.documents if d.id == document_id), None)
-    filename = record.filename if record else document_id
     return Response(
         content=content,
         media_type=(record.mime_type if record else "") or "application/octet-stream",
-        headers={"Content-Disposition": f'inline; filename="{_slug(filename)}"'},
+        headers={
+            "Content-Disposition": (
+                f'inline; filename="{_header_filename(record.filename if record else document_id)}"'
+            )
+        },
     )
 
 
@@ -555,12 +578,9 @@ def build_analysis_memo(
     container = deps.get_container()
     principals = _analysis_principals(principal)
     try:
-        manifest = container.analysis_bundle.manifest(analysis_id, principals)
+        manifest = _read_analysis(analysis_id, principal)
     except AnalysisNotFoundError as exc:
         return _analysis_gone(exc)
-
-    try:
-        entitlements.borrower_scope(principal, manifest.borrower_id)
     except BorrowerAccessDeniedError as exc:
         return _denied_response(exc)
 
@@ -598,12 +618,34 @@ def build_analysis_memo(
     return response
 
 
+def _tenant_tags(principal: Any) -> tuple[str, ...]:
+    """The tags an analysis bundle carries. Empty for a single-tenant deployment."""
+    return (f"tenant:{principal.tenant}",) if principal.tenant else ()
+
+
 def _analysis_principals(principal: Any) -> tuple[str, ...]:
-    return (
-        (*principal.principals, f"tenant:{principal.tenant}")
-        if principal.tenant
-        else tuple(principal.principals)
+    """What this caller holds when reading a bundle: their principals plus their tenant."""
+    return (*principal.principals, *_tenant_tags(principal))
+
+
+def _read_analysis(analysis_id: str, principal: Any) -> Any:
+    """The manifest, after checking this caller may read THIS borrower.
+
+    Two checks, in this order and not the other. The tenant tag on the bundle decides
+    whether the caller can see the analysis at all; the entitlement check then decides
+    whether they may read the borrower it turns out to be about. In this order a caller
+    from another bank learns nothing, while a caller from the right bank who is not
+    entitled to this borrower gets an honest 403 rather than a confusing 404.
+
+    The bundle is tagged by tenant rather than by borrower for the same reason. A borrower
+    tag would be unreadable: a request knows the analysis id but not yet whose analysis it
+    is, so it could not hold the tag needed to read the manifest that would tell it.
+    """
+    manifest = deps.get_container().analysis_bundle.manifest(
+        analysis_id, _analysis_principals(principal)
     )
+    entitlements.borrower_scope(principal, manifest.borrower_id)
+    return manifest
 
 
 def _analysis_gone(exc: AnalysisNotFoundError) -> JSONResponse:

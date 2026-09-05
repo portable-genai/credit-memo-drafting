@@ -2,6 +2,7 @@ import type { CreditMemo } from "@/lib/types";
 import { CitationList } from "./CitationCard";
 import { CovenantTable } from "./CovenantTable";
 import { PeerComparisonView } from "./PeerComparisonView";
+import { ManifestSummary } from "./DocumentPanel";
 import { ProvenanceLegend, ProvenanceTag } from "./Provenance";
 import { RatioTable } from "./RatioTable";
 import { RiskFlagList } from "./RiskFlagList";
@@ -166,6 +167,15 @@ export function MemoView({ memo }: { memo: CreditMemo }) {
       <Section title="Citations">
         <CitationList citations={memo.citations} />
       </Section>
+
+      {/* Last, and deliberately not least: what this was assessed on, and until when the
+          evidence can be reopened. A reader who cannot see the inputs is being asked to
+          trust the output. */}
+      {memo.manifest ? (
+        <Section title="What this was assessed on">
+          <ManifestSummary manifest={memo.manifest} />
+        </Section>
+      ) : null}
     </div>
   );
 }

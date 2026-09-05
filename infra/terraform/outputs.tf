@@ -13,17 +13,6 @@ output "region" {
   value       = var.region
 }
 
-# ------------------------------ Document AI --------------------------------- #
-output "documentai_processor_id" {
-  description = "Document AI processor id (settings.yaml document_ai.processor_id)."
-  value       = google_document_ai_processor.credit_memo.id
-}
-
-output "documentai_location" {
-  description = "Confirms Document AI residency: must match the deployed region (fail-fast)."
-  value       = google_document_ai_processor.credit_memo.location
-}
-
 # ------------------------------- BigQuery ----------------------------------- #
 output "peer_dataset" {
   description = "BigQuery peer-financials dataset id (settings.yaml peer_data.dataset)."
@@ -42,15 +31,6 @@ output "kms_key" {
 }
 
 # ------------------------------- WORM logging ------------------------------- #
-output "log_bucket" {
-  description = "Locked WORM audit log bucket id (settings.yaml logging.bucket)."
-  value       = google_logging_project_bucket_config.worm_audit.id
-}
-
-output "audit_sink_writer_identity" {
-  description = "Sink writer identity (grant it bucket access if cross-project)."
-  value       = google_logging_project_sink.audit_to_worm.writer_identity
-}
 
 # ------------------------- Model Armor / DLP -------------------------------- #
 output "model_armor_template" {
@@ -82,4 +62,18 @@ output "agent_runtime_service_account" {
 output "agent_staging_bucket" {
   description = "Agent Runtime staging bucket for the SDK-based deploy."
   value       = google_storage_bucket.agent_staging.name
+}
+
+# --------------------------- Analysis bundles ------------------------------- #
+output "analysis_bundle_bucket" {
+  description = "Bucket holding one analysis at a time (settings.yaml analysis_bundle.bucket)."
+  value       = google_storage_bucket.analysis_bundles.name
+}
+
+output "analysis_retention_days" {
+  description = <<-EOT
+    The window the console promises the user, enforced by the bucket's lifecycle rule.
+    Must equal analysis_bundle.retention_days in config/settings.yaml.
+  EOT
+  value       = var.analysis_retention_days
 }

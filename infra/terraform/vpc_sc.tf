@@ -23,8 +23,6 @@
 locals {
   perimeter_restricted_services = [
     "aiplatform.googleapis.com",
-    "documentai.googleapis.com",
-    "discoveryengine.googleapis.com",
     "bigquery.googleapis.com",
     "dlp.googleapis.com",
     "modelarmor.googleapis.com",

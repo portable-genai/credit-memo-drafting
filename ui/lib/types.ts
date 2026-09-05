@@ -34,9 +34,25 @@ export type Provenance =
 
 export type DocType =
   | "financial_statement"
+  | "management_accounts"
   | "filing"
+  | "tax_return"
+  | "bank_statement"
+  | "debt_schedule"
+  | "ar_ap_aging"
+  | "borrowing_base_certificate"
+  | "rent_roll"
+  | "operating_statement"
   | "loan_agreement"
   | "covenant_certificate"
+  | "valuation"
+  | "policy_pack"
+  | "prior_memo"
+  | "rm_note"
+  | "exposure_snapshot"
+  | "projections"
+  | "registry_document"
+  | "analyst_spread"
   | "other";
 
 export interface FinancialMetric {
@@ -270,6 +286,32 @@ export interface PeerComparison {
 // --------------------------------------------------------------------------- //
 // The credit memo (the bundled top-level artifact)
 // --------------------------------------------------------------------------- //
+export interface StoredDocument {
+  id: string;
+  filename: string;
+  doc_type: DocType;
+  mime_type: string;
+  size_bytes: number;
+  sha256: string;
+  pages: number;
+  /** The uploader's own statement of how current this document is; never inferred. */
+  declared_as_of: string;
+  uploaded_at: string;
+  uploaded_by: string;
+  third_party_sourced: boolean;
+}
+
+export interface AnalysisManifest {
+  analysis_id: string;
+  borrower_id: string;
+  documents: StoredDocument[];
+  created_at: string;
+  /** When the evidence behind this analysis is deleted. Printed, not buried. */
+  expires_at: string | null;
+  created_by: string;
+  retention_note: string;
+}
+
 export interface CreditMemo {
   borrower: Borrower;
   summary: string;
@@ -288,6 +330,8 @@ export interface CreditMemo {
   confidence: number;
   caveats: string[];
   questions_for_client: string[];
+  /** Exactly which uploaded files this memo was assessed on. */
+  manifest: AnalysisManifest | null;
 }
 
 // --------------------------------------------------------------------------- //

@@ -16,8 +16,6 @@
 locals {
   required_services = [
     "aiplatform.googleapis.com",           # Gemini Enterprise Agent Platform / Agent Runtime / evals
-    "documentai.googleapis.com",           # Document AI (filing extraction)
-    "discoveryengine.googleapis.com",      # Agent Search (the A2 governed RAG store backend)
     "bigquery.googleapis.com",             # BigQuery (peer-financials dataset)
     "dlp.googleapis.com",                  # Sensitive Data Protection / DLP (PII redaction, R1)
     "modelarmor.googleapis.com",           # Model Armor guardrail (R1)
