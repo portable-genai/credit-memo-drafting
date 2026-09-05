@@ -825,6 +825,201 @@ class RiskRatingProposal:
 
 
 # --------------------------------------------------------------------------- #
+# 0e. The group: who else stands behind this, and whose cash actually services it
+# --------------------------------------------------------------------------- #
+class EntityRole(StrEnum):
+    """Why an entity is in this analysis at all."""
+
+    BORROWER = "borrower"
+    PARENT = "parent"
+    SUBSIDIARY = "subsidiary"
+    AFFILIATE = "affiliate"  # common ownership, no control either way
+    GUARANTOR_CORPORATE = "guarantor_corporate"
+    GUARANTOR_PERSONAL = "guarantor_personal"
+
+
+@dataclass(frozen=True, slots=True)
+class ExternalIds:
+    """Public identifiers, so the same company is the same company across sources.
+
+    All four are public registers. Nothing here is the bank's own customer number: those
+    identify a relationship rather than a company, do not travel between institutions,
+    and have no business in a record that may be exported.
+    """
+
+    uen: str = ""  # Singapore
+    lei: str = ""  # Legal Entity Identifier, GLEIF, CC0
+    cik: str = ""  # SEC EDGAR
+    company_number: str = ""  # Companies House and equivalents
+
+
+@dataclass(frozen=True, slots=True)
+class RelatedEntity:
+    """Another company or person in this borrower's group.
+
+    Assembled from what the user uploaded into THIS analysis, not from a standing
+    ownership graph: this service holds nothing between analyses, so the group is
+    whatever the analyst brought. That is visible rather than hidden — the manifest
+    lists the files, so a reader can see which entities were actually covered and infer
+    which were not.
+
+    ``ownership_pct`` is the stake the PARENT holds in this entity, where stated. It is
+    not inferred from anything: a consolidated statement does not reveal a shareholding,
+    and guessing one would put a control assertion in the memo that nobody made.
+    """
+
+    id: str
+    name: str
+    role: EntityRole = EntityRole.AFFILIATE
+    ownership_pct: float | None = None
+    jurisdiction: str = ""
+    external_ids: ExternalIds = field(default_factory=ExternalIds)
+    provenance: Provenance = Provenance.USER_ENTERED
+
+
+@dataclass(frozen=True, slots=True)
+class Guarantor:
+    """Someone who has agreed to stand behind the facility, and how far.
+
+    ``support_amount`` is what the guarantee is worth on paper. Whether it is worth that
+    in practice is the analyst's judgement and belongs in the risk section, which is why
+    ``reliance`` is prose rather than a number: a personal guarantee from someone whose
+    only asset is shares in the borrower supports nothing, and no field can express that
+    as a figure.
+
+    ``limited`` matters more than it looks. An unlimited guarantee and a capped one are
+    different instruments, and a memo that shows only an amount cannot tell them apart.
+    """
+
+    entity_id: str
+    name: str
+    is_personal: bool = False
+    support_amount: float | None = None
+    currency: str = "SGD"
+    limited: bool = True
+    reliance: str = ""  # the analyst's view of what it is actually worth
+    provenance: Provenance = Provenance.USER_ENTERED
+
+
+@dataclass(frozen=True, slots=True)
+class Elimination:
+    """One intercompany amount removed when consolidating.
+
+    Shown rather than netted silently. A group whose revenue halves on consolidation is
+    telling the reader something important about how it trades with itself, and a
+    consolidation that hides the eliminations hides that.
+    """
+
+    code: LineItemCode
+    period: str
+    amount: float
+    between: str = ""  # "opco -> holdco", as the analyst described it
+    reason: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class EntityContribution:
+    """What one entity brought to the consolidated figure for one line."""
+
+    entity_id: str
+    entity_name: str
+    role: EntityRole
+    value: float
+
+
+@dataclass(frozen=True, slots=True)
+class GlobalCashFlowLine:
+    """One consolidated line, with every entity that contributed to it."""
+
+    code: LineItemCode
+    period: str
+    total: float
+    contributions: tuple[EntityContribution, ...] = ()
+    eliminations: tuple[Elimination, ...] = ()
+    provenance: Provenance = Provenance.COMPUTED
+
+    def __post_init__(self) -> None:
+        if self.provenance is not Provenance.COMPUTED:
+            raise ValueError(
+                "a consolidated line is the sum of confirmed figures, not an assertion "
+                f"about them; refusing provenance {self.provenance.value!r}"
+            )
+
+    @property
+    def eliminated(self) -> float:
+        return sum(e.amount for e in self.eliminations)
+
+
+@dataclass(frozen=True, slots=True)
+class GlobalCashFlow:
+    """The group's combined position, and what it is missing.
+
+    ``entities_without_figures`` is the field that keeps this honest. A global cash flow
+    is only as complete as the statements behind it, and one that silently omits the
+    guarantor whose accounts nobody uploaded reads as though that guarantor contributes
+    nothing — which is a stronger claim than "we did not look".
+    """
+
+    periods: tuple[str, ...] = ()
+    lines: tuple[GlobalCashFlowLine, ...] = ()
+    entities: tuple[RelatedEntity, ...] = ()
+    entities_without_figures: tuple[str, ...] = ()
+    currency: str = "SGD"
+
+    def value(self, code: LineItemCode, period: str) -> float | None:
+        for line in self.lines:
+            if line.code is code and line.period == period:
+                return line.total
+        return None
+
+    @property
+    def complete(self) -> bool:
+        """Whether every entity in the group contributed figures."""
+        return not self.entities_without_figures
+
+
+# --------------------------------------------------------------------------- #
+# 0f. Stress: what happens if it goes wrong
+# --------------------------------------------------------------------------- #
+@dataclass(frozen=True, slots=True)
+class Scenario:
+    """One shock, expressed as multipliers on the lines it moves.
+
+    The scenario set is the bank's, uploaded with the policy pack. Nothing here decides
+    that a 200 basis point rate rise is the right test, because that is a risk-appetite
+    question and this service does not have an appetite.
+    """
+
+    id: str
+    name: str
+    description: str = ""
+    #: line code -> multiplier. 0.85 on EBITDA is a 15% decline.
+    shocks: tuple[tuple[LineItemCode, float], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ScenarioResult:
+    """What a ratio becomes under a shock, and whether it still passes.
+
+    ``breaks_at`` answers the question a committee actually asks, which is not "what is
+    the DSCR under a 15% decline" but "how far can this fall before it breaches". A
+    number they can hold against their own view of the sector is worth more than a
+    scenario somebody else chose.
+    """
+
+    scenario_id: str
+    scenario_name: str
+    formula_id: str
+    period: str
+    base_value: float | None
+    stressed_value: float | None
+    threshold: float | None = None
+    passes: bool | None = None
+    breaks_at: float | None = None  # the multiplier at which it first fails
+    provenance: Provenance = Provenance.COMPUTED
+
+
+# --------------------------------------------------------------------------- #
 # 1. Covenants
 # --------------------------------------------------------------------------- #
 class CovenantType(StrEnum):
@@ -1263,6 +1458,12 @@ class CreditMemo:
     authorship: dict[str, str] = field(default_factory=dict)
     #: For a renewal: what moved since the memo before it.
     renewal_delta: RenewalDelta | None = None
+    #: The group, when the analyst uploaded more than one entity's figures.
+    related_entities: tuple[RelatedEntity, ...] = ()
+    guarantors: tuple[Guarantor, ...] = ()
+    global_cash_flow: GlobalCashFlow | None = None
+    #: What the ratios become under the bank's own scenario set.
+    scenarios: tuple[ScenarioResult, ...] = ()
     #: Exactly which uploaded files this memo was assessed on, and when they expire.
     manifest: AnalysisManifest | None = None
     #: The synthesis service's self-critique. Both were computed and then dropped on the
