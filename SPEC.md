@@ -133,7 +133,7 @@ carries its own documents in the body.
 
 | Method | Path | Body -> Response |
 | --- | --- | --- |
-| POST | `/v1/analyses` | multipart `{borrower_id, files[], doc_types, declared_as_of}` -> AnalysisManifest |
+| POST | `/v1/analyses` | multipart `{borrower_id, files[], doc_types, declared_as_of, borrower_name?}` -> AnalysisManifest |
 | GET | `/v1/analyses/{id}` | -> AnalysisManifest (what was given, and until when) |
 | GET | `/v1/analyses/{id}/documents/{doc}` | -> the file inline, so `#page=N` opens the cited page |
 | DELETE | `/v1/analyses/{id}` | -> 204, without waiting for the retention window |
