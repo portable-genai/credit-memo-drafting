@@ -1,4 +1,4 @@
-# Doc2 Credit-Memo / Underwriting Assistant
+# `credit-memo-drafting`: Credit-Memo / Underwriting Assistant
 
 **Industries:** Banking & commercial lending, Fintech / lending, Private credit, Insurance, Commercial real estate
 
@@ -13,14 +13,14 @@ Built ports-and-adapters (hexagonal) on the **Gemini Enterprise Agent Platform**
 The same domain core runs against the managed GCP stack, a fully offline local stack, the
 shared platform services, or an on-premise stack, selected by one `profile` switch.
 
-- Catalog id: **Doc2** · group `doc` · priority **P1** · buyer: Credit / Commercial Banking
+- Catalog identity: `credit-memo-drafting` · group `doc` · priority **P1** · buyer: Credit / Commercial Banking
 - Python package: `credit_memo` · CLI: `credit-memo` · service port: `8093`
 - Profile env var: `CREDIT_MEMO_PROFILE` (`gcp` | `local` | `platform` | `onprem`)
   - `gcp`: Google Cloud managed services (lazy SDK imports).
   - `local`: a WORKING offline stack (SQLite FTS5 retrieval, a deterministic LLM, regex
     DLP, a heuristic guardrail, append-only local audit). SDK-free, no API key, no
     emulator. The dev / test default; runs the whole memo pipeline end to end.
-  - `platform`: thin HTTP clients to the shared Hrz1/Hrz2/Hrz3/Hrz4/Hrz5 services.
+  - `platform`: thin HTTP clients to the shared `agent-guardrail-gateway` / `enterprise-knowledge-base` / `agent-registry` / `model-quality-gate` / `agent-observability` services.
   - `onprem`: fail-fast Google Distributed Cloud migration placeholders.
 
 ## What it produces (four cited artifacts)
@@ -41,19 +41,19 @@ shared platform services, or an on-premise stack, selected by one `profile` swit
 flowchart LR
   officer["Credit officer"] --> api["FastAPI + CLI + ADK agent"]
   api --> svc["CreditMemoService (domain core)"]
-  subgraph safety["Hrz1 safety pipeline (rule R1)"]
+  subgraph safety["`agent-guardrail-gateway` safety pipeline (rule R1)"]
     redact["PII redaction"]
     guard["Guardrail screen"]
   end
   svc --> safety
   svc --> ports["Ports (Protocols)"]
   ports --> extract["DocumentExtractionPort"]
-  ports --> kb["KnowledgeBaseClientPort (Hrz2)"]
+  ports --> kb["KnowledgeBaseClientPort (`enterprise-knowledge-base`)"]
   ports --> peers["PeerDataPort (SEC EDGAR)"]
   ports --> llm["LLMPort (Gemini)"]
-  ports --> obs["Audit + Tracer (Hrz5)"]
+  ports --> obs["Audit + Tracer (`agent-observability`)"]
   extract --> parse["pypdf, in-process"]
-  kb --> a2["Hrz2 Enterprise KB"]
+  kb --> a2["`enterprise-knowledge-base`"]
   peers --> bq["SEC EDGAR company facts"]
   llm --> gemini["Gemini 3.5 Flash"]
   obs --> logs["Cloud Logging"]
@@ -66,25 +66,25 @@ sequenceDiagram
   participant O as Officer
   participant API as API (verifies identity)
   participant S as CreditMemoService
-  participant Hrz1 as Guardrail plus redaction
-  participant Hrz2 as Enterprise KB
+  participant Safety as `agent-guardrail-gateway` guardrail plus redaction
+  participant KB as `enterprise-knowledge-base`
   participant LLM as Gemini
   participant BQ as Peer data
-  participant Hrz5 as Audit sink
+  participant Audit as `agent-observability`
   O->>API: POST borrower, documents (no actor)
   API->>S: build(memo_input, actor, principals) from verified Principal
-  S->>Hrz1: redact(case inputs)
-  S->>Hrz1: screen INPUT
-  Hrz1-->>S: allowed
-  S->>Hrz2: ingest filings then search (borrower ACL)
-  Hrz2-->>S: cited passages
+  S->>Safety: redact(case inputs)
+  S->>Safety: screen INPUT
+  Safety-->>S: allowed
+  S->>KB: ingest filings then search (borrower ACL)
+  KB-->>S: cited passages
   S->>LLM: draft memo plus normalise metrics
   LLM-->>S: summary, metrics, rationale
   S->>S: deterministic covenant status plus risk flags
   S->>BQ: peer comparison
   BQ-->>S: peer median and percentile
-  S->>Hrz1: screen OUTPUT
-  S->>Hrz5: audit (already redacted, ESCALATED)
+  S->>Safety: screen OUTPUT
+  S->>Audit: audit (already redacted, ESCALATED)
   S-->>O: CreditMemo (requires_human_review)
 ```
 
@@ -98,7 +98,7 @@ export CREDIT_MEMO_PROFILE=local
 ruff check src tests             # lint
 ruff format --check src tests    # format check
 pytest -m 'not integration' -q   # unit + contract tests
-python eval/run_eval.py          # Hrz4 promotion eval gate
+python eval/run_eval.py          # `model-quality-gate` promotion eval gate
 ```
 
 ## Run locally (a real cited memo, fully offline)
@@ -150,7 +150,7 @@ credit-memo serve --port 8093
 | POST | `/v1/risk-flags` | Identify risk flags for a borrower |
 | GET | `/v1/personas` | List seeded dev personas for the picker (local profile only) |
 | GET | `/healthz` | Liveness/readiness (reports profile and region) |
-| GET | `/.well-known/agent-card.json` | A2A AgentCard for discovery (Hrz3) |
+| GET | `/.well-known/agent-card.json` | A2A AgentCard for discovery (`agent-registry`) |
 
 Identity is server-verified: no request carries an `actor`. In the `local` profile a
 demo/test selects a seeded persona with the `X-Dev-Persona` header; secure (`gcp`/`platform`)
@@ -161,10 +161,10 @@ path + embed mode) or runs standalone. See
 
 ## Dependencies (catalog matrix)
 
-Doc2 consumes the shared platform services via `platform` HTTP-client adapters: Hrz1
-guardrail/redaction (R1), Hrz2 Enterprise KB governed RAG (R3), Hrz3 registry (R4), Hrz4 AI
-quality eval gate (R5), Hrz5 observability/audit (R2). Peer data is public filing data,
-so it has no platform adapter.
+`credit-memo-drafting` consumes the shared platform services via `platform` HTTP-client
+adapters: `agent-guardrail-gateway` redaction (R1), `enterprise-knowledge-base` governed RAG
+(R3), `agent-registry` (R4), `model-quality-gate` (R5), `agent-observability` audit (R2).
+Peer data is public filing data, so it has no platform adapter.
 
 See `SPEC.md` for the contract, `ARCHITECTURE.md` for the design, and `COMPLIANCE.md` for
 the principle and rule mapping.
@@ -183,7 +183,7 @@ Apache-2.0. See `LICENSE`.
 
 ## Cost and latency
 
-Size this system's cost and latency with the shared interactive calculator: [**live**](https://portable-genai.github.io/cost-latency-calculator/calc/calculator.html?system=Doc2) or the [in-repo page](cost-latency-calculator.html). The engine and the pricing book are maintained once in [cost-latency-calculator](https://github.com/portable-genai/cost-latency-calculator).
+Size this system's cost and latency with the shared interactive calculator: [**live**](https://portable-genai.github.io/cost-latency-calculator/calc/calculator.html?system=credit-memo-drafting) or the [in-repo page](cost-latency-calculator.html). The engine and the pricing book are maintained once in [cost-latency-calculator](https://github.com/portable-genai/cost-latency-calculator).
 
 ## Documentation authority
 

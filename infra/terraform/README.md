@@ -1,14 +1,14 @@
-# Terraform: Doc2 Credit-Memo / Underwriting Assistant infrastructure
+# Terraform: `credit-memo-drafting` Credit-Memo / Underwriting Assistant infrastructure
 
-Managed-stack infrastructure for Doc2, defaulting to `asia-southeast1` (Singapore). Only
+Managed-stack infrastructure for `credit-memo-drafting`, defaulting to `asia-southeast1` (Singapore). Only
 `project_id`, the residency values and a few genuinely per-tenant values (org/billing ids,
 the VPC-SC toggle) are variables; every service identifier and template name is concrete and
 every location derives from `var.region`, which is chosen at deploy time and validated against
 the `allowed_regions` allowlist (default `["asia-southeast1"]`), because residency is a
 control, not a preference.
 
-The governed RAG store (Agent Search data stores) lives in **Hrz2**, not here. This stack
-provisions Doc2's own resources: extraction, peer data, redaction, guardrail, audit, keys
+The governed RAG store (Agent Search data stores) lives in **`enterprise-knowledge-base`**, not here. This stack
+provisions `credit-memo-drafting`'s own resources: extraction, peer data, redaction, guardrail, audit, keys
 and the serving identity.
 
 ## Files

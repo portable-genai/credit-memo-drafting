@@ -115,9 +115,10 @@ class CreditMemoService:
         self._tracer = tracer
         self._audit = audit
         self._review = review_policy or CreditReviewPolicy()
-        # Rule R8: when the memo requires human review it is routed to Hrz7 (the maker-checker
-        # console), not left as a boolean. Optional so unit tests and the CLI can omit it; when
-        # unset the escalation still audits ESCALATED, it just is not forwarded to a console.
+        # Rule R8: when the memo requires human review it is routed to human-review-console
+        # (the maker-checker console), not left as a boolean. Optional so unit tests and the CLI
+        # can omit it; when unset the escalation still audits ESCALATED, it just is not forwarded
+        # to a console.
         self._review_router = review_router
         # Custody of the files this analysis was given. Optional so the CLI, the agent
         # and unit tests can build a memo from filings they already hold; when it is
@@ -317,9 +318,10 @@ class CreditMemoService:
         # 14) Audit (already-redacted prompt + a redacted response summary).
         self._audit_memo(actor, redacted_summary, memo, Decision.ESCALATED, escalated)
 
-        # 15) Route the escalation to Hrz7 (rule R8). A memo always requires human review, so it is
-        #     handed to the maker-checker console rather than terminating in a boolean; the adapter
-        #     redacts before the wire. Best-effort: a console outage must not fail an already-
+        # 15) Route the escalation to human-review-console (rule R8). A memo always requires
+        #     human review, so it is handed to the maker-checker console rather than terminating
+        #     in a boolean; the adapter redacts before the wire. Best-effort: a console outage
+        #     must not fail an already-
         #     assembled, already-audited memo (the audit ESCALATED record is the durable escalation
         #     of record, and the outbox path retries).
         if self._review_router is not None and memo.requires_human_review:

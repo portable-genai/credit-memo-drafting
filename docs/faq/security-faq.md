@@ -92,7 +92,7 @@ a `verify_chain()` method. The module docstring states exactly which tamper clas
 not caught (a hash chain with no external anchor cannot detect a full-rewrite by itself). In
 production the `gcp` profile writes to Cloud Logging at the project's retention. A locked WORM
 bucket was removed deliberately: see the note in `infra/terraform/logging.tf`.
-This repo does not *replace* the platform audit system (Hrz5); see
+This repo does not *replace* the platform audit system (`agent-observability`); see
 [features-faq.md](features-faq.md). Proven by `tests/unit/test_audit_chain.py`.
 
 ### Supply chain: are dependencies pinned and scanned?
