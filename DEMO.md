@@ -102,8 +102,8 @@ to present it, in order of polish.
 
 ### 2.1 Guided, presenter-controlled walkthrough (recommended)
 
-A real browser opens; the script narrates each step and **waits for you to press Enter**
-before performing it, so you control the pace. (One-time: `pip install playwright &&
+A real browser opens; the script prints each step's business points as a numbered list and
+**waits for you to press Enter** before performing it, so you control the pace. (One-time: `pip install playwright &&
 playwright install chromium`.)
 
 ```bash

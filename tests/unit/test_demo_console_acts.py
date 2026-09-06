@@ -19,6 +19,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from credit_memo_console_walkthrough import resolve_acts  # noqa: E402
 from demo_console.acts import ACTS, Stage  # noqa: E402
+from demo_console.narrative import Point, render  # noqa: E402
 
 
 def test_every_act_is_distinct_and_says_what_to_look_at() -> None:
@@ -26,9 +27,42 @@ def test_every_act_is_distinct_and_says_what_to_look_at() -> None:
     assert len(set(titles)) == len(titles), "two acts share a title, so --act cannot pick one"
     assert len(ACTS) >= 18
     for act in ACTS:
-        assert act.narration.strip(), f"{act.title} has nothing for the presenter to say"
+        assert act.narration, f"{act.title} has nothing for the presenter to say"
         assert act.point_at.strip(), f"{act.title} does not say what to look at"
         assert callable(act.run)
+
+
+def test_a_narration_is_points_a_presenter_can_read_at_a_glance() -> None:
+    """The format is the feature: phrases to say, not paragraphs to find your place in."""
+    for act in ACTS:
+        for point in act.narration:
+            assert isinstance(point, Point), f"{act.title} narrates with prose, not points"
+            # Long enough to say something, short enough to take in off a terminal while a
+            # room waits. The justification is where the sentences go.
+            assert len(point.say) <= 130, f"{act.title} says a paragraph: {point.say!r}"
+
+
+def test_a_point_with_nothing_to_say_is_refused() -> None:
+    with pytest.raises(ValueError, match="nothing to say"):
+        Point("   ")
+
+
+def test_points_render_numbered_with_each_justification_under_its_phrase() -> None:
+    out = render(
+        (Point("The engine says 3.18x.", "The bank measures gross debt."), Point("A breach.")),
+        look_at="the covenant table",
+    )
+    assert out.splitlines() == [
+        "  1. The engine says 3.18x.",
+        "     · The bank measures gross debt.",
+        "  2. A breach.",
+        "  →  the covenant table",
+    ]
+
+
+def test_rendering_carries_no_escape_codes_when_nobody_is_watching_a_terminal() -> None:
+    """Piped into a recording or a CI log, the narration must still be readable."""
+    assert "\033" not in render((Point("say this", "because that"),), look_at="here")
 
 
 def test_an_act_is_selected_by_number() -> None:
@@ -68,17 +102,17 @@ def test_a_presenter_pause_is_inert_when_nobody_is_presenting() -> None:
     """The pytest suite builds a Stage without a presenter; every cue must cost nothing."""
     stage = Stage(page=None, api=None, ui_base="", api_base="")
     assert stage.beat is None
-    stage.cue("this must not raise, print, or block", "nor this")
+    stage.cue(Point("this must not raise, print, or block"), look_at="nor this")
 
 
 def test_a_presenter_pause_reaches_the_presenter_when_there_is_one() -> None:
-    seen: list[tuple[str, str]] = []
+    seen: list[tuple[tuple[Point, ...], str]] = []
     stage = Stage(
         page=None,
         api=None,
         ui_base="",
         api_base="",
-        beat=lambda say, look_at: seen.append((say, look_at)),
+        beat=lambda points, look_at: seen.append((points, look_at)),
     )
-    stage.cue("say this", "look here")
-    assert seen == [("say this", "look here")]
+    stage.cue(Point("say this", "because that"), look_at="look here")
+    assert seen == [((Point("say this", "because that"),), "look here")]

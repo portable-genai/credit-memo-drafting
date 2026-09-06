@@ -1,9 +1,15 @@
 """Presenter-controlled Playwright walkthrough of the live credit-memo demo.
 
 Drives a headed browser through the cited credit-memo build served by
-``scripts/credit_memo_demo_server.py``. It is **paced by the presenter**: before each
-step it prints what is about to happen and waits for you to press Enter, then performs the
-action (click "Next") and highlights the panel to look at. You stay in control of timing.
+``scripts/credit_memo_demo_server.py``. It is **paced by the presenter**: before each step
+it prints the business points to make, in order, and waits for you to press Enter, then
+performs the action (click "Next") and highlights the panel to look at. You stay in control
+of timing.
+
+Each point is a phrase to say; its justification prints underneath in a dimmer hand, for
+the question the phrase provokes rather than to be read out. See
+:mod:`demo_console.narrative`, which the eighteen-act console walkthrough renders through
+too, so the two demos read the same way.
 
 Usage (two terminals)::
 
@@ -28,8 +34,14 @@ import contextlib
 import os
 import sys
 import time
+from pathlib import Path
 
 from playwright.sync_api import sync_playwright
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from demo_console import narrative  # noqa: E402
+from demo_console.narrative import Point  # noqa: E402
 
 BASE = os.environ.get("DEMO_URL", "http://127.0.0.1:8094")
 HEADLESS = os.environ.get("HEADLESS") == "1"
@@ -37,45 +49,82 @@ AUTO = os.environ.get("DEMO_AUTO") == "1"
 SLOWMO = int(os.environ.get("SLOWMO_MS", "0" if HEADLESS else "250"))
 CHROME_PATH = os.environ.get("CHROME_PATH") or None
 
-# (narration shown in the terminal, whether this step clicks "Next", panel to spotlight)
+# (heading, the points to make, whether this step clicks "Next", panel to spotlight)
 STEPS = [
     (
-        "Memo built. For the synthetic borrower Acme Manufacturing the assistant has run "
-        "the full offline pipeline — redact, guardrail, grounded retrieval, LLM synthesis "
-        "— and the SUMMARY is on screen. Note the amber maker-checker banner: this is "
-        "decision support, not a credit decision.",
+        "The memo is built",
+        (
+            Point(
+                "The full offline pipeline has run for the synthetic borrower Acme Manufacturing.",
+                "Redact, guardrail, grounded retrieval, then LLM synthesis. No cloud, no API key.",
+            ),
+            Point(
+                "The amber banner: decision support, not a credit decision.",
+                "A memo always goes to a human checker, whatever it says.",
+            ),
+        ),
         False,
         ".review",
     ),
     (
-        "Financial analysis — revenue USD 120m, EBITDA USD 24m, net leverage 2.5x. These "
-        "are normalised from the audited statements, each traceable to a source filing.",
+        "Financial analysis",
+        (
+            Point("Revenue USD 120m, EBITDA USD 24m, net leverage 2.5x."),
+            Point(
+                "Normalised from the audited statements.",
+                "Each figure is traceable back to the source filing it was read from.",
+            ),
+        ),
         True,
         ".metrics",
     ),
     (
-        "Covenants — the status (compliant / at-risk / breach) is computed "
-        "DETERMINISTICALLY by comparing the current value against the threshold. The LLM "
-        "drafts prose but never overrides a breach computation. Each row carries its source.",
+        "Covenants",
+        (
+            Point("Compliant / at-risk / breach is computed, not written."),
+            Point(
+                "The status compares the current value against the threshold, deterministically.",
+                "The LLM drafts prose but never overrides a breach computation.",
+            ),
+            Point("Each row carries its source."),
+        ),
         True,
         "table.cov",
     ),
     (
-        "Risk assessment — a concentration risk flag, grounded in the manufacturing "
-        "sector credit policy and cited to its page.",
+        "Risk assessment",
+        (
+            Point("A concentration risk flag."),
+            Point(
+                "Grounded in the manufacturing sector credit policy, cited to its page.",
+                "Not the model's general knowledge of the sector.",
+            ),
+        ),
         True,
         ".item",
     ),
     (
-        "Peer comparison — the borrower's metrics against the cohort, with the peer median "
-        "and percentile computed arithmetically (peer numbers are never invented).",
+        "Peer comparison",
+        (
+            Point("The borrower's metrics against the cohort."),
+            Point(
+                "The peer median and percentile are computed arithmetically.",
+                "Peer numbers are never invented — an LLM asked for a median will produce "
+                "a plausible one.",
+            ),
+        ),
         True,
         ".peer",
     ),
     (
-        "Maker-checker — every memo always requires human review (P-06). A credit officer "
-        "is the checker; the assistant is only the maker. Each claim is cited on the "
-        "Sources & audit page.",
+        "Maker-checker",
+        (
+            Point(
+                "Every memo requires human review (P-06).",
+                "A credit officer is the checker; the assistant is only ever the maker.",
+            ),
+            Point("Each claim is cited on the Sources & audit page."),
+        ),
         True,
         ".review",
     ),
@@ -128,8 +177,9 @@ def main() -> int:
         page.goto(BASE + "/restart", wait_until="load")  # always start clean
         page.goto(BASE + "/", wait_until="load")
 
-        for i, (say, click, spotlight) in enumerate(STEPS):
-            print(f"[{i + 1}/{len(STEPS)}] {say}")
+        for i, (title, points, click, spotlight) in enumerate(STEPS):
+            print(f"[{i + 1}/{len(STEPS)}] {title}")
+            print(narrative.render(points))
             _pause("        press Enter to run this step... ")
             if click:
                 btn = page.locator(".democtl button.next")

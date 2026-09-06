@@ -10,4 +10,9 @@ package rather than a script:
 A demo nobody asserts rots quietly, and a suite nobody watches proves nothing to an
 audience. Sharing :mod:`~scripts.demo_console.acts` between them means the walkthrough a
 presenter shows is the walkthrough CI keeps working.
+
+What a presenter says is an ordered list of short business points rather than a paragraph,
+and :mod:`~scripts.demo_console.narrative` owns that format. The six-step server demo in
+``scripts/credit_memo_demo_playwright.py`` renders through it too, so both demos read the
+same way.
 """
