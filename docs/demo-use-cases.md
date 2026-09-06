@@ -150,6 +150,61 @@ a browser sends for anything it cannot name and the model refuses outright. And 
 whose typed name never matched its own registrant title, because the stop-word list held
 `corp` but not `corporation`.
 
+## Swapping the demo borrower
+
+The **deployed service needs no per-company setup at all**. Under the `gcp`/`live` profile
+it resolves any real US-listed company by name against SEC EDGAR, pulls that company's own
+filed figures, and finds its own SIC-code peers automatically — that is the whole point of
+Demo C in `DEMO.md`. Nothing in the infrastructure, IAM or deployment config names
+Flowserve.
+
+The **curated 18-act script is a different matter**: it is built from Flowserve's actual
+filed numbers, not placeholders, and swapping the company is real research, not a rename.
+
+**What is Flowserve-specific and would need to change:**
+
+```
+demo/documents/flowserve-fy2025-financial-extract.txt   # real prose, real figures
+demo/documents/flowserve-fy2025-spread.csv               # real spread
+demo/documents/flowserve-covenant-position.txt           # real disclosed covenant language
+demo/documents/SOURCES.md
+scripts/demo_console/fixtures.py                          # every dollar figure as a constant
+scripts/demo_console/acts.py                               # narration strings quote exact numbers
+scripts/verify_deployed_demo.py                            # imports fixtures, recomputes from them
+ui/app/page.tsx                                            # default borrower name
+eval/datasets/golden_cases.jsonl (case-flowserve-real)
+DEMO.md, README.md, this file, docs/ADOPTING.md,
+docs/practices-audit.md, docs/faq/compliance-faq.md
+```
+
+**What researching a replacement needs, in order:**
+
+1. **Confirm it is a going concern on EDGAR.** Two candidates were disqualified this way
+   while researching Flowserve: Hillenbrand and Chart Industries were both taken private and
+   are absent from `company_tickers.json`, so `EdgarClient.resolve` cannot find them at all.
+2. **Pull one coherent period of real figures** (revenue, EBITDA components, debt, capex,
+   tax, scheduled debt service, current assets/liabilities) via `latest_annual_facts`. Two
+   traps cost hours the first time and apply to any company: `fy` on a companyfacts row is
+   the *filing* year, not the period it covers; and a preferred tag reporting a literal zero
+   can beat the tag actually holding the real figure (`latest_annual_facts` now guards both,
+   but the replacement figures still have to be assembled from one consistent period).
+3. **Find the definitional gap that makes the reconciliation act mean something.** The
+   center of the demo is that the borrower reports leverage under its own covenant
+   definition and the bank's gross-debt calculation disagrees. Flowserve discloses this
+   cleanly — it nets cash and adds back a named realignment charge. Not every filing states
+   its own adjustments this explicitly; without an equivalent, that act has nothing real to
+   show and the fix must not be to invent one.
+4. **Find real Exhibit 21 subsidiaries with no separate financials**, for the group act.
+5. Rewrite the documents and constants, then run `make demo-console` and
+   `make verify-deployed` and confirm the new numbers still produce the shape of the story:
+   a breach, a thin-headroom ratio, an uncomputable line, and a reconciliation that reports
+   a real disagreement rather than a manufactured one.
+
+`config/policy_pack.example.yaml` (the bank's 3.00x leverage / 1.25x DSCR / 2.00x current
+ratio limits) is the bank's own appetite and does not change with the borrower — though
+whether a replacement's real leverage happens to land near an interesting threshold against
+those fixed limits is a property of the company, not something to tune.
+
 ## What the run leaves behind
 
 `out/demo/` — one full-page screenshot per act, a video, and a Playwright trace
