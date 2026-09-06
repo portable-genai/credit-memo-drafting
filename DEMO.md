@@ -155,7 +155,10 @@ make walkthrough-list                 # what you can name
 
 The same acts run asserted and headless as `make demo-console`, so the demo cannot rot
 between presentations. A run writes screenshots, a video and a Playwright trace to
-`out/demo/`.
+`out/demo/`. `make verify-deployed` runs the same steps against a *deployed* service instead
+of a laptop console — see "Checking a deployment" in `docs/demo-use-cases.md`. Swapping the
+demo to a different real company is real research, not a rename; see "Swapping the demo
+borrower" in the same file before attempting it.
 
 ### 2.2 Manual, click-through (no Playwright)
 
