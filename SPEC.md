@@ -1,15 +1,15 @@
-# SPEC: Doc2 Credit-Memo / Underwriting Assistant
+# SPEC: `credit-memo-drafting` Credit-Memo / Underwriting Assistant
 
-Catalog id **Doc2** · group `doc` · priority **P1** · buyer Credit / Commercial Banking.
+Catalog identity: `credit-memo-drafting` · group `doc` · priority **P1** · buyer Credit / Commercial Banking.
 Python package `credit_memo` · CLI `credit-memo` · service port `8093`.
 
 ## 1. Purpose and scope
 
-Doc2 is a grounded underwriting assistant. From a borrower's financial statements and
+`credit-memo-drafting` is a grounded underwriting assistant. From a borrower's financial statements and
 filings it produces a cited **credit memo**, extracts **covenants** (with a deterministic
 compliance status), raises **risk flags**, and assembles **peer comparisons**. It is
 decision SUPPORT for a credit officer, not a credit decision. It handles borrower
-financial and PII data, so rule R1 (full Hrz1 redaction + guardrail pipeline) applies, and
+financial and PII data, so rule R1 (the full `agent-guardrail-gateway` pipeline) applies, and
 every memo is maker-checker gated (P-06).
 
 Out of scope: making or communicating a credit decision; pricing; limit setting; any
@@ -93,7 +93,7 @@ what makes "the model never supplied this number" a property rather than a promi
   (arithmetic median/percentile), `GlobalCashFlowService`, `ScenarioService`,
   `RenewalDiffService`, `RevisionService`, `CommentService`.
 - `CreditReviewPolicy`: a memo always `requires_human_review=True`; any BREACH covenant or
-  HIGH/CRITICAL risk flag escalates. Routing that escalation to the Hrz7 console is
+  HIGH/CRITICAL risk flag escalates. Routing that escalation to `human-review-console` is
   OPT-IN (`CREDIT_MEMO_REVIEW_ENABLED`); the flag and the audit record stand either way.
 
 The deterministic guarantee has two halves. Covenant status is computed by
@@ -183,15 +183,15 @@ secure profiles resolve it from the IAP assertion. Agent skills: `build_credit_m
 
 ### 6.2 Endpoints this repo CONSUMES (existing siblings)
 
-- **Hrz1 guardrail** (`GUARDRAIL_GATEWAY_URL`): `POST /v1/guardrail/screen`, `POST /v1/redact`.
-- **Hrz2 enterprise KB** (`KNOWLEDGE_BASE_URL`): `POST /v1/ingest`, `POST /v1/search` (Doc2's RAG store).
-- **Hrz3 registry** (`AGENT_REGISTRY_URL`): `POST /v1/agents`, `GET /v1/agents/{name}`, `GET /v1/agents`.
-- **Hrz4 AI quality** (`QUALITY_GATE_URL`): `POST /v1/evaluations` and `POST /v1/gate`, both with a
+- **`agent-guardrail-gateway`** (`GUARDRAIL_GATEWAY_URL`): `POST /v1/guardrail/screen`, `POST /v1/redact`.
+- **`enterprise-knowledge-base`** (`KNOWLEDGE_BASE_URL`): `POST /v1/ingest`, `POST /v1/search` (`credit-memo-drafting`'s RAG store).
+- **`agent-registry`** (`AGENT_REGISTRY_URL`): `POST /v1/agents`, `GET /v1/agents/{name}`, `GET /v1/agents`.
+- **`model-quality-gate` AI quality** (`QUALITY_GATE_URL`): `POST /v1/evaluations` and `POST /v1/gate`, both with a
   structured body `{target: {model, prompt_version, dataset_id, system}, dataset_id, bundle: "doc2-credit-memo"}`
-  (the top-level `dataset_id` must equal `target.dataset_id`, else Hrz4 returns `422`). Metric selection is
+  (the top-level `dataset_id` must equal `target.dataset_id`, else `model-quality-gate` returns `422`). Metric selection is
   by the registered bundle name `doc2-credit-memo` (no bare metric names); the eval response is parsed from
   `results[]` and the gate returns `{passed}`.
-- **Hrz5 observability/audit** (`OBSERVABILITY_URL`): `POST /v1/audit`.
+- **`agent-observability`** (`OBSERVABILITY_URL`): `POST /v1/audit`.
 - **B1 `cdd-sow-research`** (`CDD_SOW_RESEARCH_URL`): `POST /v1/ubo-graph` -> the borrower's
   beneficial-ownership structure, consumed on the `platform` profile as the
   `EntityResolutionPort`. Asked rather than re-implemented: that service computes every
@@ -209,7 +209,7 @@ Peer data is public filing data read over HTTPS: no platform HTTP adapter of our
 | --- | --- | --- | --- | --- |
 | DocumentExtractionPort | local parser (pypdf/text) | local parser (pypdf/text) | same as gcp | stub |
 | SpreadExtractionPort | Gemini, PDF parts + schema | analyst CSV | same as gcp | stub |
-| KnowledgeBaseClientPort | per-request SQLite FTS5 | SQLite FTS5 (BM25) | Hrz2 `/v1/*` | stub |
+| KnowledgeBaseClientPort | per-request SQLite FTS5 | SQLite FTS5 (BM25) | `enterprise-knowledge-base` `/v1/*` | stub |
 | AnalysisBundlePort | regional CMEK bucket, 15-day lifecycle | directory | regional CMEK bucket | stub |
 | PolicyPackPort | uploaded YAML/JSON | uploaded YAML/JSON | same as gcp | stub |
 | ExportPort | DOCX/HTML + PDF (reportlab, in process) | DOCX/HTML (stdlib) | same as gcp | stub |
@@ -218,14 +218,14 @@ Peer data is public filing data read over HTTPS: no platform HTTP adapter of our
 | EntityResolutionPort | GLEIF register, opt-in | fixture register | B1 `/v1/ubo-graph` | stub |
 | PeerDataPort | SEC EDGAR | in-process peer table | same as gcp | stub |
 | LLMPort | Gemini | deterministic schema-driven | same as gcp | stub |
-| GuardrailPort | Model Armor | heuristic injection screen | Hrz1 | stub |
-| PIIRedactionPort | DLP | regex de-identify | Hrz1 | stub |
-| AuditSinkPort | Cloud Logging | append-only SQLite | Hrz5 | stub |
-| ReviewRouterPort | Hrz7 console (opt-in) | in-process recorder | Hrz7 console | stub |
+| GuardrailPort | Model Armor | heuristic injection screen | `agent-guardrail-gateway` | stub |
+| PIIRedactionPort | DLP | regex de-identify | `agent-guardrail-gateway` | stub |
+| AuditSinkPort | Cloud Logging | append-only SQLite | `agent-observability` | stub |
+| ReviewRouterPort | `human-review-console` (opt-in) | in-process recorder | `human-review-console` | stub |
 | IdentityPort | IAP assertion | seeded persona | IAP assertion | stub |
 | ObservabilityTracerPort | Cloud Trace | no-op spans | same as gcp | stub |
-| EvaluationGatePort | Gen AI eval | in-repo offline gate | Hrz4 | stub |
-| AgentRegistryPort | A2A card | in-process registry | Hrz3 | stub |
+| EvaluationGatePort | Gen AI eval | in-repo offline gate | `model-quality-gate` | stub |
+| AgentRegistryPort | A2A card | in-process registry | `agent-registry` | stub |
 | ToolCatalogPort | MCP catalog | in-process catalog | same as gcp | stub |
 
 A fifth profile, `live`, sits beside these: SDK-free but not offline. It reads real SEC
@@ -238,7 +238,7 @@ runs one app, not the whole platform. There is no Google emulator for
 Gemini, Model Armor or DLP, so those local adapters are
 unconditionally SDK-free; the registry can opt into the Firestore emulator.
 
-## 8. Eval gate (Hrz4 / P-08)
+## 8. Eval gate (`model-quality-gate` / P-08)
 
 `eval/run_eval.py` drives the real `CreditMemoService` against the offline local adapters
 over a golden JSONL set and scores nine metrics:

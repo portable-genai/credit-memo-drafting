@@ -5,8 +5,8 @@ its Protocol. This suite proves the stronger claim behind the no-lock-in promise
 (P-02): for one canonical request, every SDK-free implementation of a port behaves
 identically at the boundary.
 
-Doc2 (this repo) ships a real ``platform`` HTTP client alongside the ``local`` in-process
-adapter for four core ports (redaction, guardrail, audit, knowledge_base), so for each of
+credit-memo-drafting (this repo) ships a real ``platform`` HTTP client alongside the ``local``
+in-process adapter for four core ports (redaction, guardrail, audit, knowledge_base), so for each of
 those we put the SAME request through both and require identical domain-level behavior:
 
 * ``local``    - the in-process offline adapter answers with real domain objects;
@@ -86,7 +86,7 @@ def test_redaction_parity_same_request_every_implementation():
     results: dict[str, RedactionResult] = {"local": _adapter("redaction", "local").redact(PII_TEXT)}
 
     with respx.mock:
-        # The Hrz1 gateway is DLP-backed; serve its documented /v1/redact answer for the
+        # The agent-guardrail-gateway is DLP-backed; serve its documented /v1/redact answer for the
         # same request (DLP-style info-type masks), matching what the local regex adapter did.
         respx.post(f"{GUARDRAIL_GATEWAY}/v1/redact").respond(
             200,
@@ -182,7 +182,7 @@ def test_audit_parity_identical_payload_at_every_sink():
     local_audit.record(event)
     assert local_audit.read_all() == [expected]
 
-    # platform sink (Hrz5 observability): the POSTed body is byte-identical to what local stored.
+    # platform sink (agent-observability): the POSTed body is byte-identical to what local stored.
     with respx.mock:
         route = respx.post(f"{OBSERVABILITY}/v1/audit").respond(202)
         _adapter("audit", "platform").record(event)
@@ -223,7 +223,8 @@ def test_knowledge_base_parity_same_passages_across_implementations():
         respx.post(f"{KNOWLEDGE_BASE}/v1/ingest").respond(
             200, json={"document_id": document.id, "chunks": 1, "status": "indexed"}
         )
-        # Hrz2 serves the same passages for the same query (SPEC /v1/search shape).
+        # enterprise-knowledge-base serves the same passages for the same query (SPEC /v1/search
+        # shape).
         respx.post(f"{KNOWLEDGE_BASE}/v1/search").respond(
             200, json={"passages": [to_jsonable(p) for p in local_passages]}
         )

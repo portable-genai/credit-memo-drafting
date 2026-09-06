@@ -1,4 +1,4 @@
-"""Portability tour: prove Doc2's no-lock-in claims live, on a laptop, fully offline.
+"""Portability tour: prove credit-memo-drafting's no-lock-in claims live, on a laptop, fully offline.
 
 Usage (from the repo root; no cloud, no API key, no emulators):
 
@@ -19,7 +19,7 @@ Four acts, mapping to the three portability questions a buyer should ask
 
 Exits 0 only if every check passes, so this doubles as an automated portability proof.
 
-Scope note (honest about what this repo does and does not implement): Doc2's ``local``
+Scope note (honest about what this repo does and does not implement): credit-memo-drafting's ``local``
 audit sink is an append-only WORM stand-in serialized with the domain ``to_jsonable`` (open
 JSON), which Act 3 exercises. It does NOT implement a per-record cryptographic hash chain or
 a ``verify/export/restore`` CLI, so there is no tamper-evidence act here (that portability
@@ -222,7 +222,7 @@ def act_4_identity() -> None:
 
 
 def main() -> int:
-    print("Doc2 portability tour: offline proof of the three portability questions")
+    print("credit-memo-drafting portability tour: offline proof of the three portability questions")
     print("(compute, data, experience/identity). No Google Cloud, no API key.")
     workdir = Path(tempfile.mkdtemp(prefix="credit-memo-portability-"))
 

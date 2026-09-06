@@ -30,7 +30,7 @@ resource "google_artifact_registry_repository" "images" {
   project       = var.project_id
   location      = var.region
   repository_id = "credit-memo"
-  description   = "Promoted Doc2 credit-memo API and console images, CMEK-encrypted."
+  description   = "Promoted credit-memo-drafting API and console images, CMEK-encrypted."
   format        = "DOCKER"
 
   kms_key_name = google_kms_crypto_key.credit_memo.id

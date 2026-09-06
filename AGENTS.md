@@ -7,14 +7,14 @@ here. Read it first. This file carries only what is specific to this one.
 
 ## What this is
 
-Catalog id **Doc2**. Financials + filings -> cited credit memo, covenant extraction,
+Catalog id `credit-memo-drafting`. Financials + filings -> cited credit memo, covenant extraction,
 risk flags, peer comps.
 
 ## Concrete bindings
 
 | | |
 |---|---|
-| Catalog id | `Doc2` |
+| Catalog id | `credit-memo-drafting` |
 | Package | `src/credit_memo/` |
 | Profile variable | `CREDIT_MEMO_PROFILE` |
 | Adapter families | `gcp`, `live`, `local`, `onprem`, `platform` |

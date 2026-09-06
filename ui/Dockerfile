@@ -1,4 +1,4 @@
-# Doc2 Credit-Memo / Underwriting Assistant — console image.
+# `credit-memo-drafting`: Credit-Memo / Underwriting Assistant — console image.
 #
 # The console is mounted under a reverse-proxy sub-path when embedded in the portal
 # (`NEXT_PUBLIC_BASE_PATH=/apps/credit-memo-drafting`), and the base path is a BUILD-time

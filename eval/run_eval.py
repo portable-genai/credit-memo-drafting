@@ -937,7 +937,7 @@ def run_offline(
 
 
 def run_gate(dataset: Path) -> tuple[EvalReport, bool]:
-    """Promotion verdict via EvaluationGatePort (platform = Hrz4, gcp = Gen AI evals).
+    """Promotion verdict via EvaluationGatePort (platform = model-quality-gate, gcp = Gen AI evals).
 
     Fails closed on the reconciled evaluate + gate result. Refuses to run outside the
     platform/gcp profiles so the offline smoke result is never relabelled a promotion pass.
@@ -997,7 +997,7 @@ def main(argv: list[str] | None = None) -> int:
         default_dataset=DEFAULT_DATASET,
         description="Offline / platform evaluation gate for B2 (A4 / P-08).",
         smoke_label="offline heuristic (no GCP creds)",
-        gate_label="promotion gate (EvaluationGatePort: Hrz4 / Gen AI evals)",
+        gate_label="promotion gate (EvaluationGatePort: model-quality-gate / Gen AI evals)",
         argv=args,
     )
 
