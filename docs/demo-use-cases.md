@@ -91,8 +91,10 @@ goes on screen: act 14 renders the committee pack in a browser tab.
 
 The walkthrough stops twice over: before each act, saying what is about to happen, and
 again *inside* the act at the beats worth talking through — once the form is filled and
-before it is submitted, and again when the answer is on screen. Each stop prints what to
-say and what to point at, then waits for any key (`q` quits and still writes the trace).
+before it is submitted, and again when the answer is on screen. Each stop prints the
+business points to make as a numbered list and what to point at, then waits for any key
+(`q` quits and still writes the trace). A point is a phrase to say; the justification
+underneath it is for the question that phrase provokes, not to be read out.
 Those inner pauses live in `acts.py` beside the step they interrupt, because only that
 module knows where a filled form stops and an answer begins; they are inert under pytest,
 so a pause can never change what an act proves.

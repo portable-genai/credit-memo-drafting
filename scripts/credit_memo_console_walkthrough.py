@@ -1,9 +1,14 @@
 """Presenter-controlled walkthrough of the credit-memo console: one deal, eighteen acts.
 
-A real browser opens. Before each act the script says what is about to happen and what to
-look at; inside an act it stops again at the beats worth talking through — once the form is
-filled and before it is submitted, and again when the answer is on screen. Every stop waits
-for a keystroke, so the room moves at the presenter's pace rather than the software's.
+A real browser opens. Before each act the script prints the business points to make, in
+order, and what to look at; inside an act it stops again at the beats worth talking
+through — once the form is filled and before it is submitted, and again when the answer is
+on screen. Every stop waits for a keystroke, so the room moves at the presenter's pace
+rather than the software's.
+
+Each point is a phrase to say, with its justification printed underneath in a dimmer hand.
+The phrases are the demo; the justifications are for the question one of them provokes. See
+:mod:`demo_console.narrative`.
 
 It drives the SAME acts ``tests/browser/test_console_use_cases.py`` asserts, so what an
 audience sees is what CI keeps working. Each act still checks itself here: if something is
@@ -40,7 +45,6 @@ import contextlib
 import os
 import sys
 import tempfile
-import textwrap
 import time
 from contextlib import ExitStack
 from pathlib import Path
@@ -48,8 +52,9 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from demo_console import evidence, servers  # noqa: E402
+from demo_console import evidence, narrative, servers  # noqa: E402
 from demo_console.acts import ACTS, Stage  # noqa: E402
+from demo_console.narrative import Narration  # noqa: E402
 
 _RULE = "-" * 78
 
@@ -144,20 +149,6 @@ def _read_key() -> str:
         termios.tcsetattr(fd, termios.TCSADRAIN, saved)
 
 
-def _wrap(text: str, indent: str = "  ", hanging: str | None = None) -> str:
-    """Wrap for a terminal, labelling only the first line.
-
-    ``SAY`` repeated down the left margin of a five-line paragraph is harder to read at a
-    glance than the paragraph itself, and a presenter is reading this while a room waits.
-    """
-    return textwrap.fill(
-        text,
-        width=76,
-        initial_indent=indent,
-        subsequent_indent=" " * len(indent) if hanging is None else hanging,
-    )
-
-
 class Presenter:
     """Prints what to say, and holds until the room has seen it."""
 
@@ -176,12 +167,11 @@ class Presenter:
         if key.lower() == "q":
             raise Quit()
 
-    def beat(self, say: str, look_at: str = "") -> None:
+    def beat(self, points: Narration, look_at: str = "") -> None:
         """A pause inside an act: what to say now, and what is on screen while you say it."""
         print()
-        print(_wrap(say, indent="    SAY  "))
-        if look_at:
-            print(_wrap(f"look at: {look_at}", indent="      →  ", hanging=" " * 15))
+        print("    SAY")
+        print(narrative.render(points, look_at, indent="      "))
         self.hold("[any key to go on, q to quit]")
 
 
@@ -191,9 +181,7 @@ class Presenter:
 def _present(stage: Stage, presenter: Presenter, index: int, act: Any) -> str:
     """Show one act with its narration and its pauses. Returns "" or why it failed."""
     print(f"[{index + 1}/{len(ACTS)}] {act.title}")
-    print(_wrap(act.narration))
-    if act.point_at:
-        print(_wrap(f"Look at: {act.point_at}", indent="  →  ", hanging=" " * 13))
+    print(narrative.render(act.narration, act.point_at))
     presenter.hold("[any key to run this act, q to quit]")
 
     stage.beat = presenter.beat

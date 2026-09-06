@@ -24,6 +24,7 @@ from typing import Any
 
 from . import fixtures as fx
 from . import locators as loc
+from .narrative import Narration, Point
 
 ANALYST = "analyst"
 APPROVER = "approver"
@@ -57,11 +58,11 @@ class Stage:
     api_base: str
     state: dict[str, Any] = field(default_factory=dict)
     #: Where a presenter's pauses go. ``None`` under pytest, where nobody is watching.
-    beat: Callable[[str, str], None] | None = None
+    beat: Callable[[Narration, str], None] | None = None
 
     # -- The presenter --------------------------------------------------- #
-    def cue(self, say: str, look_at: str = "") -> None:
-        """Hold here: say ``say``, point at ``look_at``, and wait for the presenter.
+    def cue(self, *points: Point, look_at: str = "") -> None:
+        """Hold here: read ``points`` out, point at ``look_at``, and wait for the presenter.
 
         The pause lives beside the step it interrupts rather than in the walkthrough
         script, because what is worth saying is a property of what just happened on
@@ -74,7 +75,7 @@ class Stage:
         proves.
         """
         if self.beat is not None:
-            self.beat(say, look_at)
+            self.beat(points, look_at)
 
     # -- API helpers ----------------------------------------------------- #
     def get(self, path: str, persona: str = ANALYST) -> Any:
@@ -115,7 +116,8 @@ class Act:
     """One beat of the demo: what to say, what to do, and what it must prove."""
 
     title: str
-    narration: str
+    #: The business points, in the order a presenter says them. See :mod:`.narrative`.
+    narration: Narration
     run: Any
     #: What a presenter should look at while this act is on screen.
     point_at: str = ""
@@ -228,12 +230,18 @@ def act_credit_file(stage: Stage) -> None:
     page.get_by_label(loc.JURISDICTION, exact=True).fill(fx.JURISDICTION)
     _upload_files(stage)
     stage.cue(
-        "Three documents, and everything in them is checkable: an extract of Flowserve's "
-        "FY2025 Form 10-K, the analyst's own spread of it, and the covenant position. Each "
-        "is labelled with what it is and the date it speaks to, because the service cannot "
-        "tell last year's management accounts from yesterday's and will not guess. The "
-        "accession number is on every page, so anyone in the room can open the filing.",
-        "the three rows, each with its own kind and as-of date, before anything is read",
+        Point(
+            "Three documents: the audited filing, the analyst's own spread of it, and the "
+            "covenant position.",
+            "An extract of Flowserve's FY2025 Form 10-K. The accession number is on every "
+            "page, so anyone in the room can open the filing and check it.",
+        ),
+        Point(
+            "Each is labelled with what it is, and the date it speaks to.",
+            "The service cannot tell last year's management accounts from yesterday's, and "
+            "will not guess.",
+        ),
+        look_at="the three rows, each with its own kind and as-of date, before anything is read",
     )
 
     # Opening the analysis is what puts the evidence in custody, and the console does it
@@ -266,10 +274,12 @@ def act_credit_file(stage: Stage) -> None:
         raise ActFailed("the retention note is not on screen")
     stage.state["manifest"] = manifest
     stage.cue(
-        "The evidence is now in custody, and the manifest is the receipt: every file by "
-        "name, its SHA-256 digest, its page count, and the date it is deleted. Nothing "
-        "downstream can cite a document that is not on this list.",
-        f"the manifest, and the retention line: {manifest['retention_note']}",
+        Point(
+            "The evidence is in custody. The manifest is the receipt.",
+            "Every file by name, its SHA-256 digest, its page count, and the date it is deleted.",
+        ),
+        Point("Nothing downstream can cite a document that is not on this list."),
+        look_at=f"the manifest, and the retention line: {manifest['retention_note']}",
     )
 
 
@@ -297,11 +307,16 @@ def act_extraction_is_a_proposal(stage: Stage) -> None:
         raise ActFailed("the quote does not link back to the document it came from")
     stage.state["candidate"] = candidate
     stage.cue(
-        f"The extractor read {len(candidate['items'])} figures, and every row shows the "
-        "sentence it read them from with a link to the page. Nothing has been computed. "
-        "The product's own types refuse to put an extracted figure into a ratio — the only "
-        "way out of this panel is a person confirming it.",
-        "the amber panel, and the quote opened beside the number it explains",
+        Point(
+            f"{len(candidate['items'])} figures read off the documents.",
+            "Every row shows the sentence it was read from, with a link to the page it is on.",
+        ),
+        Point(
+            "Nothing has been computed from them yet.",
+            "The product's own types refuse to put an extracted figure into a ratio.",
+        ),
+        Point("The only way out of this panel is a person confirming it."),
+        look_at="the amber panel, and the quote opened beside the number it explains",
     )
 
 
@@ -321,14 +336,22 @@ def act_confirm_the_spread(stage: Stage) -> None:
         fx.ADJUSTMENT_REASON
     )
     stage.cue(
-        f"Two decisions, and both are the bank's credit policy rather than a correction. "
-        f"The analyst REJECTS the cash line of USD {fx.REJECTED_VALUE:,.1f}m, because this "
-        f"bank measures leverage on gross debt. And it ADJUSTS EBITDA from the borrower's "
-        f"USD {fx.ADJUSTED_FROM:,.1f}m to USD {fx.ADJUSTED_TO:,.1f}m, declining the "
-        f"add-back of USD {fx.REALIGNMENT_CHARGES:,.1f}m of realignment charges that have "
-        "recurred three years running. Both numbers are kept: the adjustment sits beside "
-        "the original, never over it.",
-        "the struck-through cash row, and EBITDA with the reason beside it, before "
+        Point(
+            f"REJECT the cash line of USD {fx.REJECTED_VALUE:,.1f}m.",
+            "This bank measures leverage on gross debt. A credit policy decision, not a "
+            "correction to the filing.",
+        ),
+        Point(
+            f"ADJUST EBITDA from USD {fx.ADJUSTED_FROM:,.1f}m to "
+            f"USD {fx.ADJUSTED_TO:,.1f}m, with a reason.",
+            f"Declining the add-back of USD {fx.REALIGNMENT_CHARGES:,.1f}m of realignment "
+            "charges that have recurred three years running.",
+        ),
+        Point(
+            "Both numbers are kept.",
+            "The adjustment sits beside the borrower's original, never over it.",
+        ),
+        look_at="the struck-through cash row, and EBITDA with the reason beside it, before "
         "anything is confirmed",
     )
 
@@ -362,10 +385,13 @@ def act_confirm_the_spread(stage: Stage) -> None:
         raise ActFailed("the adjusted figure lost the page its original was read from")
     stage.state["spread"] = spread
     stage.cue(
-        f"Confirmed by {spread['confirmed_by']}. Note where that name came from: the "
-        "verified identity behind the session, not a field this browser filled in. From "
-        "here every engine computes from figures a named person accepted.",
-        "the green 'Confirmed by' line",
+        Point(f"Confirmed by {spread['confirmed_by']}."),
+        Point(
+            "That name is the verified identity behind the session.",
+            "Not a field this browser filled in, and not editable from it.",
+        ),
+        Point("From here every engine computes from figures a named person accepted."),
+        look_at="the green 'Confirmed by' line",
     )
 
 
@@ -375,11 +401,17 @@ def act_confirm_the_spread(stage: Stage) -> None:
 def act_build_the_memo(stage: Stage) -> None:
     _fill_request(stage)
     stage.cue(
-        f"The ask, stated before the memo is written: a new USD {FACILITY_AMOUNT:.0f} "
-        f"million term facility over {FACILITY_TENOR} months, its purpose, its repayment "
-        "source and its security. Without it the memo would comment on a borrower rather "
-        "than assess a credit — those are different documents.",
-        "the completed ask, before Build is pressed",
+        Point(
+            f"The ask: a new USD {FACILITY_AMOUNT:.0f}m term facility over "
+            f"{FACILITY_TENOR} months.",
+            "With its purpose, its repayment source and its security.",
+        ),
+        Point(
+            "Stated before the memo is written, not after.",
+            "Without the ask the memo would comment on a borrower rather than assess a "
+            "credit. Those are different documents.",
+        ),
+        look_at="the completed ask, before Build is pressed",
     )
     _build(stage)
 
@@ -405,12 +437,20 @@ def act_build_the_memo(stage: Stage) -> None:
         raise ActFailed(f"the memo cites something nobody uploaded: {cited - uploaded}")
     stage.state["memo"] = memo
     stage.cue(
-        "The pipeline redacted the case, screened it, retrieved from the borrower's own "
-        "evidence, computed the ratios BEFORE drafting a word, and then wrote prose around "
-        f"numbers the bank calculated. {len(memo['citations'])} citations, every one of "
-        "them a document in this credit file. And the banner at the top is unconditional: "
-        "no configuration produces a memo without it.",
-        "the amber human-review banner, then scroll the sections a committee reads",
+        Point(
+            "The ratios were computed BEFORE a word was drafted.",
+            "Redact, screen, retrieve from the borrower's own evidence, compute, then write "
+            "prose around numbers the bank calculated.",
+        ),
+        Point(
+            f"{len(memo['citations'])} citations, every one a document in this credit file.",
+            "Nothing is cited that nobody in this room uploaded.",
+        ),
+        Point(
+            "The human-review banner is unconditional.",
+            "No configuration produces a memo without it.",
+        ),
+        look_at="the amber human-review banner, then scroll the sections a committee reads",
     )
 
 
@@ -593,12 +633,18 @@ def act_the_group(stage: Stage) -> None:
     loc.choose(page, "Role", "Affiliate")
     loc.button(page, loc.ADD_TO_GROUP).click()
     stage.cue(
-        f"Two real subsidiaries out of Exhibit 21 of the same filing: {fx.SUBSIDIARY_NAME} "
-        f"in {fx.SUBSIDIARY_JURISDICTION}, wholly owned, and {fx.AFFILIATE_NAME} in "
-        f"{fx.AFFILIATE_JURISDICTION}, 40% held. Both rows are blank, because a lender to "
-        "the parent holds no standalone statements for either. Watch what the "
-        "consolidation does with an entity it has no figures for.",
-        "the two entity rows, entirely blank, before the rebuild",
+        Point(
+            "Two real subsidiaries, out of Exhibit 21 of the same filing.",
+            f"{fx.SUBSIDIARY_NAME} in {fx.SUBSIDIARY_JURISDICTION}, wholly owned. "
+            f"{fx.AFFILIATE_NAME} in {fx.AFFILIATE_JURISDICTION}, 40% held.",
+        ),
+        Point(
+            "Both rows are blank, and stay blank.",
+            "Neither files separately, so a lender to the parent holds no standalone "
+            "statements for either. The ordinary case, not the awkward one.",
+        ),
+        Point("Watch what the consolidation does with an entity it has no figures for."),
+        look_at="the two entity rows, entirely blank, before the rebuild",
     )
 
     _build(stage)
@@ -625,14 +671,20 @@ def act_the_group(stage: Stage) -> None:
     if fx.SUBSIDIARY_NAME not in body:
         raise ActFailed("the entity the consolidation could not include is not on screen")
     stage.cue(
-        "The cash flow does not claim to be complete, and it names exactly who is missing. "
-        "'We hold no accounts for the Singapore subsidiary' is a weaker claim than a total, "
-        "and a truer one: the total that quietly omits a wholly-owned subsidiary reads as "
-        "though it contributes nothing. Note what is NOT here — no invented intercompany "
-        "elimination. Flowserve discloses a real one, USD 10.6m between its two divisions, "
-        "and it is already inside the consolidated revenue, so recording it again would "
-        "deduct it twice.",
-        "the incomplete notice naming both entities, and the borrower's own contribution",
+        Point(
+            "The cash flow does not claim to be complete, and names exactly who is missing.",
+            "'We hold no accounts for the Singapore subsidiary' is a weaker claim than a "
+            "total, and a truer one. A total that quietly omits a wholly-owned subsidiary "
+            "reads as though it contributes nothing.",
+        ),
+        Point(
+            "Note what is NOT here: no invented intercompany elimination.",
+            f"Flowserve discloses a real one, USD "
+            f"{fx.DISCLOSED_INTERSEGMENT_ELIMINATION}m between its two divisions, and it is "
+            "already inside the consolidated revenue. Recording it again would deduct it "
+            "twice.",
+        ),
+        look_at="the incomplete notice naming both entities, and the borrower's own contribution",
     )
 
 
@@ -716,10 +768,15 @@ def act_the_checker(stage: Stage) -> None:
     if amended["revision"] < 2:
         raise ActFailed("an edit did not open a new revision")
     stage.cue(
-        f"The analyst rewrites the summary to lead with the breach. That is revision "
-        f"{amended['revision']}: the draft nobody touched is still there, and so is the "
-        "reason this one was written.",
-        f"revision {amended['revision']}, with its reason and note",
+        Point(
+            f"The analyst rewrites the summary to lead with the breach — revision "
+            f"{amended['revision']}."
+        ),
+        Point(
+            "The draft nobody touched is still there.",
+            "And so is the reason this revision was written, in the author's own words.",
+        ),
+        look_at=f"revision {amended['revision']}, with its reason and note",
     )
 
     comment = _ok(
@@ -735,10 +792,14 @@ def act_the_checker(stage: Stage) -> None:
     if "@" not in comment["author"]:
         raise ActFailed("an unattributed comment")
     stage.cue(
-        f"The approver objects, and the comment is anchored to revision {comment['revision']} "
-        "— the exact text they read. Not to the section, and not to the memo: to the "
-        "words that were in front of them.",
-        f"the comment by {comment['author']}, anchored to revision {comment['revision']}",
+        Point("The approver objects."),
+        Point(
+            f"The comment is anchored to revision {comment['revision']} — the exact text "
+            "they read.",
+            "Not to the section, and not to the memo: to the words that were in front of "
+            "them when they wrote it.",
+        ),
+        look_at=f"the comment by {comment['author']}, anchored to revision {comment['revision']}",
     )
 
     _ok(
@@ -767,10 +828,13 @@ def act_the_checker(stage: Stage) -> None:
     if listing["open_count"] != 1:
         raise ActFailed("the edit closed the comment instead of flagging it")
     stage.cue(
-        "The analyst edits again — and the comment does not close. It is flagged stale, "
-        "and it stays open. A comment that lapsed because the text moved underneath it was "
-        "lost, not answered, and the difference matters to whoever signs this.",
-        f"the comment marked stale, with {listing['open_count']} still open",
+        Point("The analyst edits again — and the comment does not close."),
+        Point(
+            f"It is flagged stale, and stays open ({listing['open_count']} open).",
+            "A comment that lapsed because the text moved underneath it was lost, not "
+            "answered, and the difference matters to whoever signs this.",
+        ),
+        look_at=f"the comment marked stale, with {listing['open_count']} still open",
     )
 
     resolved = _ok(
@@ -791,11 +855,16 @@ def act_the_checker(stage: Stage) -> None:
         raise ActFailed("the chain does not start at the draft nobody touched")
     stage.state["revisions"] = revisions
     stage.cue(
-        f"Resolved by {resolved.get('resolved_by')} — a person, named, not the software "
-        f"deciding it had been dealt with. And the chain of {len(revisions['revisions'])} "
-        "revisions verifies: every version from the machine's draft to this one, each "
-        "linked to the last, none of them quietly rewritten.",
-        "the resolution and the intact revision chain",
+        Point(
+            f"Resolved by {resolved.get('resolved_by')} — a person, named.",
+            "Not the software deciding it had been dealt with.",
+        ),
+        Point(
+            f"The chain of {len(revisions['revisions'])} revisions verifies.",
+            "Every version from the machine's draft to this one, each linked to the last, "
+            "none of them quietly rewritten.",
+        ),
+        look_at="the resolution and the intact revision chain",
     )
 
 
@@ -840,11 +909,16 @@ def act_public_context(stage: Stage) -> None:
     page = stage.page
     page.get_by_label("Search the public web", exact=True).fill(SECTOR_QUERY)
     stage.cue(
-        "An analyst wants sector context, and would otherwise open a browser for it. This "
-        "runs the search from inside the console so the question and its answer are at "
-        "least logged. Offline every row is labelled a fixture; under the live profile "
-        "this is Grounding with Google Search against Vertex.",
-        "the search box, before the query runs",
+        Point(
+            "An analyst wants sector context, and would otherwise open a browser for it.",
+            "Running it inside the console means the question and its answer are at least logged.",
+        ),
+        Point(
+            "Offline every row is labelled a fixture.",
+            "Under the live profile this same switch reaches Grounding with Google Search "
+            "against Vertex.",
+        ),
+        look_at="the search box, before the query runs",
     )
     loc.button(page, "Search public context").click()
     page.wait_for_selector("text=None of the above is in the memo", timeout=60_000)
@@ -878,12 +952,23 @@ def act_public_context(stage: Stage) -> None:
     if not cited <= uploaded:
         raise ActFailed(f"the memo cites something that is not an uploaded document: {cited}")
     stage.cue(
-        f"{len(found['evidence'])} results, with the suggestion chips Google requires "
-        "rendered beside them. And not one of them is in the memo: there is no field on a "
-        "memo a search result could occupy, the export carries none, and nothing here "
-        "holds a number a ratio could read. To use one of these facts, the analyst types "
-        "the figure into the spread and cites the URL — which makes it theirs.",
-        "the results, then the line saying none of it is in the memo",
+        Point(
+            f"{len(found['evidence'])} results, with the suggestion chips Google requires "
+            "beside them.",
+            "The licence requires them rendered verbatim; dropping them is a breach that "
+            "looks tidy.",
+        ),
+        Point(
+            "Not one of them is in the memo, the pack or the review payload.",
+            "There is no field on a memo a search result could occupy, and nothing here "
+            "holds a number a ratio could read.",
+        ),
+        Point(
+            "To use one of these facts, the analyst types the figure into the spread and "
+            "cites the URL.",
+            "Which makes it theirs, under their name, like every other figure.",
+        ),
+        look_at="the results, then the line saying none of it is in the memo",
     )
 
 
@@ -927,12 +1012,20 @@ def act_committee_pack(stage: Stage) -> None:
     stage.state["console_page"] = stage.page
     stage.page = pack_page
     stage.cue(
-        "This is what leaves the building — the same pack as a Word document, which is how "
-        "a committee actually circulates it. The standing sentence is first. Then the "
-        "policy exceptions and the failed reconciliations, which a pack once dropped while "
-        "still looking complete. And PDF, which this deployment cannot produce, is refused "
-        "rather than quietly substituted with something else.",
-        "the standing sentence, then LEV-01 and the certificate reconciliation in the pack",
+        Point(
+            "This is what leaves the building — the same pack, as a Word document.",
+            "Which is how a committee actually circulates it.",
+        ),
+        Point(
+            "Standing sentence first, then the policy exceptions and the failed reconciliations.",
+            "A pack once dropped the last two while still looking complete. That is the "
+            "regression this act exists for.",
+        ),
+        Point(
+            "PDF, which this deployment cannot produce, is refused.",
+            "Rather than quietly substituted with something else.",
+        ),
+        look_at="the standing sentence, then LEV-01 and the certificate reconciliation in the pack",
     )
 
 
@@ -972,10 +1065,12 @@ def act_refusals(stage: Stage) -> None:
     loc.button(page, loc.BUILD).click()
     page.wait_for_selector("text=Add the borrower's documents", timeout=30_000)
     stage.cue(
-        "Build with an empty credit file and it refuses, and says what to add. It does not "
-        "produce a thinner memo off a name alone — which is the failure mode worth naming, "
-        "because a thin memo looks like a memo.",
-        "the inline refusal naming what is missing",
+        Point("Build with an empty credit file: it refuses, and says what to add."),
+        Point(
+            "It does not produce a thinner memo off a name alone.",
+            "That is the failure mode worth naming, because a thin memo looks like a memo.",
+        ),
+        look_at="the inline refusal naming what is missing",
     )
 
     # And a request that tries to talk to the model rather than about the borrower.
@@ -983,20 +1078,24 @@ def act_refusals(stage: Stage) -> None:
     _upload_files(stage)
     _fill_request(stage)
     stage.cue(
-        "Now an instruction to the model, hidden in the borrower's name where a real one "
-        "would arrive — inside a document somebody sent the bank. The request is otherwise "
-        "complete and perfectly ordinary.",
-        f"the borrower field, ending '{fx.INJECTION_PHRASE}'",
+        Point(
+            "Now an instruction to the model, hidden in the borrower's name.",
+            "Where a real one would arrive: inside a document somebody sent the bank.",
+        ),
+        Point("The request is otherwise complete and perfectly ordinary."),
+        look_at=f"the borrower field, ending '{fx.INJECTION_PHRASE}'",
     )
     _build(stage)
     body = _text(stage)
     if loc.BLOCKED_BANNER not in body:
         raise ActFailed("an injection attempt produced a memo instead of a refusal")
     stage.cue(
-        "Blocked by the guardrail, before any retrieval and before any drafting. Note what "
-        "it was screened on: the redacted case summary, which is the same thing the model "
-        "would have been shown. Nothing reached the model at all.",
-        "the amber guardrail notice",
+        Point("Blocked by the guardrail, before any retrieval and before any drafting."),
+        Point(
+            "Screened on the redacted case summary.",
+            "The same thing the model would have been shown. Nothing reached the model at all.",
+        ),
+        look_at="the amber guardrail notice",
     )
 
 
@@ -1016,11 +1115,14 @@ def act_evidence_goes_away(stage: Stage) -> None:
     if not stage.get(f"/v1/analyses/{analysis_id}", persona=AUDITOR).ok:
         raise ActFailed("the bank's own auditor could not read the analysis")
     stage.cue(
-        f"Another bank's user asks for this analysis and gets {stranger.status} — the same "
-        "answer they would get for one that does not exist. A 403 would have confirmed it "
-        "exists, which is itself a disclosure. The bank's own auditor reads it fine. Now "
-        "the analyst deletes the credit file.",
-        "the two answers: 404 to the stranger, 200 to the auditor",
+        Point(
+            f"Another bank's user asks for this analysis and gets {stranger.status}.",
+            "The same answer they would get for one that does not exist. A 403 would have "
+            "confirmed it exists, which is itself a disclosure.",
+        ),
+        Point("The bank's own auditor reads it fine."),
+        Point("Now the analyst deletes the credit file."),
+        look_at="the two answers: 404 to the stranger, 200 to the auditor",
     )
 
     deleted = stage.delete(f"/v1/analyses/{analysis_id}")
@@ -1050,168 +1152,313 @@ def _row_index(stage: Stage, code: str) -> int:
 ACTS: tuple[Act, ...] = (
     Act(
         "Who is asking",
-        "A credit analyst signs in. Everything that follows — the audit actor on the memo, "
-        "and which borrowers this person may retrieve evidence for — comes from the verified "
-        "identity, never from anything the browser claims about itself.",
+        (
+            Point(
+                "A credit analyst signs in.",
+                "Four seeded people across two different banks. The demo has more than one "
+                "tenant in it from the first screen.",
+            ),
+            Point(
+                "Their verified identity becomes the audit actor on the memo.",
+                "Never anything the browser claims about itself. Confirmations, comments "
+                "and resolutions are all attributed to it.",
+            ),
+            Point("Identity also decides which borrowers this person may retrieve evidence for."),
+        ),
         act_identity,
         point_at="the persona picker: four seeded people, in two different banks",
     ),
     Act(
         "The credit file",
-        "The analyst brings the deal's documents: audited statements, their own spread, and "
-        "the quarterly covenant certificate. Each one is labelled with what it is and the "
-        "date it speaks to, because the service cannot tell last year's management accounts "
-        "from yesterday's and will not guess.",
+        (
+            Point(
+                "The analyst brings the deal's documents.",
+                "Audited statements, their own spread, and the quarterly covenant certificate.",
+            ),
+            Point(
+                "Each is labelled with what it is, and the date it speaks to.",
+                "The service cannot tell last year's management accounts from yesterday's, "
+                "and will not guess.",
+            ),
+            Point(
+                "The manifest is the receipt for what the bank now holds.",
+                "Every file by name, its digest and page count, and the date the evidence "
+                "is deleted.",
+            ),
+        ),
         act_credit_file,
         point_at="the manifest: every file, its digest and page count, and the date the "
         "evidence is deleted",
     ),
     Act(
         "Figures nobody has vouched for",
-        "The extractor reads the figures off those documents. Every row shows the quote it "
-        "came from and links to the page. None of it computes anything yet: this is a "
-        "proposal, and the product's own types refuse to calculate a ratio from it.",
+        (
+            Point("The extractor reads the figures off those documents."),
+            Point(
+                "Every row shows the quote it came from, and links to the page.",
+                "Anyone in the room can check a figure against the filing without leaving "
+                "the screen.",
+            ),
+            Point(
+                "None of it computes anything yet — this is a proposal.",
+                "The product's own types refuse to calculate a ratio from an extracted figure.",
+            ),
+        ),
         act_extraction_is_a_proposal,
         point_at="the amber panel titled 'Not yet anybody's figures', and a quote opened "
         "beside its source page",
     ),
     Act(
         "Becoming the person who stands behind them",
-        "The analyst keeps most rows, rejects one, and adjusts capex with a reason. "
-        "Confirming carries their name. From here the engines compute from figures a named "
-        "person accepted, and both the original and the adjustment are kept.",
+        (
+            Point("The analyst keeps most rows, rejects one, and adjusts capex with a reason."),
+            Point(
+                "Confirming carries their name.",
+                "From here the engines compute from figures a named person accepted.",
+            ),
+            Point(
+                "Both the original and the adjustment are kept.",
+                "The bank's figure sits beside the borrower's, never over it.",
+            ),
+        ),
         act_confirm_the_spread,
         point_at="the green 'Confirmed by' line naming the analyst",
     ),
     Act(
         "The memo",
-        "Build. The pipeline redacts, screens, retrieves the borrower's own evidence, "
-        "computes the ratios BEFORE drafting, then writes the narrative around numbers the "
-        "bank calculated. Every section carries citations, and the memo is marked for human "
-        "review whatever it says.",
+        (
+            Point(
+                "Build.",
+                "The pipeline redacts, screens, and retrieves the borrower's own evidence "
+                "before anything is written.",
+            ),
+            Point(
+                "The ratios are computed BEFORE drafting.",
+                "The narrative is then written around numbers the bank calculated, not the "
+                "other way round.",
+            ),
+            Point("Every section carries citations."),
+            Point(
+                "The memo is marked for human review whatever it says.",
+                "Decision support, not a credit decision. No configuration removes the banner.",
+            ),
+        ),
         act_build_the_memo,
         point_at="the amber human-review banner, then the sections a committee reads",
     ),
     Act(
         "Same filing, two answers",
-        "Flowserve's own filing says it is in compliance with every covenant, and reports "
-        "net leverage of 1.64x. The engine computes 3.18x from the figures the analyst "
-        "confirmed, and the covenant BREACHES. Both are right: the borrower nets its cash "
-        "and adds back its realignment charges, and this bank does neither. The model "
-        "drafts prose; it never decides compliance. And the current ratio passes at 2.03x "
-        "against a 2.00x floor — inside the thin-headroom band, so AT RISK rather than "
-        "green. Every one of those numbers is in the 10-K.",
+        (
+            Point("Flowserve's own filing: net leverage 1.64x, in compliance with every covenant."),
+            Point("The bank's engine: 3.18x, and the covenant BREACHES."),
+            Point(
+                "Both are right.",
+                "The borrower nets its cash and adds back its realignment charges, and this "
+                "bank does neither. Every one of those numbers is in the 10-K.",
+            ),
+            Point("The model drafts prose. It never decides compliance."),
+            Point(
+                "Current ratio 2.03x against a 2.00x floor: AT RISK, not green.",
+                "Thin headroom is its own answer, distinct from compliant — and it falls "
+                "out of the filed figures rather than being arranged.",
+            ),
+        ),
         act_the_breach_stands,
         point_at="the covenant table: the status pills, and the computed value beside the "
         "one the evidence reported",
     ),
     Act(
         "It refuses to compute what it cannot",
-        "Four of the nine catalogue ratios could not be computed, and each says which line "
-        "was missing. A quick ratio quietly omitted reads as though nobody thought liquidity "
-        "worth stating; an estimated one is worse.",
+        (
+            Point("Four of the nine catalogue ratios could not be computed."),
+            Point(
+                "Each one says which line was missing.",
+                "A quick ratio quietly omitted reads as though nobody thought liquidity "
+                "worth stating. An estimated one is worse.",
+            ),
+        ),
         act_uncomputable_ratios,
         point_at="the ratio rows with no number, each naming the line it needed",
     ),
     Act(
         "The bank's own policy",
-        "The limits are the bank's, from an uploaded versioned pack, and the memo names the "
-        "version. That is what makes the exception a sentence a committee can act on: your "
-        "policy requires 3.00x, this measures 3.18x, and the Regional Credit Committee can "
-        "waive it. The scorecard proposes a grade and shows every driver — proposed, never "
-        "assigned.",
+        (
+            Point(
+                "The limits are the bank's own, from an uploaded versioned pack.",
+                "The memo names the version it was measured against.",
+            ),
+            Point(
+                "The exception is a sentence a committee can act on.",
+                "Your policy requires 3.00x, this measures 3.18x, and the Regional Credit "
+                "Committee can waive it.",
+            ),
+            Point(
+                "The scorecard proposes a grade and shows every driver.",
+                "Proposed, never assigned.",
+            ),
+        ),
         act_policy_and_rating,
         point_at="rule LEV-01 with its waiver authority, and the grade's drivers",
     ),
     Act(
         "The reconciliations",
-        "The borrower's filing says net leverage is 1.64x and every covenant is met. The "
-        "engine computes 3.18x. The memo reports the disagreement rather than picking a "
-        "winner quietly, and the cause is not an error in either figure: it is cash "
-        "netting and an EBITDA add-back. That is the conversation the credit officer needs "
-        "to have, surfaced instead of buried.",
+        (
+            Point(
+                "The borrower's filing says 1.64x and every covenant met. The engine says 3.18x."
+            ),
+            Point("The memo reports the disagreement rather than picking a winner quietly."),
+            Point(
+                "The cause is not an error in either figure.",
+                "Cash netting and an EBITDA add-back. That is the conversation the credit "
+                "officer needs to have, surfaced instead of buried.",
+            ),
+        ),
         act_reconciliation,
         point_at="the reconciliation finding naming both figures",
     ),
     Act(
         "The group",
-        "Lending is to a group, not a company. The analyst declares two real subsidiaries "
-        "from Exhibit 21 of the same filing — one wholly owned in Singapore, one 40% held "
-        "in Saudi Arabia. Neither files separately, so the bank has no statements for "
-        "either, which is the ordinary case rather than the awkward one. The consolidated "
-        "cash flow shows the borrower's contribution and NAMES both entities it could not "
-        "include, rather than totalling as though they contribute nothing.",
+        (
+            Point("Lending is to a group, not a company."),
+            Point(
+                "Two real subsidiaries, declared from Exhibit 21 of the same filing.",
+                "One wholly owned in Singapore, one 40% held in Saudi Arabia.",
+            ),
+            Point(
+                "Neither files separately, so the bank has statements for neither.",
+                "Which is the ordinary case rather than the awkward one.",
+            ),
+            Point(
+                "The consolidated cash flow NAMES both entities it could not include.",
+                "Rather than totalling as though they contribute nothing.",
+            ),
+        ),
         act_the_group,
         point_at="the 'Incomplete' notice naming both subsidiaries",
     ),
     Act(
         "How far it can fall",
-        "A committee cannot judge whether a 15% earnings decline is the right test for this "
-        "sector. They can judge 'it breaks at 10%'. Every scenario reports the break-even, "
-        "not just the shocked value.",
+        (
+            Point(
+                "Every scenario reports the break-even, not just the shocked value.",
+                "A committee cannot judge whether a 15% earnings decline is the right test "
+                "for this sector. They can judge 'it breaks at 10%'.",
+            ),
+        ),
         act_stress,
         point_at="the break-even column",
     ),
     Act(
         "The checker",
-        "The analyst rewrites the summary to lead with the breach. The approver objects "
-        "against the exact text they read. The analyst edits again — and the comment is "
-        "flagged as stale rather than closed, because a comment that lapsed when the text "
-        "moved was lost, not answered. The approver resolves it, by name, and the revision "
-        "chain verifies.",
+        (
+            Point("The analyst rewrites the summary to lead with the breach."),
+            Point("The approver objects, against the exact text they read."),
+            Point(
+                "The analyst edits again — and the comment goes stale, not closed.",
+                "A comment that lapsed when the text moved underneath it was lost, not answered.",
+            ),
+            Point("The approver resolves it, by name, and the revision chain verifies."),
+        ),
         act_the_checker,
         point_at="the revision chain, and the comment that went stale instead of away",
     ),
     Act(
         "Figures are not editable prose",
-        "The prose is editable. The ratios are not. No number reaches a committee that no "
-        "formula produced.",
+        (
+            Point("The prose is editable. The ratios are not."),
+            Point("No number reaches a committee that no formula produced."),
+        ),
         act_figures_are_not_prose,
         point_at="the refusal, which names the sections that ARE editable",
     ),
     Act(
         "Public context, for the analyst only",
-        "The one place this product reaches the open web, and the one place its output may "
-        "not travel. The analyst searches for sector context and reads what comes back. "
-        "None of it enters the memo, the pack or the review payload — Google's licence "
-        "permits grounded results to be shown only to the person who ran the query, and a "
-        "memo is read by a checker, a committee and later an examiner. The memo has no "
-        "field one could occupy, and nothing here carries a figure an engine could read.",
+        (
+            Point(
+                "The analyst searches the open web for sector context, from inside the console.",
+                "The one place this product reaches the public web — so the question and "
+                "its answer are at least logged.",
+            ),
+            Point(
+                "None of it enters the memo, the pack or the review payload.",
+                "Google's licence permits grounded results to be shown only to the person "
+                "who ran the query, and a memo is read by a checker, a committee and later "
+                "an examiner.",
+            ),
+            Point(
+                "The memo has no field one could occupy.",
+                "And nothing here carries a figure an engine could read.",
+            ),
+        ),
         act_public_context,
         point_at="the results with their suggestion chips, then the line saying none of it "
         "is in the memo",
     ),
     Act(
         "The committee pack",
-        "The pack leaves the application as a Word document a committee circulates, carrying "
-        "the standing sentence first, the policy exceptions and the failed reconciliations. "
-        "It once dropped the last two while still looking complete. A format this deployment "
-        "cannot produce is refused rather than quietly substituted.",
+        (
+            Point(
+                "The pack leaves the application as a Word document a committee circulates.",
+                "The standing sentence first, then the policy exceptions and the failed "
+                "reconciliations.",
+            ),
+            Point(
+                "It once dropped the last two while still looking complete.",
+                "Which is why the pack's contents are asserted here rather than eyeballed.",
+            ),
+            Point("A format this deployment cannot produce is refused, not quietly substituted."),
+        ),
         act_committee_pack,
         point_at="the rendered pack: the standing sentence, then LEV-01 and the reconciliation",
     ),
     Act(
         "Is this even bankable",
-        "A pre-screen answers in a minute off a thin package. Ninety-six months trips the "
-        "one knockout the policy pack reserves for rules no appetite overrides, and no grade "
-        "is proposed, because the package cannot support one.",
+        (
+            Point("A pre-screen answers in a minute, off a thin package."),
+            Point(
+                "Ninety-six months trips the one knockout no appetite overrides.",
+                "The policy pack reserves knockouts for exactly that: rules no waiver "
+                "authority can reach.",
+            ),
+            Point(
+                "No grade is proposed.",
+                "The package cannot support one, and a grade off a thin package puts a "
+                "number in front of a committee that the evidence does not carry.",
+            ),
+        ),
         act_pre_screen_knockout,
         point_at="the TEN-01 knockout, and the absent rating",
     ),
     Act(
         "What it will not do",
-        "Build with an empty credit file and it refuses and says what to add. Put an "
-        "instruction to the model into the borrower's name and the guardrail blocks the "
-        "request before any retrieval or drafting. Neither produces a thinner memo.",
+        (
+            Point("Build with an empty credit file: it refuses, and says what to add."),
+            Point(
+                "Hide an instruction to the model in the borrower's name: the guardrail blocks it.",
+                "Before any retrieval and before any drafting.",
+            ),
+            Point(
+                "Neither produces a thinner memo.",
+                "That is the failure mode worth naming, because a thin memo looks like a memo.",
+            ),
+        ),
         act_refusals,
         point_at="the inline refusal, then the amber guardrail notice",
     ),
     Act(
         "The evidence goes away",
-        "Another bank's user gets the same answer for an analysis that exists as for one "
-        "that does not. The bank's own auditor can read it. And when the analyst deletes it, "
-        "the memo dies with the evidence it was built from — the retention promise, kept "
-        "immediately rather than in fifteen days.",
+        (
+            Point(
+                "Another bank's user gets the same answer for an analysis that exists as "
+                "for one that does not.",
+                "A 403 would confirm it exists, which is itself a disclosure.",
+            ),
+            Point("The bank's own auditor can read it."),
+            Point(
+                "The analyst deletes it, and the memo dies with the evidence.",
+                "The retention promise kept immediately, rather than in fifteen days.",
+            ),
+        ),
         act_evidence_goes_away,
         point_at="the 404 that does not confirm the analysis exists",
     ),
