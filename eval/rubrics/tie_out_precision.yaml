@@ -1,0 +1,36 @@
+# Scored by: eval/run_eval.py::score_tie_out_precision, in BOTH directions.
+#
+# A tie-out that cries wolf on a clean file gets switched off, and after that it catches
+# nothing at all; one that never fires was never a control. So a case declaring no expected
+# findings scores 0.0 if any HIGH or CRITICAL finding appears, and a case declaring findings is
+# scored on how many of them were raised.
+#
+# 1.0, and the number is arithmetic rather than ambition. The corpus carries five clean cases
+# and one with an expected finding; a clean case scores 0.0 the moment any HIGH or CRITICAL
+# finding appears, so a 0.95 bar over six cases passes only at six out of six. It was a 1.0
+# wearing a 0.95 label. Written down rather than grown, because the direction that matters here
+# is the false alarm, and there is no acceptable rate of a control crying wolf on a clean file:
+# that is the failure that gets the control switched off, after which it catches nothing at all.
+metric: tie_out_precision
+description: >
+  Reconciliations fire on the cases a reviewer marked as failing, and stay silent on the files
+  a reviewer marked clean. The false alarm is scored, not only the miss.
+threshold: 1.0
+direction: maximize
+applies_to:
+  - CreditMemo.tie_out
+criteria:
+  - id: fires_when_it_should
+    description: Each expected finding was raised.
+    weight: 0.5
+  - id: silent_when_it_should_be
+    description: No HIGH or CRITICAL finding on a file the reviewer marked clean.
+    weight: 0.5
+scoring:
+  scale: [0.0, 1.0]
+  pass_if: "score >= threshold"
+denominator:
+  kind: all-or-nothing
+falsified_by: >
+  eval/run_eval.py::prove_every_metric_can_go_red adds one CRITICAL finding to a CLEAN case.
+  That is the precision direction, and a recall-shaped proof would never have seen it.

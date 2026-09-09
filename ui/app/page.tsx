@@ -191,7 +191,7 @@ export default function Home() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
+    <main className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       {!IS_EMBEDDED && personas.length > 0 ? (
         <div className="mb-6 rounded-xl border border-ink-200 bg-white p-4 shadow-panel">
           <span className="mb-1 block text-sm font-semibold text-ink-900">

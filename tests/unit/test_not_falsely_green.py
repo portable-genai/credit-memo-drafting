@@ -17,11 +17,11 @@ import pytest
 from agent_eval_kit import assert_can_go_red
 from eval.run_eval import (
     DEFAULT_DATASET,
-    THRESHOLDS,
     _build_adapters,
     _make_service,
     _memo_input,
     load_golden,
+    load_thresholds_from_rubrics,
     score_citation_accuracy,
     score_covenant_accuracy,
     score_groundedness,
@@ -29,6 +29,11 @@ from eval.run_eval import (
 )
 
 from credit_memo.domain.models import CreditMemo, RetrievalQuery
+
+#: The reviewed bars, read from `eval/rubrics/*.yaml` exactly as the gate reads them. The
+#: module-level dict this used to import is gone: a threshold written as a Python literal
+#: carries no argument, and having both was two homes for one number.
+THRESHOLDS = load_thresholds_from_rubrics()
 
 _GOLDEN = load_golden(DEFAULT_DATASET)
 #: A case with covenants to get right, so covenant_accuracy scores something real.
@@ -115,3 +120,66 @@ def test_pii_safety_can_go_red() -> None:
         threshold=THRESHOLDS["pii_safety"],
         metric="pii_safety",
     )
+
+
+# --------------------------------------------------------------------------- #
+# The five metrics that had no red case anywhere, and the ordering that guards them
+# --------------------------------------------------------------------------- #
+def test_the_five_strictest_metrics_can_go_red() -> None:
+    """Run the SHIPPED proof, the same one the scored run executes before it scores.
+
+    ``ratio_reproducibility``, ``spread_accuracy``, ``tie_out_precision``,
+    ``revision_integrity`` and ``research_isolation`` had never been shown able to fail
+    anywhere. Four of the five sit at exactly 1.00, which is also the shape a scorer that
+    silently became a constant produces, so a green report told a reader nothing about them.
+    """
+    from eval.run_eval import load_thresholds_from_rubrics, prove_every_metric_can_go_red
+
+    prove_every_metric_can_go_red(load_thresholds_from_rubrics())
+
+
+def test_the_scored_run_refuses_a_metric_that_became_a_constant() -> None:
+    """The ordering IS the guarantee: falsification runs before a single golden score.
+
+    Run only here, a proof says the metric could have gone red in this process. Run as the
+    first statement of ``run_offline``, it says the metric about to score this corpus can go
+    red, against the thresholds that run just loaded from the rubrics. This test breaks a
+    scorer into the constant 1.0 the proof exists to catch and asserts the scored run refuses
+    rather than reporting a confident green.
+    """
+    from agent_eval_kit.harness import NotFalselyGreenError
+    from eval import run_eval
+
+    original = run_eval.score_tie_out_precision
+    run_eval.score_tie_out_precision = lambda memo, expected: 1.0  # type: ignore[assignment]
+    try:
+        with pytest.raises(NotFalselyGreenError, match="tie_out_precision: FALSELY GREEN"):
+            run_eval.run_offline(DEFAULT_DATASET, run_eval.load_thresholds_from_rubrics())
+    finally:
+        run_eval.score_tie_out_precision = original  # type: ignore[assignment]
+
+
+def test_the_scored_run_refuses_a_bar_the_corpus_cannot_express() -> None:
+    """The denominator rule, and the same ordering argument.
+
+    Three bars in this repository were arithmetically identical to 1.0 while reading as though
+    they had headroom. They now say 1.0; this is what stops the next one being introduced.
+    """
+    from agent_eval_kit.denominators import DenominatorError
+    from eval import run_eval
+
+    thresholds = dict(run_eval.load_thresholds_from_rubrics())
+    thresholds["spread_accuracy"] = 0.99  # a bar the twelve line items cannot express
+    with pytest.raises(DenominatorError, match="identical to 1.0"):
+        run_eval.run_offline(DEFAULT_DATASET, thresholds)
+
+
+def test_every_scored_metric_has_a_reviewed_bar_and_every_bar_is_scored() -> None:
+    """Both directions. The second is the one nobody writes by hand, and the one that rots."""
+    from agent_eval_kit import load_rubrics
+    from agent_eval_kit.rubrics import RubricError
+    from eval.run_eval import RUBRICS, SCORED
+
+    load_rubrics(RUBRICS).assert_covers(SCORED)
+    with pytest.raises(RubricError, match="reads as governance"):
+        load_rubrics(RUBRICS).assert_covers(SCORED[:-1])

@@ -1,0 +1,41 @@
+# Scored by: eval/run_eval.py::score_ratio_reproducibility against the golden case's own
+# expected_ratios, hand-written by a reviewer, never against the engine's own output.
+#
+# Exactly 1.0, not 0.99. A ratio engine that reproduces 99% of its own numbers is not a ratio
+# engine, and there is no sampling here to explain a miss: the same spread and the same
+# catalogue version must give the same figure, or the arithmetic has changed under a memo
+# somebody already signed.
+#
+# Note what this metric does NOT prove: that the figure is RIGHT. It proves the figure is
+# stable and that it came from the named formula. Correctness of the OPERANDS is a different
+# question and is scored separately by spread_accuracy, which is why both exist.
+metric: ratio_reproducibility
+description: >
+  Every expected ratio is present in the memo, has a value, and equals the figure the golden
+  case states. Absent, valueless and moved are three distinct failures and all score zero.
+threshold: 1.0
+direction: maximize
+applies_to:
+  - CreditMemo.ratios
+criteria:
+  - id: present
+    description: The ratio appears in the memo; the catalogue still computes it.
+    weight: 0.34
+  - id: valued
+    description: It carries a value; the spread still supports it.
+    weight: 0.33
+  - id: unmoved
+    description: The value equals the reviewer's figure; the formula has not changed.
+    weight: 0.33
+scoring:
+  scale: [0.0, 1.0]
+  pass_if: "score >= threshold"
+denominator:
+  # `all-or-nothing` at the bar level: a 1.0 threshold asks for no headroom, so the denominator
+  # rule (agent_eval_kit.denominators) has nothing to say about it. The denominator that DOES
+  # matter here is the number of expected ratios, and a case declaring none is scored 1.0
+  # deliberately: it asserts that a memo built with no spread still produces one.
+  kind: all-or-nothing
+falsified_by: >
+  eval/run_eval.py::prove_every_metric_can_go_red shifts every ratio's value by 1.0, which is
+  the formula moving under a signed memo. Run as the first statement of the scored run.

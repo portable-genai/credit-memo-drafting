@@ -1,0 +1,42 @@
+# Scored by: eval/run_eval.py::score_research_isolation.
+#
+# Exactly 1.0. The fence between the public web and the bank's arithmetic either holds or it
+# does not; "held 99% of the time" describes a fence with a hole in it. It is scored on the
+# gate rather than left to the unit tests because the obligation is a licence term (Service
+# Specific Terms 20(k)) rather than a style preference, and a promotion that breached it should
+# not be certifiable.
+#
+# Three checks, because the fence has three sides and each fails differently: WebEvidence
+# carries no numeric field, so there is no operand for a ratio or a covenant test to reach for;
+# CreditMemo has no field a market context could occupy, absent rather than filtered, which a
+# future edit cannot forget to apply; and nothing web-shaped reaches the built committee pack.
+metric: research_isolation
+description: >
+  Nothing retrieved from the public web can reach a calculation, a memo field or the committee
+  pack. Structural absence, not filtering.
+threshold: 1.0
+direction: maximize
+applies_to:
+  - CreditMemo
+  - WebEvidence
+  - memo_document.build_document
+criteria:
+  - id: no_web_operand
+    description: WebEvidence declares no numeric field.
+    weight: 0.34
+  - id: no_web_field_on_the_memo
+    description: CreditMemo declares no field a market context could occupy.
+    weight: 0.33
+  - id: nothing_web_shaped_in_the_pack
+    description: The rendered committee pack carries no web-grounded marker.
+    weight: 0.33
+scoring:
+  scale: [0.0, 1.0]
+  pass_if: "score >= threshold"
+denominator:
+  kind: all-or-nothing
+falsified_by: >
+  eval/run_eval.py::prove_every_metric_can_go_red passes a memo type carrying a market_context
+  field. Checks 1 and 2 read the CLASS rather than the instance, so no mutated memo could ever
+  have failed them; the type is exactly the future edit the fence refuses, which makes it the
+  honest red case rather than a contrived one.

@@ -70,7 +70,7 @@ plugin: ## Render the Agent Plugins 1.0.0 directory from this repo's own declara
 mcp-serve: ## Serve the governed tool catalog over MCP 2026-07-28 (stdio; needs [gcp]).
 	python -m credit_memo.mcp
 
-check: lint test eval demo-selftest portability plugin ## Run the full offline quality gate (no node, no cloud).
+check: lint test eval eval-narrative evals-doc-check demo-selftest portability plugin ## Run the full offline quality gate (no node, no cloud).
 
 demo-selftest: ## Prove the served presenter states and evidence hooks cannot rot silently.
 	PYTHONPATH=src:scripts $(PYTHON) scripts/demo_selftest.py
@@ -112,6 +112,15 @@ eval: ## Run the A4 eval gate (groundedness / covenant / citations / pii_safety)
 
 eval-adversarial: ## Prove the gate catches a fabricating model (a PASS here is the bug).
 	CREDIT_MEMO_PROFILE=local PYTHONPATH=src $(PYTHON) eval/run_eval.py --adversarial
+
+eval-narrative: ## Judge the memo PROSE against the model-risk floors (offline, no model server).
+	$(PYTHON) eval/run_narrative_eval.py
+
+evals-doc: ## Regenerate docs/evals.md from the rubrics, golden sets and floors.
+	$(PYTHON) scripts/render_evals_doc.py
+
+evals-doc-check: ## Fail when docs/evals.md and the artifacts it describes disagree.
+	$(PYTHON) scripts/render_evals_doc.py --check
 
 run-api: ## Run the FastAPI service (PROFILE=$(PROFILE)).
 	uvicorn $(API_APP) --host $(API_HOST) --port $(API_PORT) --reload

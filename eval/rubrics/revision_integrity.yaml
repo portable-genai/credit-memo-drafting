@@ -1,0 +1,34 @@
+# Scored by: eval/run_eval.py::score_revision_integrity.
+#
+# Exactly 1.0. The revision chain is the answer to "which version did the committee read", and
+# a chain that verifies 99% of the time answers it 99% of the time, which is the same as not
+# answering it.
+#
+# This metric scores a MECHANISM rather than a memo: it builds a two-revision chain, verifies
+# it holds, tampers with what revision 1 said while keeping its recorded digest, and verifies
+# the chain then does NOT reconcile. A chain that verifies either way is decoration.
+metric: revision_integrity
+description: >
+  A two-revision chain verifies when intact and fails when an earlier revision's content is
+  altered. Both halves, because only the second one is a guarantee.
+threshold: 1.0
+direction: maximize
+applies_to:
+  - RevisionService.verify
+criteria:
+  - id: intact_verifies
+    description: An untampered chain reconciles.
+    weight: 0.5
+  - id: tampered_fails
+    description: A chain whose first revision's content was altered does not reconcile.
+    weight: 0.5
+scoring:
+  scale: [0.0, 1.0]
+  pass_if: "score >= threshold"
+denominator:
+  kind: all-or-nothing
+falsified_by: >
+  eval/run_eval.py::prove_every_metric_can_go_red substitutes a revision service whose verify
+  reports intact for a tampered chain. The scorer reads no memo content, so no memo could ever
+  have failed it, and a metric no input can fail is a constant 1.0 whatever its name says. The
+  injectable collaborator exists for exactly this reason.

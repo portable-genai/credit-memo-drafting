@@ -12,7 +12,13 @@ metric: citation_accuracy
 description: >
   Per-case correctness of the citation set: no citation outside the retrieved or derived
   evidence (filings, credit-policy passages, peer data). Averaged over the dataset.
-threshold: 0.90          # report fails if score is below 0.90
+# 1.0, raised from 0.90, and the reason is arithmetic rather than ambition. The metric is a
+# per-case set comparison over six golden cases, so a 0.90 bar passes only at six out of six:
+# five of six is 0.833 and fails. The bar was a 1.0 wearing a 0.90 label, and a reviewer reading
+# 0.90 believed in headroom that was never there. The honest options were to grow the corpus to
+# ten cases or to write down what the bar already does; a memo that cites a source nobody
+# retrieved is a fabrication, and there is no acceptable rate of that, so it is written down.
+threshold: 1.0
 direction: maximize
 applies_to:
   - CreditMemo.citations
@@ -31,3 +37,14 @@ notes: >
   The offline heuristic is intentionally strict: it credits a citation only when the cited
   source_id is in the set of retrieved passages for the case, so passing the offline gate
   is a lower bound on the production judge's score.
+
+denominator:
+  # The denominator rule (agent_eval_kit.denominators): a threshold `t` tolerates a single miss
+  # only over at least 1/(1-t) scored positives. Below that the bar is arithmetically identical
+  # to 1.0 while reading as though it had headroom, so `eval/run_eval.py` asserts the
+  # relationship for every metric declared a `rate` and refuses a corpus that cannot express its
+  # own bar.
+  kind: all-or-nothing
+  note: >
+    A per-case set comparison, so the score is effectively 1.0-or-0.0 per case and the bar
+    at 1.0 asks for no headroom. Growing the corpus would not change what the bar means.

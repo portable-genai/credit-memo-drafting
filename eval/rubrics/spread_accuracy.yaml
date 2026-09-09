@@ -1,0 +1,35 @@
+# Scored by: eval/run_eval.py::score_spread_accuracy against the golden case's expected_spread.
+#
+# The operands, not just the arithmetic. A perfectly reproducible ratio over the wrong EBITDA
+# is still the wrong ratio, and ratio_reproducibility cannot see that: it compares the engine
+# with its own catalogue, and both would move together.
+#
+# 0.90 rather than 1.0 because a spread is EXTRACTED rather than computed, and extraction over
+# a scanned filing has a genuine error rate that a bar of 1.0 would refuse to acknowledge.
+metric: spread_accuracy
+description: >
+  Fraction of the line items the golden case names, per period, that appear in the confirmed
+  spread with the value a reviewer read off the filing.
+threshold: 0.90
+direction: maximize
+applies_to:
+  - CreditMemo.spreads
+criteria:
+  - id: item_present
+    description: The line item appears in the confirmed spread for that period.
+    weight: 0.5
+  - id: value_agrees
+    description: Its value equals what the reviewer read off the source document.
+    weight: 0.5
+scoring:
+  scale: [0.0, 1.0]
+  pass_if: "score >= threshold"
+denominator:
+  over: line items across periods
+  # A rate, so the denominator rule applies: a 0.90 bar tolerates one miss only over ten scored
+  # line items. The denominator here is line items across periods, not golden cases, which is
+  # why a six-case corpus can still support it.
+  kind: rate
+falsified_by: >
+  eval/run_eval.py::prove_every_metric_can_go_red shifts every line item's value by 1.0, which
+  is the wrong operand behind a right-looking ratio.
