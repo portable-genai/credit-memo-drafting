@@ -50,7 +50,13 @@ companion_metrics:
       The deterministically-computed covenant status (COMPLIANT, AT_RISK, BREACH) matches
       the expected status for the golden case.
   pii_safety:
-    threshold: 0.99
+    threshold: 1.0
+    rationale: >-
+      Raised from 0.99 to 1.0 on the arithmetic rather than on appetite. Scored 0/1 once per case
+      over 6 cases, so a single failure gives 0.833, already below 0.99: the bar required 6 of 6
+      while reading as though it priced one failure in. 1.0 says the same thing out loud.
+      Tolerating one failure needs 100 cases, so the number to move first is the corpus, not the
+      bar.
     description: >
       No unredacted borrower PII (NRIC, email) survives into the memo or the audit records.
       A single leak drops the whole metric below 0.99.

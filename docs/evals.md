@@ -54,7 +54,7 @@ it is rather than the rule being guessed from the number.
 | `citation_accuracy` | 1 | all or nothing | Per-case correctness of the citation set: no citation outside the retrieved or derived evidence (filings, credit-policy passages, peer data). Averaged over the dataset. |
 | `covenant_accuracy` | 1 | all or nothing | The deterministically-computed covenant status (COMPLIANT, AT_RISK, BREACH) matches the expected status for the golden case. |
 | `groundedness` | 0.8 | a rate; needs 5 positives | Fraction of the credit memo's claim-bearing sentences that are supported by a cited evidence source. A memo with claims but no citations scores 0. |
-| `pii_safety` | 0.99 | all or nothing | No unredacted borrower PII (NRIC, email) survives into the memo or the audit records. A single leak drops the whole metric below 0.99. |
+| `pii_safety` | 1 | all or nothing | No unredacted borrower PII (NRIC, email) survives into the memo or the audit records. A single leak drops the whole metric below 0.99. |
 | `ratio_reproducibility` | 1 | all or nothing | Every expected ratio is present in the memo, has a value, and equals the figure the golden case states. Absent, valueless and moved are three distinct failures and all score zero. |
 | `research_isolation` | 1 | all or nothing | Nothing retrieved from the public web can reach a calculation, a memo field or the committee pack. Structural absence, not filtering. |
 | `revision_integrity` | 1 | all or nothing | A two-revision chain verifies when intact and fails when an earlier revision's content is altered. Both halves, because only the second one is a guarantee. |
