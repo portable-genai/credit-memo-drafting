@@ -39,7 +39,7 @@ export default function RootLayout({
         ) : (
           <>
             <header className="border-b border-ink-200 bg-white">
-              <div className="mx-auto max-w-3xl px-4 py-4">
+              <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
                 <h1 className="text-lg font-semibold text-ink-900">
                   Credit-Memo Assistant
                 </h1>

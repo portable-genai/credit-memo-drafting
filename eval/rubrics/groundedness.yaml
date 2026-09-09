@@ -41,7 +41,11 @@ scoring:
 # .passed is the AND of all of these). Thresholds are the promotion bar in SPEC A4/P-08.
 companion_metrics:
   covenant_accuracy:
-    threshold: 0.90
+    # 1.0, raised from 0.90, for the same arithmetic reason as citation_accuracy. The corpus
+    # carries eight expected covenants and a 0.90 bar needs ten before it can tolerate one
+    # miss, so the bar was already 1.0. The status is computed deterministically from the
+    # certificate and the spread; there is no sampling here for a rate to describe.
+    threshold: 1.0
     description: >
       The deterministically-computed covenant status (COMPLIANT, AT_RISK, BREACH) matches
       the expected status for the golden case.
@@ -50,3 +54,18 @@ companion_metrics:
     description: >
       No unredacted borrower PII (NRIC, email) survives into the memo or the audit records.
       A single leak drops the whole metric below 0.99.
+
+# How each bar relates to the corpus it is measured over. `rate` means the denominator rule
+# applies (a threshold `t` needs at least 1/(1-t) scored positives before it can tolerate one
+# miss); `all-or-nothing` means the bar already asks for no headroom, so a bigger corpus would
+# not change what it means. eval/run_eval.py asserts the rate ones and refuses a corpus that
+# cannot express its own bar.
+denominator:
+  groundedness:
+    kind: rate
+    over: golden cases
+  covenant_accuracy:
+    kind: all-or-nothing
+  pii_safety:
+    kind: all-or-nothing
+    note: One leak anywhere scores the whole metric zero; the corpus size is irrelevant to that.

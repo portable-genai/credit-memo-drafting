@@ -38,10 +38,11 @@ from __future__ import annotations
 import json
 import re
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 # The local redaction adapter is the REAL one the runtime uses: it is pure regex over the
 # shared pii-kit rows and imports no google-cloud package, so the gate can exercise the
@@ -49,7 +50,15 @@ from pathlib import Path
 # The --mode smoke|gate scaffold + aligned report rendering come from the shared
 # agent-eval-kit commons; this script keeps only its own offline
 # evaluator and gate runner.
-from agent_eval_kit import eval_main, print_report
+from agent_eval_kit import (
+    assert_can_go_red,
+    assert_denominator_supports,
+    dataset_digest,
+    eval_main,
+    load_rubrics,
+    print_report,
+    prove_before_scoring,
+)
 
 # The pii_safety gate runs the REAL local redactor (not a fake) over the SAME shared pii-kit
 # rows the runtime uses, and scores the leak-check two independent ways: pack_leak (the same
@@ -97,33 +106,16 @@ from credit_memo.domain.models import (
 )
 from credit_memo.envread import setting_or_default
 
-THRESHOLDS: dict[str, float] = {
-    "groundedness": 0.80,
-    "covenant_accuracy": 0.90,
-    "citation_accuracy": 0.90,
-    "pii_safety": 0.99,
-    # Exactly 1.0, not 0.99. A ratio engine that reproduces 99% of its own numbers is
-    # not a ratio engine, and there is no sampling here to explain a miss: the same
-    # spread and the same catalogue version must give the same figure or the arithmetic
-    # has changed under a memo somebody already signed. Note what this metric does NOT
-    # prove: that the figure is RIGHT. It proves it is stable and that it came from the
-    # named formula. Correctness of the operands arrives with extraction receipts in
-    # Wave 2 (spread_accuracy).
-    "ratio_reproducibility": 1.0,
-    # The operands, not just the arithmetic: a perfectly reproducible ratio over the
-    # wrong EBITDA is still the wrong ratio.
-    "spread_accuracy": 0.90,
-    # Both directions. A tie-out that cries wolf on a clean file gets switched off, and
-    # one that never fires was never a control.
-    "tie_out_precision": 0.95,
-    # Exactly 1.0. The revision chain is the answer to "which version did the committee
-    # read", and a chain that verifies 99% of the time answers it 99% of the time, which
-    # is the same as not answering it.
-    "revision_integrity": 1.0,
-    # Exactly 1.0. The fence between the public web and the bank's arithmetic either holds
-    # or it does not; "held 99% of the time" describes a fence with a hole in it.
-    "research_isolation": 1.0,
-}
+#: Where every bar lives. Not a dict here: a threshold written as a Python literal carries no
+#: argument, so a reviewer can read that tie-out precision must clear 0.95 and cannot read why,
+#: who agreed it, or what moving it would mean. The rubric files carry the reasoning beside the
+#: number, and `agent_eval_kit.load_rubrics` reads them.
+#:
+#: What was here before was BOTH: a `THRESHOLDS` dict and a loader that overlaid the rubrics on
+#: top of it, falling back to the dict when PyYAML was missing. Two homes for one number, with a
+#: silent path that used the one nobody reviews. PyYAML is a hard dependency of this service, so
+#: there is no case to fall back for.
+RUBRICS = Path(__file__).resolve().parent / "rubrics"
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATASET = _REPO_ROOT / "eval" / "datasets" / "golden_cases.jsonl"
@@ -225,25 +217,44 @@ def load_golden(path: Path) -> list[GoldenExample]:
 
 
 def load_thresholds_from_rubrics() -> dict[str, float]:
-    """Read thresholds from ``eval/rubrics/*.yaml`` when PyYAML is available."""
-    thresholds = dict(THRESHOLDS)
-    try:
-        import yaml  # type: ignore[import-untyped]
-    except ImportError:
-        return thresholds
-    rubric_dir = _REPO_ROOT / "eval" / "rubrics"
-    for name in ("groundedness.yaml", "citation_accuracy.yaml"):
-        rubric_path = rubric_dir / name
-        if not rubric_path.exists():
-            continue
-        doc = yaml.safe_load(rubric_path.read_text(encoding="utf-8")) or {}
-        metric = doc.get("metric")
-        if isinstance(metric, str) and "threshold" in doc:
-            thresholds[metric] = float(doc["threshold"])
-        for companion, spec in (doc.get("companion_metrics") or {}).items():
-            if isinstance(spec, dict) and "threshold" in spec:
-                thresholds[str(companion)] = float(spec["threshold"])
-    return thresholds
+    """Read every metric's reviewed bar out of ``eval/rubrics/*.yaml``. No fallback, by design.
+
+    Fails closed on a missing directory, a non-numeric bar, or the same metric given two
+    different bars in two files. There is deliberately no fallback to a module dict: a fallback
+    is a second home for a number that must have one, and it is reached exactly when the
+    reviewed file could not be read, which is the worst moment to stop using it.
+    """
+    return load_rubrics(RUBRICS).thresholds()
+
+
+#: The metrics this runner scores, in report order. Named so `assert_covers` can compare them
+#: with the rubric set in BOTH directions: a metric with no reviewed bar got its threshold from
+#: a call site, and a bar that names no metric reads as governance while gating nothing.
+#: What each RATE metric's score is a fraction OF, so the denominator rule is applied to the
+#: number that actually divides rather than to the case count. The distinction is the whole
+#: point: `spread_accuracy` is a fraction over line items across periods, of which six golden
+#: cases carry twelve, so its 0.90 bar is expressible; `citation_accuracy` was a fraction over
+#: CASES, of which there are six, so its 0.90 bar was arithmetically 1.0 and is now written as
+#: 1.0. A metric absent from this map is declared `all-or-nothing` in its rubric: its bar asks
+#: for no headroom, so a bigger corpus would not change what it means.
+RATE_DENOMINATORS: dict[str, Callable[[list[GoldenExample]], int]] = {
+    "groundedness": len,
+    "spread_accuracy": lambda examples: sum(
+        len(periods) for e in examples for periods in e.expected_spread.values()
+    ),
+}
+
+SCORED: tuple[str, ...] = (
+    "groundedness",
+    "covenant_accuracy",
+    "citation_accuracy",
+    "pii_safety",
+    "ratio_reproducibility",
+    "spread_accuracy",
+    "tie_out_precision",
+    "revision_integrity",
+    "research_isolation",
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -699,7 +710,11 @@ def score_spread_accuracy(memo: CreditMemo, expected: dict) -> float:
     return round(hits / total, 4) if total else 1.0
 
 
-def score_research_isolation(memo: CreditMemo) -> float:
+def score_research_isolation(
+    memo: CreditMemo,
+    memo_type: type | None = None,
+    web_type: type | None = None,
+) -> float:
     """Can anything retrieved from the public web reach a calculation, a memo or a pack?
 
     Three checks, because the fence has three sides and each fails differently:
@@ -713,17 +728,26 @@ def score_research_isolation(memo: CreditMemo) -> float:
     Scored on the gate rather than left to the unit tests because the obligation is a
     licence term (Service Specific Terms 20(k)) rather than a style preference, and a
     promotion that breached it should not be certifiable.
+
+    ``memo_type`` and ``web_type`` default to the real classes and exist so the metric can be
+    shown able to go RED. Checks 1 and 2 inspect the CLASS rather than the instance, so no
+    mutated memo can fail them, and a metric no input can fail is a constant 1.0 whatever its
+    name says. Passing a type that carries the forbidden field is exactly the edit this fence
+    refuses, which makes it the honest red case rather than a contrived one.
     """
     import dataclasses
 
     from credit_memo.domain.memo_document import build_document
     from credit_memo.domain.models import WebEvidence
 
+    memo_type = memo_type or CreditMemo
+    web_type = web_type or WebEvidence
+
     numeric = {"float", "int", "float | None", "int | None"}
-    if any(f.type in numeric for f in dataclasses.fields(WebEvidence)):
+    if any(f.type in numeric for f in dataclasses.fields(web_type)):
         return 0.0
 
-    memo_fields = {f.name for f in dataclasses.fields(CreditMemo)}
+    memo_fields = {f.name for f in dataclasses.fields(memo_type)}
     if memo_fields & {"market_context", "web_evidence", "research", "web_citations"}:
         return 0.0
 
@@ -736,18 +760,26 @@ def score_research_isolation(memo: CreditMemo) -> float:
     return 1.0
 
 
-def score_revision_integrity(memo: CreditMemo, actor: str = "eval-bot") -> float:
+def score_revision_integrity(
+    memo: CreditMemo, actor: str = "eval-bot", service: object | None = None
+) -> float:
     """Does a memo's revision chain survive being built, extended and verified?
 
     Not a property of the memo so much as of the mechanism that records it. The chain is
     what answers "which version did the committee read" months later, and it is worth
-    nothing unless tampering actually breaks it — so this builds a two-revision chain,
+    nothing unless tampering actually breaks it, so this builds a two-revision chain,
     verifies it holds, then alters the first revision's content and verifies it does NOT.
     A chain that verifies either way is decoration.
+
+    ``service`` defaults to the real one and exists so the metric can be shown able to go RED.
+    The scorer takes a memo but does not depend on its content, so no memo can fail it, and a
+    metric no input can fail is a constant 1.0 whatever its name says. The red case is a
+    revision service whose verify returns intact for a tampered chain, which is precisely the
+    decoration described above.
     """
     from credit_memo.domain.revision_service import RevisionService
 
-    service = RevisionService()
+    service = service or RevisionService()
     payload = {"summary": memo.summary, "recommendation_rationale": memo.recommendation_rationale}
     first = service.first(payload, actor=actor)
     amended_payload = {**payload, "summary": f"{memo.summary} Reviewed."}
@@ -875,14 +907,170 @@ class _PerMetric:
         return sum(self.scores) / len(self.scores) if self.scores else 0.0
 
 
+def _false_alarm() -> Any:
+    """One CRITICAL tie-out finding on a file with nothing wrong with it.
+
+    The precision failure mode, and the one a recall-shaped proof cannot see: a reconciliation
+    that cries wolf on a clean file is the control that gets switched off, and after that it
+    catches nothing at all.
+    """
+    from credit_memo.domain.models import Severity, TieOutCheck, TieOutFinding
+
+    return TieOutFinding(
+        check=TieOutCheck.BALANCE_SHEET_BALANCES,
+        severity=Severity.CRITICAL,
+        detail="a reconciliation that fired on a file with nothing wrong with it",
+    )
+
+
+#: A revision service that certifies a tampered chain. It is the exact defect
+#: `score_revision_integrity` exists to catch, written down so the metric can be shown able to
+#: refuse it: a chain that verifies either way answers "which version did the committee read"
+#: with "any of them".
+class _CertifiesAnyChain:
+    """Delegates everything except the verdict, which is always intact."""
+
+    def __init__(self) -> None:
+        from credit_memo.domain.revision_service import RevisionService
+
+        self._real = RevisionService()
+
+    def first(self, payload: dict[str, Any], *, actor: str) -> Any:
+        return self._real.first(payload, actor=actor)
+
+    def amend(self, previous: Any, payload: dict[str, Any], *, actor: str, edits: Any) -> Any:
+        return self._real.amend(previous, payload, actor=actor, edits=edits)
+
+    def edits_between(self, before: dict[str, Any], after: dict[str, Any], *, actor: str) -> Any:
+        return self._real.edits_between(before, after, actor=actor)
+
+    def verify(self, revisions: Any) -> tuple[bool, str]:
+        return True, "certifies anything"
+
+
+@dataclass(frozen=True, slots=True)
+class _MemoWithMarketContext:
+    """A memo type carrying the field the research fence refuses to allow.
+
+    Not a contrivance: check 2 of `score_research_isolation` reads the CLASS's fields, so this
+    is the shape of the future edit it exists to stop, and the only input that can make the
+    metric go red.
+    """
+
+    market_context: str = ""
+
+
+def prove_every_metric_can_go_red(thresholds: dict[str, float]) -> None:
+    """Every one of the nine metrics, shown failing the defect it exists to catch.
+
+    Five of the nine had never been shown able to fail anywhere: ``ratio_reproducibility``,
+    ``spread_accuracy``, ``tie_out_precision``, ``revision_integrity`` and
+    ``research_isolation``. They are also the strictest bars in the set, four of them at
+    exactly 1.00, which is the same shape a scorer that silently became a constant produces.
+
+    The proofs run HERE, as the first statement of the scored run, and not only in the test
+    suite. Run in ``tests/``, a proof says the metric could have gone red on some machine at
+    some point; run here it says the metric about to score this corpus can go red, in this
+    process, against the thresholds this process just loaded from the rubrics.
+
+    Each degraded case mutates the OUTPUT the scorer reads, or substitutes the collaborator the
+    scorer trusts. Nothing re-implements a scorer, so a scorer that stopped working breaks this
+    rather than passing a copy of itself.
+    """
+    import dataclasses
+
+    examples = load_golden(DEFAULT_DATASET)
+    adapters = _build_adapters(examples)
+    service = _make_service(adapters)
+    with_ratios = next(e for e in examples if e.expected_ratios)
+    with_spread = next(e for e in examples if e.expected_spread)
+    clean = next(e for e in examples if not e.expected_tie_out)
+
+    ratio_memo = service.build(_memo_input(with_ratios), actor="eval-bot")
+    spread_memo = service.build(_memo_input(with_spread), actor="eval-bot")
+    clean_memo = service.build(_memo_input(clean), actor="eval-bot")
+
+    # The formula moved under a memo somebody already signed.
+    moved_ratios = dataclasses.replace(
+        ratio_memo,
+        ratios=tuple(
+            dataclasses.replace(r, value=None if r.value is None else r.value + 1.0)
+            for r in ratio_memo.ratios
+        ),
+    )
+    assert_can_go_red(
+        lambda memo: score_ratio_reproducibility(memo, with_ratios.expected_ratios),
+        green=ratio_memo,
+        red=moved_ratios,
+        threshold=thresholds["ratio_reproducibility"],
+        metric="ratio_reproducibility",
+    )
+
+    # A perfectly reproducible ratio over the wrong operands.
+    moved_spread = dataclasses.replace(
+        spread_memo,
+        spreads=tuple(
+            dataclasses.replace(
+                s, items=tuple(dataclasses.replace(i, value=i.value + 1.0) for i in s.items)
+            )
+            for s in spread_memo.spreads
+        ),
+    )
+    assert_can_go_red(
+        lambda memo: score_spread_accuracy(memo, with_spread.expected_spread),
+        green=spread_memo,
+        red=moved_spread,
+        threshold=thresholds["spread_accuracy"],
+        metric="spread_accuracy",
+    )
+
+    # tie_out_precision on a CLEAN case: the false alarm is the failure mode that gets a
+    # control switched off, and it is the direction a recall-shaped proof would never see.
+    loud = dataclasses.replace(clean_memo, tie_out=(*clean_memo.tie_out, _false_alarm()))
+    assert_can_go_red(
+        lambda memo: score_tie_out_precision(memo, clean.expected_tie_out),
+        green=clean_memo,
+        red=loud,
+        threshold=thresholds["tie_out_precision"],
+        metric="tie_out_precision",
+    )
+
+    # The two mechanism metrics. Their red case is a substituted collaborator rather than a
+    # degraded memo, because neither scorer reads the memo's content: see their docstrings.
+    assert_can_go_red(
+        lambda svc: score_revision_integrity(clean_memo, service=svc),
+        green=None,
+        red=_CertifiesAnyChain(),
+        threshold=thresholds["revision_integrity"],
+        metric="revision_integrity",
+    )
+    assert_can_go_red(
+        lambda memo_type: score_research_isolation(clean_memo, memo_type=memo_type),
+        green=None,
+        red=_MemoWithMarketContext,
+        threshold=thresholds["research_isolation"],
+        metric="research_isolation",
+    )
+
+
 def run_offline(
     dataset: Path, thresholds: dict[str, float], adversarial: bool = False
 ) -> EvalReport:
+    # The rubrics and the scored set must agree in BOTH directions before anything is scored.
+    load_rubrics(RUBRICS).assert_covers(SCORED)
+    # And every metric must be shown able to go red, here, with these thresholds. An
+    # adversarial run deliberately breaks the metrics, so the proof runs only on a real run.
+    if not adversarial:
+        prove_before_scoring(lambda: prove_every_metric_can_go_red(thresholds))
     examples = load_golden(dataset)
+    # And the corpus must be able to express every bar that claims a rate. Three bars in this
+    # repository could not, and were silently identical to 1.0; they now say 1.0.
+    for metric, denominator in RATE_DENOMINATORS.items():
+        assert_denominator_supports(thresholds[metric], denominator(examples), metric=metric)
     adapters = _build_adapters(examples, adversarial=adversarial)
     service = _make_service(adapters)
 
-    agg: dict[str, _PerMetric] = {m: _PerMetric() for m in THRESHOLDS}
+    agg: dict[str, _PerMetric] = {metric: _PerMetric() for metric in SCORED}
     print(f"Running offline eval gate over {len(examples)} golden cases (CreditMemoService).\n")
     for example in examples:
         adapters.llm.asserted_source_ids.clear()
@@ -918,22 +1106,22 @@ def run_offline(
         EvalMetricResult(
             metric=metric,
             score=round(agg[metric].mean, 4),
-            threshold=thresholds.get(metric, THRESHOLDS[metric]),
-            passed=round(agg[metric].mean, 4) >= thresholds.get(metric, THRESHOLDS[metric]),
+            threshold=thresholds[metric],
+            passed=round(agg[metric].mean, 4) >= thresholds[metric],
         )
-        for metric in (
-            "groundedness",
-            "covenant_accuracy",
-            "citation_accuracy",
-            "pii_safety",
-            "ratio_reproducibility",
-            "spread_accuracy",
-            "tie_out_precision",
-            "revision_integrity",
-            "research_isolation",
-        )
+        for metric in SCORED
     )
-    return EvalReport(dataset=str(dataset), results=results, n_examples=len(examples))
+    return EvalReport(
+        dataset=str(dataset),
+        results=results,
+        n_examples=len(examples),
+        # The corpus a number was computed over, so "which golden set produced this" is
+        # answerable after the fact rather than inferred from a filename. Comments are
+        # excluded from the digest: a reviewer improving an explanation must not read as
+        # a corpus change, or the digest becomes noise and stops being checked.
+        dataset_digest=dataset_digest(dataset),
+        evaluator="offline heuristic (no GCP creds)",
+    )
 
 
 def run_gate(dataset: Path) -> tuple[EvalReport, bool]:
