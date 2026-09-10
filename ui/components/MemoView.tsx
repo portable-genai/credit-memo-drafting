@@ -163,7 +163,7 @@ export function MemoView({ memo }: { memo: CreditMemo }) {
                 <span className="text-xs uppercase tracking-wide text-amber-700">{e.severity}</span>
                 <span className="block text-ink-800">{e.description}</span>
                 <span className="block font-mono text-xs text-ink-600">
-                  measured {e.measured ?? "—"} against {e.operator} {e.limit ?? "—"}
+                  measured {e.measured ?? "n/a"} against {e.operator} {e.limit ?? "n/a"}
                   {e.period ? ` for ${e.period}` : ""}
                 </span>
                 {e.waiver_authority ? (
@@ -192,7 +192,7 @@ export function MemoView({ memo }: { memo: CreditMemo }) {
             <ul className="space-y-0.5 text-xs text-ink-700">
               {memo.rating.drivers.map((d) => (
                 <li key={d.name}>
-                  {d.name}: {d.measured ?? "—"} → {d.band} ({d.points} pts)
+                  {d.name}: {d.measured ?? "n/a"} → {d.band} ({d.points} pts)
                 </li>
               ))}
             </ul>
@@ -215,7 +215,7 @@ export function MemoView({ memo }: { memo: CreditMemo }) {
                 <span className="block text-ink-800">{f.detail}</span>
                 {f.expected == null && f.actual == null ? null : (
                   <span className="block font-mono text-xs text-ink-600">
-                    expected {f.expected ?? "—"}, found {f.actual ?? "—"}
+                    expected {f.expected ?? "n/a"}, found {f.actual ?? "n/a"}
                   </span>
                 )}
               </li>

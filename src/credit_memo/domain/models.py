@@ -483,7 +483,7 @@ class FinancialSpread:
             raise ValueError(
                 "a financial spread cannot hold a figure for a period it does not "
                 f"declare: {', '.join(undeclared)}. The ratio engine iterates the declared "
-                "periods, so such a figure is not merely mislabelled — it is invisible, and "
+                "periods, so such a figure is not merely mislabelled. It is invisible, and "
                 "the memo comes out with no ratios and no reason given."
             )
 

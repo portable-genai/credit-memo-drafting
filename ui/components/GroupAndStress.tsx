@@ -123,10 +123,10 @@ export function ScenarioView({ scenarios }: { scenarios: ScenarioResult[] }) {
                 {s.scenario_name}
               </th>
               <td className="py-1.5 pr-3 text-right font-mono tabular-nums">
-                {s.base_value == null ? "—" : `${s.base_value.toFixed(2)}x`}
+                {s.base_value == null ? "n/a" : `${s.base_value.toFixed(2)}x`}
               </td>
               <td className="py-1.5 pr-3 text-right font-mono tabular-nums">
-                {s.stressed_value == null ? "—" : `${s.stressed_value.toFixed(2)}x`}
+                {s.stressed_value == null ? "n/a" : `${s.stressed_value.toFixed(2)}x`}
               </td>
               <td className="py-1.5 pr-3 text-xs">
                 {s.threshold == null ? (

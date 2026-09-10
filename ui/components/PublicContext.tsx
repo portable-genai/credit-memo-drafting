@@ -95,7 +95,7 @@ export function PublicContext({
       {context && context.found_nothing ? (
         <p className="text-xs text-ink-600">
           The search ran and returned nothing for this borrower. That is not evidence that
-          nothing has been published — most private companies leave little public trace.
+          nothing has been published. Most private companies leave little public trace.
         </p>
       ) : null}
 

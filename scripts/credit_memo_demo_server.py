@@ -26,11 +26,11 @@ import render_credit_memo_ui as r  # sibling script: reuse the exact audit-first
 # The scripted reveal steps. Each "Next" reveals the section named by ``next``; the
 # rendered page shows the step bar at index ``cur``.
 STEPS = [
-    {"cur": 0, "label": "Memo built — summary revealed", "next": "Show the financial analysis"},
+    {"cur": 0, "label": "Memo built: summary revealed", "next": "Show the financial analysis"},
     {"cur": 1, "label": "Financial analysis", "next": "Show the covenants (tested status)"},
     {
         "cur": 2,
-        "label": "Covenants — deterministic compliance status",
+        "label": "Covenants: deterministic compliance status",
         "next": "Show the risk flags",
     },
     {"cur": 3, "label": "Risk assessment", "next": "Show the peer comparison"},
@@ -39,7 +39,7 @@ STEPS = [
         "label": "Peer comparison vs cohort median",
         "next": "Show the maker-checker review gate",
     },
-    {"cur": 5, "label": "Maker-checker review gate — complete", "next": None},
+    {"cur": 5, "label": "Maker-checker review gate: complete", "next": None},
 ]
 
 _CONTROL_CSS = """
@@ -115,7 +115,8 @@ class DemoSession:
         )
         bar = (
             f"<div class='democtl' data-demo='presenter-step' data-step='{self.idx}'>"
-            f"<span class='lbl'>Step {self.idx + 1}/{len(STEPS)} — <b>{r.esc(step['label'])}</b></span>"
+            f"<span class='lbl'>Step {self.idx + 1}/{len(STEPS)}</span>"
+            f"<span class='lbl'><b>{r.esc(step['label'])}</b></span>"
             f"{pill}<span class='spacer'></span>{next_btn}"
             "<form method='post' action='/restart'><button class='restart' type='submit'>Restart</button></form>"
             "</div>"
