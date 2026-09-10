@@ -5,7 +5,7 @@ claims on screen. That pairing is the point of the module: the walkthrough a pre
 shows and the suite CI runs are the same fifteen functions, so a capability that quietly
 stops being reachable breaks the build instead of surprising somebody in front of a room.
 
-Every expectation is recomputed from the running application — covenant status from the
+Every expectation is recomputed from the running application: covenant status from the
 threshold and the operator, ratios from the confirmed spread, the peer percentile from the
 peer table. Nothing here matches a sentence the product happens to render today.
 
@@ -514,8 +514,8 @@ def act_the_breach_stands(stage: Stage) -> None:
             f"{fx.REPORTED_NET_LEVERAGE}x its own filing states"
         )
 
-    # Thin headroom is its own answer, distinct from compliant — and here it falls out of
-    # the filed figures rather than being arranged: 2.03x against a 2.00x floor.
+    # Thin headroom is its own answer, distinct from compliant. Here it falls out of the
+    # filed figures rather than being arranged: 2.03x against a 2.00x floor.
     liquidity = covenants.get("current_ratio")
     if liquidity is None or liquidity["status"] != "at_risk":
         raise ActFailed(
@@ -614,7 +614,7 @@ def act_the_group(stage: Stage) -> None:
     """Two real subsidiaries, neither of which the bank holds statements for.
 
     Both come from Exhibit 21.1 of the same 10-K. Neither files separately, so a lender to
-    the parent genuinely cannot consolidate them — which is the point. The memo names them
+    the parent genuinely cannot consolidate them, which is the point. The memo names them
     as entities it could not include rather than totalling without them, because "we did
     not look" is a weaker claim than a total that quietly omits a 100%-owned subsidiary and
     a 40%-held affiliate.
@@ -769,8 +769,8 @@ def act_the_checker(stage: Stage) -> None:
         raise ActFailed("an edit did not open a new revision")
     stage.cue(
         Point(
-            f"The analyst rewrites the summary to lead with the breach — revision "
-            f"{amended['revision']}."
+            f"The analyst rewrites the summary to lead with the breach (revision "
+            f"{amended['revision']})."
         ),
         Point(
             "The draft nobody touched is still there.",
@@ -794,8 +794,7 @@ def act_the_checker(stage: Stage) -> None:
     stage.cue(
         Point("The approver objects."),
         Point(
-            f"The comment is anchored to revision {comment['revision']} — the exact text "
-            "they read.",
+            f"The comment is anchored to revision {comment['revision']}: the exact text they read.",
             "Not to the section, and not to the memo: to the words that were in front of "
             "them when they wrote it.",
         ),
@@ -828,7 +827,7 @@ def act_the_checker(stage: Stage) -> None:
     if listing["open_count"] != 1:
         raise ActFailed("the edit closed the comment instead of flagging it")
     stage.cue(
-        Point("The analyst edits again — and the comment does not close."),
+        Point("The analyst edits again, and the comment does not close."),
         Point(
             f"It is flagged stale, and stays open ({listing['open_count']} open).",
             "A comment that lapsed because the text moved underneath it was lost, not "
@@ -856,7 +855,7 @@ def act_the_checker(stage: Stage) -> None:
     stage.state["revisions"] = revisions
     stage.cue(
         Point(
-            f"Resolved by {resolved.get('resolved_by')} — a person, named.",
+            f"Resolved by {resolved.get('resolved_by')}: a person, named.",
             "Not the software deciding it had been dealt with.",
         ),
         Point(
@@ -894,7 +893,7 @@ SECTOR_QUERY = "manufacturing sector outlook"
 
 
 def act_public_context(stage: Stage) -> None:
-    """The one place the product reaches the open web — and the one it may not reach.
+    """The one place the product reaches the open web, and the one it may not reach.
 
     Worth showing precisely because the fence is counter-intuitive: the search runs, the
     analyst reads it, and none of it can enter the memo. Google's Service Specific Terms
@@ -1005,7 +1004,7 @@ def act_committee_pack(stage: Stage) -> None:
 
     # Put it on screen: the pack is the deliverable, and a demo that only asserts bytes
     # has not shown anybody the thing they asked for. It replaces the stage's page for the
-    # rest of the run so the act's own screenshot is OF THE PACK — a frame of the console
+    # rest of the run so the act's own screenshot is OF THE PACK. A frame of the console
     # behind it would be evidence of the wrong thing.
     pack_page = stage.page.context.new_page()
     pack_page.set_content(pack)
@@ -1013,7 +1012,7 @@ def act_committee_pack(stage: Stage) -> None:
     stage.page = pack_page
     stage.cue(
         Point(
-            "This is what leaves the building — the same pack, as a Word document.",
+            "This is what leaves the building: the same pack, as a Word document.",
             "Which is how a committee actually circulates it.",
         ),
         Point(
@@ -1200,7 +1199,7 @@ ACTS: tuple[Act, ...] = (
                 "the screen.",
             ),
             Point(
-                "None of it computes anything yet — this is a proposal.",
+                "None of it computes anything yet. This is a proposal.",
                 "The product's own types refuse to calculate a ratio from an extracted figure.",
             ),
         ),
@@ -1259,8 +1258,8 @@ ACTS: tuple[Act, ...] = (
             Point("The model drafts prose. It never decides compliance."),
             Point(
                 "Current ratio 2.03x against a 2.00x floor: AT RISK, not green.",
-                "Thin headroom is its own answer, distinct from compliant — and it falls "
-                "out of the filed figures rather than being arranged.",
+                "Thin headroom is its own answer, distinct from compliant. It falls out of "
+                "the filed figures rather than being arranged.",
             ),
         ),
         act_the_breach_stands,
@@ -1354,7 +1353,7 @@ ACTS: tuple[Act, ...] = (
             Point("The analyst rewrites the summary to lead with the breach."),
             Point("The approver objects, against the exact text they read."),
             Point(
-                "The analyst edits again — and the comment goes stale, not closed.",
+                "The analyst edits again. The comment goes stale, not closed.",
                 "A comment that lapsed when the text moved underneath it was lost, not answered.",
             ),
             Point("The approver resolves it, by name, and the revision chain verifies."),
@@ -1376,7 +1375,7 @@ ACTS: tuple[Act, ...] = (
         (
             Point(
                 "The analyst searches the open web for sector context, from inside the console.",
-                "The one place this product reaches the public web — so the question and "
+                "The one place this product reaches the public web, so the question and "
                 "its answer are at least logged.",
             ),
             Point(
