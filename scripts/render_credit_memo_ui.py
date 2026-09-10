@@ -235,7 +235,7 @@ def render_memo(data: dict, cur: int = 0) -> str:
         f"data-memo-citations='{len(data.get('citations', []))}' "
         f"data-memo-breaches='{breaches}' "
         f"data-memo-review='{str(bool(data.get('requires_human_review'))).lower()}'></div>"
-        f"<h1>Credit memo — {esc(borrower['name'])}</h1>"
+        f"<h1>Credit memo: {esc(borrower['name'])}</h1>"
         f"<p class='sub'>Borrower <b class='mono'>{esc(borrower['id'])}</b> · "
         f"{esc(borrower.get('sector') or 'sector n/a')} · "
         f"{esc(borrower.get('jurisdiction') or 'jurisdiction n/a')}</p>"
@@ -243,7 +243,7 @@ def render_memo(data: dict, cur: int = 0) -> str:
         + steps_bar(cur)
     )
     review = (
-        "<div class='review'>HUMAN REVIEW REQUIRED — maker-checker gate (P-06). "
+        "<div class='review'>HUMAN REVIEW REQUIRED: maker-checker gate (P-06). "
         "Decision support, not a credit decision. The assistant proposes; a credit officer "
         "disposes.</div>"
         if data.get("requires_human_review")
@@ -272,7 +272,7 @@ def render_memo(data: dict, cur: int = 0) -> str:
         + "<p class='foot'>Audit-first credit-memo view · synthetic fictional data · "
         "deterministic covenant/peer engine</p>"
     )
-    return page(f"Credit memo — {borrower['name']}", body)
+    return page(f"Credit memo: {borrower['name']}", body)
 
 
 def render_sources(data: dict) -> str:
@@ -289,7 +289,7 @@ def render_sources(data: dict) -> str:
         for c in data.get("citations", [])
     )
     body = (
-        f"<h1>Sources &amp; audit — {esc(borrower['name'])}</h1>"
+        f"<h1>Sources &amp; audit: {esc(borrower['name'])}</h1>"
         f"<p class='sub'>Every claim in the memo traces to a source filing, credit-policy "
         f"passage or peer data point. Actor: <b class='mono'>{esc(data.get('actor'))}</b>.</p>"
         "<p class='navlinks'><a href='memo.html'>Memo</a><a href='sources.html'>Sources &amp; audit</a></p>"
@@ -309,7 +309,7 @@ def render_sources(data: dict) -> str:
         + "<p class='foot'>Audit-first credit-memo view · synthetic fictional data · "
         "PII redacted at the boundary before any model/index/audit call</p>"
     )
-    return page(f"Sources — {borrower['name']}", body)
+    return page(f"Sources: {borrower['name']}", body)
 
 
 def main(json_path: str, out_dir: str) -> None:

@@ -5,7 +5,7 @@ import type { Ratio, RatioInput } from "@/lib/types";
 import { ProvenanceTag } from "./Provenance";
 
 function formatValue(ratio: Ratio): string {
-  if (ratio.value == null) return "—";
+  if (ratio.value == null) return "n/a";
   if (ratio.unit === "x") return `${ratio.value.toFixed(2)}x`;
   if (ratio.unit === "ratio") return ratio.value.toFixed(3);
   return ratio.value.toLocaleString(undefined, { maximumFractionDigits: 1 });

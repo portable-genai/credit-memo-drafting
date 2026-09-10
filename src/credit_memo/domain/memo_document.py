@@ -363,7 +363,7 @@ def build_document(memo: CreditMemo) -> MemoDocument:
 
     borrower = memo.borrower
     return MemoDocument(
-        title=f"Credit memo — {borrower.name}",
+        title=f"Credit memo: {borrower.name}",
         subtitle=" · ".join(
             part
             for part in (
