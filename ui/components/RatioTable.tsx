@@ -76,7 +76,13 @@ export function RatioTable({ ratios }: { ratios: Ratio[] }) {
                     const key = `${r.formula_id}-${r.period}`;
                     const expanded = open === key;
                     return [
-                      <tr key={key} className="border-b border-ink-100">
+                      <tr
+                        key={key}
+                        data-ratio={r.formula_id}
+                        data-period={r.period}
+                        data-computable={r.value == null ? "false" : "true"}
+                        className="border-b border-ink-100"
+                      >
                         <td className="py-1 pr-4 font-medium text-ink-800">
                           {r.name}
                         </td>

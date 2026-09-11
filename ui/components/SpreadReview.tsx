@@ -100,6 +100,8 @@ export function SpreadReview({
               return (
                 <tr
                   key={key}
+                  data-line={item.code}
+                  data-period={item.period}
                   className={`border-b border-ink-100 align-top ${rejected ? "opacity-50" : ""}`}
                 >
                   <th scope="row" className="py-1.5 pr-3 text-left font-normal text-ink-700">
@@ -112,6 +114,7 @@ export function SpreadReview({
                   <td className="py-1.5 pr-3">
                     <button
                       type="button"
+                      data-action="show-quote"
                       onClick={() => setOpenQuote(openQuote === key ? "" : key)}
                       aria-expanded={openQuote === key}
                       className="text-xs text-regblue-600 underline"
@@ -124,6 +127,7 @@ export function SpreadReview({
                         {item.document_id ? (
                           <p className="mt-1">
                             <a
+                              data-action="open-source"
                               href={analysisDocumentUrl(analysisId, item.document_id, item.page)}
                               target="_blank"
                               rel="noreferrer"
@@ -142,6 +146,7 @@ export function SpreadReview({
                         <label key={verdict} className="text-xs">
                           <input
                             type="radio"
+                            data-verdict={verdict}
                             name={`verdict-${key}`}
                             checked={decision.verdict === verdict}
                             onChange={() =>
@@ -157,6 +162,7 @@ export function SpreadReview({
                       <div className="mt-1 flex flex-wrap gap-1">
                         <input
                           inputMode="decimal"
+                          data-field="adjusted-value"
                           aria-label={`Adjusted value for ${LABELS[item.code] ?? item.code}, ${item.period}`}
                           placeholder={String(item.value)}
                           value={decision.value ?? ""}
@@ -164,6 +170,7 @@ export function SpreadReview({
                           className="w-24 rounded border border-ink-300 px-1.5 py-1 text-right font-mono tabular-nums"
                         />
                         <input
+                          data-field="adjustment-reason"
                           aria-label={`Reason for adjusting ${LABELS[item.code] ?? item.code}, ${item.period}`}
                           placeholder="why (required)"
                           value={decision.reason ?? ""}
