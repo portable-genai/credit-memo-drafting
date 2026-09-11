@@ -31,6 +31,7 @@ live borrower data without your own legal, security and model-risk sign-off.
 
 | Path | What it owns |
 |------|--------------|
+| `lib/api-base.mjs` | The API base, resolved ONCE for the client (`lib/api.ts`) and the policy's `connect-src`: the loopback default when unset, a refusal when emptied, and the shape rules. One resolver is what keeps an unset console from blocking its own requests. |
 | `lib/csp.mjs` | The Content-Security-Policy, built ONCE. Directives, the three-state `frame-ancestors` (mirroring the service's `_frame_ancestors`), the per-request nonce, and the build-time refusal of a nonce policy on a statically rendered route. |
 | `proxy.ts` | The only layer that puts the policy on the wire: on the REQUEST headers, where Next reads the nonce it stamps onto script tags, and on the RESPONSE, where the browser enforces it. Both are required. |
 | `next.config.mjs` | Base path, and the two genuinely static headers. Emits NO CSP: two layers emitting one means the browser intersects them and the stricter wins per directive. |

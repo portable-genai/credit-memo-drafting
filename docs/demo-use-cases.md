@@ -232,6 +232,13 @@ did not come for them. Each is one command:
 
 ## Gaps this demo surfaced
 
+**Closed since.** An unset `NEXT_PUBLIC_API_BASE` used to ship a console its own CSP
+blocked: `ui/lib/api.ts` fell back to the loopback API while `ui/lib/csp.mjs` admitted an
+origin only when the variable was set, and `make ui-build` set it and hid the defect. Both
+now resolve the base in `ui/lib/api-base.mjs`; `ui/tests/csp.test.mjs` pins the policy and
+`make ui-check`, which builds with the variable unset, asserts the served `connect-src`
+admits the origin the build calls.
+
 **Closed by this work.** Grounding with Google Search was fully built — three adapters, a
 per-analysis cost cap, refuse-don't-scrub query redaction, a licence-driven isolation rule
 and a gate metric proving that rule holds — and reachable by nobody: no route, no client,
@@ -253,22 +260,17 @@ Recorded here rather than fixed, because each is product work with its own revie
    delete have no console control; `ui/lib/api.ts` has no client for any of them. The API's
    CORS allowlist compounds it — `allow_methods` is `GET, POST, OPTIONS`, so a browser
    console could not reach `PATCH` or `DELETE` cross-origin even if the buttons existed.
-2. **`NEXT_PUBLIC_API_BASE` unset ships a broken console.** `ui/lib/api.ts` falls back to
-   `http://localhost:8093`, but `ui/lib/csp.mjs` adds an origin to `connect-src` only when
-   the variable **is** set. Leave it unset and the page's own default API call is blocked
-   by its own CSP, visible only in the browser console. `make ui-build` sets it explicitly;
-   the two halves should agree on their own.
-3. **`RenewalDiffService` is unreachable.** It is written, unit-tested and bound to nothing:
+2. **`RenewalDiffService` is unreachable.** It is written, unit-tested and bound to nothing:
    no route computes `renewal_delta`, nothing reads an uploaded `prior_memo`, and
    `AnalysisManifest.missing()` — which would tell an analyst a renewal needs the prior memo
    — is not on the wire. A renewal act was planned for this demo and removed for that
    reason. This is a sixth instance of the pattern in note 1.
-4. **The console has almost no stable `data-*` hooks**, unlike the presenter server. The
+3. **The console has almost no stable `data-*` hooks**, unlike the presenter server. The
    demo locates controls by role and label, all of them in
    [`scripts/demo_console/locators.py`](../scripts/demo_console/locators.py), so UI drift is
    one edit. Hooks on the covenant pills, ratio rows and section headings would make it
    sturdier.
-5. **Stale claims in the docs.** [`DEMO.md`](../DEMO.md) refers to an "Upload borrower
+4. **Stale claims in the docs.** [`DEMO.md`](../DEMO.md) refers to an "Upload borrower
    evidence" panel and [`ui/README.md`](../ui/README.md) to a `.env.local.example`; neither
    exists. [`README.md`](../README.md)'s HTTP table lists six routes where the service
    serves about twenty-four — [`SPEC.md`](../SPEC.md) §6.1 is the current list.

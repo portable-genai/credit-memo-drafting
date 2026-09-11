@@ -228,9 +228,11 @@ layers is not additive: the browser intersects them and the stricter wins per di
 how a "fix" in one layer silently deletes the other's.
 
 The served policy is default-deny (`default-src 'self'`, `base-uri 'self'`, `form-action 'self'`,
-`object-src 'none'`), widens `connect-src` to the ORIGIN of `NEXT_PUBLIC_API_BASE` when the
-console is deployed cross-origin from its service, and carries the same three-state
-`frame-ancestors` as the table above.
+`object-src 'none'`), widens `connect-src` to the ORIGIN of the API base the console calls, and
+carries the same three-state `frame-ancestors` as the table above. The API base is resolved once,
+in `ui/lib/api-base.mjs`, for both the client and the policy: unset is the loopback default
+`http://localhost:8093` in both, set-and-empty refuses in both, and a rooted path is same-origin
+and adds nothing.
 
 `script-src` is the load-bearing part. It reads `'self' 'nonce-<per-request>' 'strict-dynamic'`.
 Next serves its hydration bootstrap as an INLINE script carrying the Flight payload, so a bare

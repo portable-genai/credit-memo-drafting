@@ -9,6 +9,7 @@ cannot change what the suite asserts.
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -18,6 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from credit_memo_console_walkthrough import resolve_acts  # noqa: E402
+from demo_console import servers  # noqa: E402
 from demo_console.acts import ACTS, Stage  # noqa: E402
 from demo_console.narrative import Point, render  # noqa: E402
 
@@ -116,3 +118,16 @@ def test_a_presenter_pause_reaches_the_presenter_when_there_is_one() -> None:
     )
     stage.cue(Point("say this", "because that"), look_at="look here")
     assert seen == [((Point("say this", "because that"),), "look here")]
+
+
+def test_the_demo_drives_the_api_origin_an_unconfigured_console_calls() -> None:
+    """The demo serves the console with NEXT_PUBLIC_API_BASE unset, so both must name one origin.
+
+    ``servers.py`` starts the API where the console's own default points, and the API's dev CORS
+    allowlist admits the console's origin. If the default in ``ui/lib/api-base.mjs`` moved and
+    this constant did not, every act would fail on a refused request rather than on the product.
+    """
+    source = (REPO_ROOT / "ui" / "lib" / "api-base.mjs").read_text(encoding="utf-8")
+    match = re.search(r'export const DEFAULT_API_BASE = "([^"]+)";', source)
+    assert match, "ui/lib/api-base.mjs no longer declares DEFAULT_API_BASE"
+    assert match.group(1) == servers.API_BASE_FOR_BROWSER

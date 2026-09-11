@@ -17,8 +17,7 @@ so one broken act does not end the session.
 
 Usage — build the console once, then run it::
 
-    npm ci --prefix ui && NEXT_PUBLIC_API_BASE=http://localhost:8093 \\
-        NEXT_TELEMETRY_DISABLED=1 npm --prefix ui run build
+    npm ci --prefix ui && NEXT_TELEMETRY_DISABLED=1 npm --prefix ui run build
 
     .venv/bin/python scripts/credit_memo_console_walkthrough.py           # all 18 acts
     .venv/bin/python scripts/credit_memo_console_walkthrough.py --list    # the act names

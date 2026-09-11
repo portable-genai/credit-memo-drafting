@@ -38,7 +38,8 @@ API_PORT = int(setting_or_default("DEMO_API_PORT", "8093"))
 UI_PORT = int(setting_or_default("DEMO_UI_PORT", "3000"))
 API_BASE = f"http://127.0.0.1:{API_PORT}"
 #: The origin the BROWSER uses. Deliberately ``localhost`` rather than the loopback IP:
-#: it must match the console's own build-time default and the API's dev CORS allowlist,
+#: it must match the console's own default (``DEFAULT_API_BASE`` in ``ui/lib/api-base.mjs``,
+#: held equal by ``tests/unit/test_demo_console_acts.py``) and the API's dev CORS allowlist,
 #: and ``127.0.0.1`` is a different origin to a browser than ``localhost`` is.
 API_BASE_FOR_BROWSER = f"http://localhost:{API_PORT}"
 UI_BASE = f"http://localhost:{UI_PORT}"
@@ -199,8 +200,7 @@ def console_server() -> Iterator[str]:
             "the console has not been built, and this demo runs what ships rather than the "
             "dev server. Build it first:\n"
             "  npm ci --prefix ui\n"
-            f"  NEXT_PUBLIC_API_BASE={API_BASE_FOR_BROWSER} "
-            "NEXT_TELEMETRY_DISABLED=1 npm --prefix ui run build"
+            "  NEXT_TELEMETRY_DISABLED=1 npm --prefix ui run build"
         )
     if shutil.which("npm") is None:
         raise DemoServerError("npm is not on PATH, so the console cannot be served")
@@ -209,12 +209,11 @@ def console_server() -> Iterator[str]:
 
     env = dict(os.environ)
     env["NEXT_TELEMETRY_DISABLED"] = "1"
-    # Required, not merely tidy. ``ui/lib/api.ts`` falls back to this exact origin when the
-    # variable is UNSET, but ``ui/lib/csp.mjs`` adds an origin to ``connect-src`` only when
-    # it IS set — so an unset console ships a page whose own default API call its own CSP
-    # then blocks, with the failure visible only in the browser console. Setting it here
-    # makes the two halves agree; the mismatch itself is reported in docs/demo-use-cases.md.
-    env["NEXT_PUBLIC_API_BASE"] = API_BASE_FOR_BROWSER
+    # NEXT_PUBLIC_API_BASE is deliberately NOT set here. Unset, the console calls
+    # ``API_BASE_FOR_BROWSER`` and its CSP admits exactly that origin, because both halves take
+    # the default from ``ui/lib/api-base.mjs``. Setting it would hide a regression of the
+    # defect where the policy admitted nothing for an unset variable, which is what this
+    # demo used to do.
     log = LOG_DIR / "console.log"
     stream = _log_file("console.log")
     process = subprocess.Popen(  # noqa: S603 - fixed argv, no shell
