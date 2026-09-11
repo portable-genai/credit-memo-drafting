@@ -16,6 +16,10 @@
 //   2. The response carries a nonce in `script-src`.
 //   3. EVERY `<script>` tag in the document carries that same nonce.
 //
+// A fourth follows the same logic for the requests the page makes once it is alive: the served
+// `connect-src` must admit the API origin this build sends its requests to. A hydrated console
+// whose own policy blocks its first fetch looks just as healthy in a screenshot.
+//
 // Rule 3 is the one that matters, and it is the one a header assertion cannot express. A
 // statically prerendered page was built before the nonce existed, so it emits script tags with no
 // nonce while the header advertises one, and because `'strict-dynamic'` disables the `'self'`
@@ -26,6 +30,9 @@
 // Expects `next build` to have run. Exits non-zero with the reason on any failure.
 
 import { spawn } from "node:child_process";
+
+import { apiOrigin, resolveApiBase } from "../lib/api-base.mjs";
+import { readEnvSetting } from "../lib/env-setting.mjs";
 
 const REQUESTED_PORT = process.argv[2] ?? "0";
 if (!/^\d+$/.test(REQUESTED_PORT)) {
@@ -40,6 +47,7 @@ const REQUIRED_DIRECTIVES = [
   "script-src",
   "object-src",
   "base-uri",
+  "connect-src",
   "frame-ancestors",
 ];
 
@@ -139,6 +147,21 @@ try {
       if (!value) {
         fail(`the CSP directive \`${name}\` is empty, which browsers discard as a parse error`);
       }
+    }
+
+    // The origin this build calls, resolved the way lib/api.ts resolves it from the same
+    // environment the build and this server run under. `make ui-check` runs with the variable
+    // unset, so this is the check that an unconfigured console does not block itself.
+    const calledOrigin = apiOrigin(
+      resolveApiBase(readEnvSetting(process.env, "NEXT_PUBLIC_API_BASE")),
+    );
+    const connectSources = (directives.get("connect-src") ?? "").split(/\s+/);
+    if (calledOrigin && !connectSources.includes(calledOrigin)) {
+      fail(
+        `connect-src does not admit ${calledOrigin}, the API origin this console sends its ` +
+          "requests to, so the browser blocks every one of them and the page reports its " +
+          `backend unreachable. connect-src: ${directives.get("connect-src") || "(none)"}`,
+      );
     }
 
     const nonceInHeader = csp.match(/'nonce-([^']+)'/)?.[1];

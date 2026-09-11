@@ -19,36 +19,8 @@
 // it would give the browser two policies to intersect, and the stricter one wins per directive,
 // which would quietly reinstate the defect this module exists to remove.
 
-/**
- * Origin of the API base, when the console is deployed cross-origin from its service.
- *
- * A rooted path is the SAME-ORIGIN deployment, which is what a host portal mounting this console
- * under its own route sets. There is no second origin to name there, and `'self'` already permits
- * it, so "" is the correct answer rather than an error: refusing it made the console answer 500
- * behind the portal, which is a working configuration reported as a broken one.
- *
- * A protocol-relative value is still refused. It names a DIFFERENT host while looking rooted, so
- * treating it as same-origin would drop a genuinely cross-origin API out of `connect-src`, which
- * is the silent-drop this function exists to prevent.
- *
- * @param {Record<string, string | undefined>} env
- * @returns {string} an origin to add to `connect-src`, or "" when same-origin
- */
-function apiOrigin(env) {
-  const raw = (env.NEXT_PUBLIC_API_BASE || "").trim();
-  if (!raw) return "";
-  if (raw.startsWith("//")) {
-    throw new Error(`NEXT_PUBLIC_API_BASE must name its scheme, got: ${raw}`);
-  }
-  if (raw.startsWith("/")) return "";
-  try {
-    return new URL(raw).origin;
-  } catch {
-    throw new Error(
-      `NEXT_PUBLIC_API_BASE must be an absolute URL or a rooted same-origin path, got: ${raw}`,
-    );
-  }
-}
+import { apiOrigin, resolveApiBase } from "./api-base.mjs";
+import { readEnvSetting } from "./env-setting.mjs";
 
 /**
  * Who may frame this console, in the SAME three states the service resolves.
@@ -143,7 +115,10 @@ export function contentSecurityPolicy(env, nonce) {
   // build: `next build` / `next start` set NODE_ENV=production, so the policy below comes out
   // byte-identical to the one this console shipped before the branch existed.
   const isDev = env.NODE_ENV !== "production";
-  const connectSrc = ["'self'", apiOrigin(env), isDev ? "ws: wss:" : ""]
+  // The origin the console's own requests go to, from the resolver `lib/api.ts` uses. Unset
+  // therefore admits the loopback default the client falls back to, rather than nothing.
+  const api = apiOrigin(resolveApiBase(readEnvSetting(env, "NEXT_PUBLIC_API_BASE")));
+  const connectSrc = ["'self'", api, isDev ? "ws: wss:" : ""]
     .filter(Boolean)
     .join(" ");
   const scriptSrc = [

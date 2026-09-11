@@ -24,38 +24,19 @@ import type {
   RiskFlag,
   SpreadCandidate,
 } from "./types";
-import { ConfiguredEmptyError, readEnvValue } from "./env-setting.mjs";
+import { resolveApiBase } from "./api-base.mjs";
+import { readEnvValue } from "./env-setting.mjs";
 
-// The API base is resolved in THREE states, not two.
+// The API base is resolved in ONE module, `lib/api-base.mjs`, because `lib/csp.mjs` must admit
+// the same origin in `connect-src`. Two independent answers are how an unset variable once
+// shipped a console whose own CSP blocked its first request.
 //
-// Reading `process.env.NEXT_PUBLIC_API_BASE || "<loopback default>"` hands a
-// variable an operator DELIBERATELY EMPTIED the loopback default. That is a widening: the
-// console then talks to a local API instead of the configured one, and `connect-src` is built
-// from the same value, so the emptied deployment is byte-identical to one that never configured
-// the variable at all. Next inlines NEXT_PUBLIC_* AT BUILD TIME, so the wrong value is frozen
+// The literal member expression is required: a bundler substitutes the public value only where
+// it sees exactly this, and handing it `process.env` leaves the browser reading {} and silently
+// taking the loopback default. Next inlines NEXT_PUBLIC_* AT BUILD TIME, so the value is frozen
 // into the bundle and cannot be corrected by fixing the environment at start-up.
-//
-// Unset keeps the documented loopback default, which is what a laptop wants. Set-and-empty
-// refuses, because an emptied value names nothing and the default is the more permissive branch.
-const DEFAULT_API_BASE = "http://localhost:8093";
-// The literal member expression is required: a bundler substitutes the public value
-// only where it sees exactly this, and handing it `process.env` leaves the browser
-// reading {} and silently taking the hard-coded loopback default.
-const API_BASE_SETTING = readEnvValue(
-  "NEXT_PUBLIC_API_BASE",
-  process.env.NEXT_PUBLIC_API_BASE,
-);
-if (API_BASE_SETTING.isConfiguredEmpty) {
-  throw new ConfiguredEmptyError(
-    "NEXT_PUBLIC_API_BASE is set to an empty value. An emptied variable names nothing, " +
-      "so it cannot inherit the unset default (" + DEFAULT_API_BASE + "), which points this " +
-      "console at a loopback API and widens connect-src to match. Unset it to take that " +
-      "default deliberately, or give it the API origin this deployment should call.",
-  );
-}
-export const API_BASE = (API_BASE_SETTING.hasValue ? API_BASE_SETTING.value : DEFAULT_API_BASE).replace(
-  /\/+$/,
-  "",
+export const API_BASE = resolveApiBase(
+  readEnvValue("NEXT_PUBLIC_API_BASE", process.env.NEXT_PUBLIC_API_BASE),
 );
 
 export class ApiError extends Error {

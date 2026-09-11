@@ -9,7 +9,11 @@
 // framing read matches the service's.
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
+
+import { DEFAULT_API_BASE, InvalidApiBaseError } from "../lib/api-base.mjs";
+import { ConfiguredEmptyError } from "../lib/env-setting.mjs";
 
 import {
   UnhydratableCspError,
@@ -92,15 +96,66 @@ test("the dev server gets eval and a websocket, and a production build never doe
   assert.doesNotMatch(prod, /wss:/);
 });
 
-test("the production policy is byte-identical to the one that shipped before the dev branch", () => {
+test("the whole production policy is pinned, so nothing leaks out of the dev branch", () => {
   // The dev branch is only safe if it is invisible to a deployment. This pins the whole
   // production string, so a relaxation leaking out of the `isDev` guard cannot pass review.
+  // `connect-src` names the loopback API because that is where an unconfigured console sends
+  // its requests; the test below says why that is the fix rather than a widening.
   assert.equal(
     contentSecurityPolicy(PROD, "n0nce"),
     "default-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; " +
       "script-src 'self' 'nonce-n0nce' 'strict-dynamic'; style-src 'self' 'unsafe-inline'; " +
-      "img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'self'",
+      "img-src 'self' data:; font-src 'self' data:; connect-src 'self' http://localhost:8093; " +
+      "frame-ancestors 'self'",
   );
+});
+
+test("an unset API base admits the origin the console's own requests go to", () => {
+  // The defect this pins shipped: with NEXT_PUBLIC_API_BASE unset, lib/api.ts fell back to the
+  // loopback API while this policy added an origin only when the variable was SET, so the
+  // console's first request was blocked by its own CSP and the failure showed only in the
+  // browser's developer console. `make ui-build` set the variable and hid it. Reverting
+  // csp.mjs to its own `env.NEXT_PUBLIC_API_BASE || ""` read turns this red.
+  for (const env of [PROD, { NODE_ENV: "development" }]) {
+    const connect = directives(contentSecurityPolicy(env, "n")).get("connect-src").split(" ");
+    assert.ok(
+      connect.includes(new URL(DEFAULT_API_BASE).origin),
+      `connect-src ${connect.join(" ")} does not admit ${DEFAULT_API_BASE}`,
+    );
+  }
+});
+
+test("the client and the policy take the API base from one resolver, not two", () => {
+  // Agreement by construction rather than by coincidence: a second literal default in either
+  // file is how the two halves drifted apart in the first place.
+  const client = readFileSync(new URL("../lib/api.ts", import.meta.url), "utf8");
+  const policy = readFileSync(new URL("../lib/csp.mjs", import.meta.url), "utf8");
+  for (const [name, source] of [["lib/api.ts", client], ["lib/csp.mjs", policy]]) {
+    assert.match(source, /resolveApiBase\(/, `${name} does not resolve the base through lib/api-base.mjs`);
+    assert.doesNotMatch(source, /http:\/\/(localhost|127\.0\.0\.1)/, `${name} spells a default of its own`);
+  }
+});
+
+test("an emptied API base refuses in the policy, as it does in the client", () => {
+  // Folding set-and-empty into unset would hand a deliberately emptied value the loopback
+  // default, and the emptied deployment would be byte-identical to one never configured.
+  for (const value of ["", "   "]) {
+    assert.throws(
+      () => contentSecurityPolicy({ ...PROD, NEXT_PUBLIC_API_BASE: value }, "n"),
+      ConfiguredEmptyError,
+    );
+  }
+});
+
+test("a scheme a fetch cannot use is refused rather than admitted as an origin", () => {
+  // `new URL("api.example:8443/v1")` parses with `api.example:` as its scheme.
+  for (const value of ["api.example:8443/v1", "javascript:alert(1)", "ftp://api.example"]) {
+    assert.throws(
+      () => contentSecurityPolicy({ ...PROD, NEXT_PUBLIC_API_BASE: value }, "n"),
+      InvalidApiBaseError,
+      `accepted ${value}`,
+    );
+  }
 });
 
 test("frame-ancestors resolves in three states, matching the service", () => {
@@ -127,6 +182,10 @@ test("connect-src widens to the API ORIGIN, not the full URL", () => {
 });
 
 test("a rooted API base stays same-origin rather than being refused", () => {
+  assert.equal(
+    directives(contentSecurityPolicy({ ...PROD, NEXT_PUBLIC_API_BASE: "/" })).get("connect-src"),
+    "'self'",
+  );
   // A host portal mounting this console under its own route sets exactly this. Same-origin is
   // already covered by 'self', so it widens nothing, and refusing it answered 500 on a working
   // deployment. What must never happen is the value being dropped while it names a real origin,
