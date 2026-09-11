@@ -232,7 +232,15 @@ did not come for them. Each is one command:
 
 ## Gaps this demo surfaced
 
-**Closed since.** An unset `NEXT_PUBLIC_API_BASE` used to ship a console its own CSP
+**Closed since.** The console now carries stable `data-*` hooks on every control and panel
+the acts drive or read (`data-panel`, `data-field`, `data-action`, `data-section`, and
+identifying attributes on repeated rows such as `data-line` and `data-covenant`), and
+[`scripts/demo_console/locators.py`](../scripts/demo_console/locators.py) locates by them
+alone. The demo used to find controls by label and role, so a reworded button broke an act
+that proved nothing about wording. `tests/unit/test_console_data_hooks.py` fails the offline
+gate when a hook the demo names is missing from `ui/`, or when an act locates by wording again.
+
+An unset `NEXT_PUBLIC_API_BASE` used to ship a console its own CSP
 blocked: `ui/lib/api.ts` fell back to the loopback API while `ui/lib/csp.mjs` admitted an
 origin only when the variable was set, and `make ui-build` set it and hid the defect. Both
 now resolve the base in `ui/lib/api-base.mjs`; `ui/tests/csp.test.mjs` pins the policy and
@@ -265,12 +273,7 @@ Recorded here rather than fixed, because each is product work with its own revie
    `AnalysisManifest.missing()` — which would tell an analyst a renewal needs the prior memo
    — is not on the wire. A renewal act was planned for this demo and removed for that
    reason. This is a sixth instance of the pattern in note 1.
-3. **The console has almost no stable `data-*` hooks**, unlike the presenter server. The
-   demo locates controls by role and label, all of them in
-   [`scripts/demo_console/locators.py`](../scripts/demo_console/locators.py), so UI drift is
-   one edit. Hooks on the covenant pills, ratio rows and section headings would make it
-   sturdier.
-4. **Stale claims in the docs.** [`DEMO.md`](../DEMO.md) refers to an "Upload borrower
+3. **Stale claims in the docs.** [`DEMO.md`](../DEMO.md) refers to an "Upload borrower
    evidence" panel and [`ui/README.md`](../ui/README.md) to a `.env.local.example`; neither
    exists. [`README.md`](../README.md)'s HTTP table lists six routes where the service
    serves about twenty-four — [`SPEC.md`](../SPEC.md) §6.1 is the current list.

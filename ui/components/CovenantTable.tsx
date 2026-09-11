@@ -43,6 +43,8 @@ export function CovenantTable({ covenants }: { covenants: Covenant[] }) {
         return (
           <div
             key={`${c.type}-${i}`}
+            data-covenant={c.type}
+            data-status={c.status}
             className="rounded-lg border border-ink-200 bg-white p-3 shadow-panel"
           >
             <div className="flex items-center justify-between gap-2">

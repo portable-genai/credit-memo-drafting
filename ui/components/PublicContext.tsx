@@ -74,6 +74,7 @@ export function PublicContext({
         <label className="text-sm">
           <span className="mb-1 block text-ink-500">Search the public web</span>
           <input
+            data-field="research-query"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={borrower || "borrower name"}
@@ -82,6 +83,7 @@ export function PublicContext({
         </label>
         <button
           type="button"
+          data-action="research"
           onClick={search}
           disabled={disabled || busy || !analysisId}
           className="rounded border border-regblue-600 px-3 py-1.5 text-xs font-semibold text-regblue-600 disabled:opacity-40"
@@ -138,7 +140,7 @@ export function PublicContext({
             </div>
           ) : null}
 
-          <p className="text-xs font-medium text-ink-700">
+          <p data-research="not-in-memo" className="text-xs font-medium text-ink-700">
             None of the above is in the memo, and none of it can be: nothing here carries a
             figure any ratio or covenant test could read.
           </p>

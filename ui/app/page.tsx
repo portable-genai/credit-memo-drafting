@@ -65,6 +65,11 @@ export default function Home() {
   // consolidation could not include rather than quietly contributing nothing.
   const [groupEntities, setGroupEntities] = useState<GroupEntityDraft[]>([]);
   const [eliminations, setEliminations] = useState<Elimination[]>([]);
+  // How many build attempts have SETTLED, answered or refused, exposed as `data-outcomes`.
+  // "The Building... label went away" cannot say that reliably: an attempt refused before
+  // it starts never shows the label, so a wait keyed on it can return before the press was
+  // handled at all.
+  const [outcomes, setOutcomes] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -155,6 +160,7 @@ export default function Home() {
         "Add the borrower's documents to the credit file first. A memo is only ever built " +
           "on evidence you supply.",
       );
+      setOutcomes((n) => n + 1);
       return;
     }
     setLoading(true);
@@ -187,6 +193,7 @@ export default function Home() {
     } finally {
       setStage("");
       setLoading(false);
+      setOutcomes((n) => n + 1);
     }
   }
 
@@ -200,6 +207,7 @@ export default function Home() {
           <label className="text-sm">
             <span className="mb-1 block text-ink-500">Persona (local profile only)</span>
             <select
+              data-field="persona"
               value={selectedPersona}
               onChange={(e) => onPersonaChange(e.target.value)}
               className="w-full rounded border border-ink-300 px-2 py-1.5 sm:w-96"
@@ -215,12 +223,14 @@ export default function Home() {
       ) : null}
 
       <form
+        data-panel="analysis"
         onSubmit={onSubmit}
         className="mb-6 grid gap-3 rounded-xl border border-ink-200 bg-white p-4 shadow-panel xl:grid-cols-3"
       >
         <label className="text-sm xl:col-span-3">
           <span className="mb-1 block text-ink-500">Borrower</span>
           <input
+            data-field="borrower"
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="w-full rounded border border-ink-300 px-2 py-1.5"
@@ -229,6 +239,7 @@ export default function Home() {
         <label className="text-sm">
           <span className="mb-1 block text-ink-500">Sector</span>
           <input
+            data-field="sector"
             value={sector}
             onChange={(e) => setSector(e.target.value)}
             className="w-full rounded border border-ink-300 px-2 py-1.5"
@@ -237,6 +248,7 @@ export default function Home() {
         <label className="text-sm">
           <span className="mb-1 block text-ink-500">Jurisdiction</span>
           <input
+            data-field="jurisdiction"
             value={jurisdiction}
             onChange={(e) => setJurisdiction(e.target.value)}
             className="w-full rounded border border-ink-300 px-2 py-1.5"
@@ -266,6 +278,7 @@ export default function Home() {
             <span className="text-sm font-semibold text-ink-900">Financial spread</span>
             <button
               type="button"
+              data-action="extract"
               onClick={onExtract}
               disabled={loading || busy !== "" || !documents.length}
               className="rounded border border-regblue-600 px-3 py-1 text-xs font-semibold text-regblue-600 disabled:opacity-40"
@@ -275,14 +288,21 @@ export default function Home() {
           </div>
 
           {spread.confirmed_by ? (
-            <p className="mb-2 rounded border border-green-300 bg-green-50 p-2 text-xs text-green-900">
+            <p
+              data-panel="spread-confirmed"
+              data-confirmed-by={spread.confirmed_by}
+              className="mb-2 rounded border border-green-300 bg-green-50 p-2 text-xs text-green-900"
+            >
               Confirmed by <strong>{spread.confirmed_by}</strong>. These are the figures the
               engines will compute from. Extract again to start over.
             </p>
           ) : null}
 
           {candidate ? (
-            <div className="mb-3 rounded border border-amber-300 bg-amber-50 p-3">
+            <div
+              data-panel="spread-candidate"
+              className="mb-3 rounded border border-amber-300 bg-amber-50 p-3"
+            >
               <p className="mb-2 text-sm font-semibold text-amber-900">
                 Not yet anybody&apos;s figures
               </p>
@@ -295,6 +315,7 @@ export default function Home() {
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
+                  data-action="confirm-spread"
                   onClick={onConfirm}
                   disabled={busy !== ""}
                   className="rounded bg-regblue-600 px-3 py-1 text-xs font-semibold text-white disabled:opacity-50"
@@ -303,6 +324,7 @@ export default function Home() {
                 </button>
                 <button
                   type="button"
+                  data-action="discard-candidate"
                   onClick={() => setCandidate(null)}
                   className="text-xs text-ink-500 underline"
                 >
@@ -353,6 +375,8 @@ export default function Home() {
 
         <button
           type="submit"
+          data-action="build-memo"
+          data-state={loading ? "building" : "idle"}
           disabled={loading}
           className="self-end rounded bg-regblue-600 px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-50 xl:col-span-3 xl:justify-self-start"
         >
@@ -361,13 +385,16 @@ export default function Home() {
       </form>
 
 
-      <div aria-live="polite" aria-atomic="true">
+      <div aria-live="polite" aria-atomic="true" data-panel="outcome" data-outcomes={outcomes}>
         {loading || busy ? (
           <p className="mb-4 text-sm text-ink-500">{busy || stage || "Working"}…</p>
         ) : null}
 
         {error ? (
-          <div className="mb-4 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+          <div
+            data-panel="error"
+            className="mb-4 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800"
+          >
             <strong>Could not build the memo.</strong> {error}
             {/* 422 means the service had nothing to ground on. Point at the fix rather
                 than restating the status code. */}
@@ -381,7 +408,10 @@ export default function Home() {
         ) : null}
 
         {blocked ? (
-          <div className="mb-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+          <div
+            data-panel="guardrail-blocked"
+            className="mb-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800"
+          >
             <strong>Blocked by guardrail.</strong> {blocked.detail} ({blocked.reason})
           </div>
         ) : null}

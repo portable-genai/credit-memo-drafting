@@ -20,13 +20,19 @@ const KIND_LABEL: Record<string, string> = {
 
 function Section({
   title,
+  hook,
   children,
 }: {
   title: string;
+  /** A stable `data-section` key, so a reader of the DOM never depends on the heading's wording. */
+  hook: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-xl border border-ink-200 bg-ink-50 p-4 shadow-panel">
+    <section
+      data-section={hook}
+      className="rounded-xl border border-ink-200 bg-ink-50 p-4 shadow-panel"
+    >
       <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-ink-500">
         {title}
       </h3>
@@ -38,7 +44,7 @@ function Section({
 /** Renders the full CreditMemo artifact with its four cited sections. */
 export function MemoView({ memo }: { memo: CreditMemo }) {
   return (
-    <div className="space-y-4">
+    <div data-panel="memo" className="space-y-4">
       <div className="rounded-xl border border-regblue-200 bg-regblue-50 p-4 shadow-panel">
         <h2 className="text-lg font-semibold text-ink-900">
           {memo.borrower.name}
@@ -60,7 +66,10 @@ export function MemoView({ memo }: { memo: CreditMemo }) {
           </p>
         ) : null}
         {memo.requires_human_review ? (
-          <p className="mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800">
+          <p
+            data-memo="review-required"
+            className="mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800"
+          >
             HUMAN REVIEW REQUIRED · maker-checker gate (P-06). Decision support,
             not a credit decision.
           </p>
@@ -99,15 +108,15 @@ export function MemoView({ memo }: { memo: CreditMemo }) {
         </div>
       ) : null}
 
-      <Section title="Summary">
+      <Section title="Summary" hook="summary">
         <p className="text-sm leading-relaxed text-ink-800">{memo.summary}</p>
       </Section>
 
-      <Section title="Ratios">
+      <Section title="Ratios" hook="ratios">
         <RatioTable ratios={memo.ratios} />
       </Section>
 
-      <Section title="Financial analysis">
+      <Section title="Financial analysis" hook="financial-analysis">
         <p className="mb-2 flex items-center gap-2 text-xs text-ink-500">
           <ProvenanceTag provenance="model_drafted" />
           Normalised by the model from the evidence. The Ratios section above is the
@@ -137,20 +146,20 @@ export function MemoView({ memo }: { memo: CreditMemo }) {
         )}
       </Section>
 
-      <Section title="Covenants">
+      <Section title="Covenants" hook="covenants">
         <CovenantTable covenants={memo.covenants} />
       </Section>
 
-      <Section title="Risk assessment">
+      <Section title="Risk assessment" hook="risk-assessment">
         <RiskFlagList flags={memo.risk_flags} />
       </Section>
 
-      <Section title="Peer comparison">
+      <Section title="Peer comparison" hook="peer-comparison">
         <PeerComparisonView comparisons={memo.peer_comparison} />
       </Section>
 
       {memo.policy_exceptions.length ? (
-        <Section title="Policy exceptions">
+        <Section title="Policy exceptions" hook="policy-exceptions">
           <p className="mb-2 text-xs text-ink-500">
             Measured against the bank&apos;s own uploaded limits
             {memo.policy_version ? ` (${memo.policy_version})` : ""}. Arithmetic, not
@@ -158,7 +167,7 @@ export function MemoView({ memo }: { memo: CreditMemo }) {
           </p>
           <ul className="space-y-1 text-sm">
             {memo.policy_exceptions.map((e) => (
-              <li key={`${e.rule_id}-${e.period}`} className="rounded border border-amber-300 bg-amber-50 p-2">
+              <li key={`${e.rule_id}-${e.period}`} data-rule={e.rule_id} className="rounded border border-amber-300 bg-amber-50 p-2">
                 <span className="font-medium text-amber-900">{e.rule_id}</span>{" "}
                 <span className="text-xs uppercase tracking-wide text-amber-700">{e.severity}</span>
                 <span className="block text-ink-800">{e.description}</span>
@@ -178,7 +187,7 @@ export function MemoView({ memo }: { memo: CreditMemo }) {
       ) : null}
 
       {memo.rating ? (
-        <Section title="Proposed risk rating">
+        <Section title="Proposed risk rating" hook="rating">
           <p className="text-sm text-ink-800">
             Grade <span className="font-mono font-semibold">{memo.rating.obligor_grade}</span>{" "}
             (score {memo.rating.score.toFixed(2)}
@@ -201,14 +210,14 @@ export function MemoView({ memo }: { memo: CreditMemo }) {
       ) : null}
 
       {memo.tie_out.length ? (
-        <Section title="Reconciliation findings">
+        <Section title="Reconciliation findings" hook="tie-out">
           <p className="mb-2 text-xs text-ink-500">
             The checks a credit file is expected to survive. Each one is arithmetic or a
             substring search, and each is something an analyst would otherwise do by hand.
           </p>
           <ul className="space-y-1 text-sm">
             {memo.tie_out.map((f, i) => (
-              <li key={`${f.check}-${i}`} className="rounded border border-ink-200 bg-white p-2">
+              <li key={`${f.check}-${i}`} data-check={f.check} className="rounded border border-ink-200 bg-white p-2">
                 <span className="text-xs uppercase tracking-wide text-ink-500">
                   {f.check.replace(/_/g, " ")} · {f.severity}
                 </span>
@@ -225,31 +234,31 @@ export function MemoView({ memo }: { memo: CreditMemo }) {
       ) : null}
 
       {memo.related_entities.length || memo.guarantors.length ? (
-        <Section title="The group">
+        <Section title="The group" hook="group">
           <GroupRoster memo={memo} />
         </Section>
       ) : null}
 
       {memo.global_cash_flow ? (
-        <Section title="Global cash flow">
+        <Section title="Global cash flow" hook="global-cash-flow">
           <GlobalCashFlowView gcf={memo.global_cash_flow} />
         </Section>
       ) : null}
 
       {memo.scenarios.length ? (
-        <Section title="Stress">
+        <Section title="Stress" hook="stress">
           <ScenarioView scenarios={memo.scenarios} />
         </Section>
       ) : null}
 
-      <Section title="Recommendation rationale">
+      <Section title="Recommendation rationale" hook="recommendation-rationale">
         <p className="text-sm leading-relaxed text-ink-800">
           {memo.recommendation_rationale}
         </p>
       </Section>
 
       {memo.questions_for_client.length ? (
-        <Section title="Questions for the borrower">
+        <Section title="Questions for the borrower" hook="questions">
           <ol className="list-decimal space-y-1 pl-5 text-sm text-ink-800">
             {memo.questions_for_client.map((q, i) => (
               <li key={i}>{q}</li>
@@ -258,7 +267,7 @@ export function MemoView({ memo }: { memo: CreditMemo }) {
         </Section>
       ) : null}
 
-      <Section title="Citations">
+      <Section title="Citations" hook="citations">
         <CitationList citations={memo.citations} />
       </Section>
 
@@ -266,7 +275,7 @@ export function MemoView({ memo }: { memo: CreditMemo }) {
           evidence can be reopened. A reader who cannot see the inputs is being asked to
           trust the output. */}
       {memo.manifest ? (
-        <Section title="What this was assessed on">
+        <Section title="What this was assessed on" hook="manifest">
           <ManifestSummary manifest={memo.manifest} />
         </Section>
       ) : null}

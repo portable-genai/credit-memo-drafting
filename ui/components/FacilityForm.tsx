@@ -133,6 +133,7 @@ export function FacilityForm({
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
       <Field label="Memo kind" hint={kindHint}>
         <select
+          data-field="memo-kind"
           value={request.kind}
           onChange={(e) => onChange({ ...request, kind: e.target.value as MemoKind })}
           className="w-full rounded border border-ink-300 px-2 py-1.5"
@@ -147,6 +148,7 @@ export function FacilityForm({
 
       <Field label="Loan type">
         <select
+          data-field="loan-type"
           value={request.loan_type}
           onChange={(e) =>
             onChange({ ...request, loan_type: e.target.value as LoanType })
@@ -163,6 +165,7 @@ export function FacilityForm({
 
       <Field label="Facility type">
         <select
+          data-field="facility-type"
           value={facility.facility_type}
           onChange={(e) =>
             setFacility({ facility_type: e.target.value as FacilityType })
@@ -180,6 +183,7 @@ export function FacilityForm({
       <Field label={`Amount (${facility.currency}, millions)`}>
         <input
           inputMode="decimal"
+          data-field="amount"
           value={facility.amount || ""}
           onChange={(e) => setFacility({ amount: Number(e.target.value) || 0 })}
           className="w-full rounded border border-ink-300 px-2 py-1.5 text-right font-mono tabular-nums"
@@ -189,6 +193,7 @@ export function FacilityForm({
       <Field label="Tenor (months)">
         <input
           inputMode="numeric"
+          data-field="tenor"
           value={facility.tenor_months || ""}
           onChange={(e) => setFacility({ tenor_months: Number(e.target.value) || 0 })}
           className="w-full rounded border border-ink-300 px-2 py-1.5 text-right font-mono tabular-nums"
@@ -197,6 +202,7 @@ export function FacilityForm({
 
       <Field label="Primary repayment source">
         <input
+          data-field="repayment-source"
           value={facility.repayment_source}
           onChange={(e) => setFacility({ repayment_source: e.target.value })}
           placeholder="Operating cash flow"
@@ -206,6 +212,7 @@ export function FacilityForm({
 
       <Field label="Purpose" hint="What the money is for, in the borrower's terms">
         <input
+          data-field="purpose"
           value={facility.purpose}
           onChange={(e) => setFacility({ purpose: e.target.value })}
           placeholder="Refinance existing term debt and fund plant expansion"
@@ -215,6 +222,7 @@ export function FacilityForm({
 
       <Field label="Security">
         <input
+          data-field="security"
           value={facility.security}
           onChange={(e) => setFacility({ security: e.target.value })}
           placeholder="First charge over plant and equipment"
@@ -227,6 +235,7 @@ export function FacilityForm({
         hint="Recorded from the RM and never assessed: pricing is out of scope"
       >
         <input
+          data-field="pricing-note"
           value={facility.pricing_note}
           onChange={(e) => setFacility({ pricing_note: e.target.value })}
           placeholder="SORA + 250bp, as quoted"

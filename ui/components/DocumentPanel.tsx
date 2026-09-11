@@ -118,6 +118,7 @@ export function DocumentPanel({
           type="file"
           multiple
           aria-label="Documents for this analysis"
+          data-field="documents"
           onChange={(e) => add(e.target.files)}
           className="sr-only"
         />
@@ -156,6 +157,8 @@ export function DocumentPanel({
                     <select
                       value={row.docType}
                       aria-label={`Document kind for ${row.file.name}`}
+                      data-field="document-kind"
+                      data-filename={row.file.name}
                       onChange={(e) => patch(index, { docType: e.target.value as DocType })}
                       className="w-56 rounded border border-ink-300 px-1.5 py-1"
                     >
@@ -171,6 +174,8 @@ export function DocumentPanel({
                       type="date"
                       value={row.asOf}
                       aria-label={`Date ${row.file.name} speaks to`}
+                      data-field="document-as-of"
+                      data-filename={row.file.name}
                       onChange={(e) => patch(index, { asOf: e.target.value })}
                       className="rounded border border-ink-300 px-1.5 py-1"
                     />
@@ -205,7 +210,11 @@ export function DocumentPanel({
  */
 export function ManifestSummary({ manifest }: { manifest: AnalysisManifest }) {
   return (
-    <div className="rounded-lg border border-ink-200 bg-white p-3 text-sm shadow-panel">
+    <div
+      data-panel="manifest"
+      data-analysis-id={manifest.analysis_id}
+      className="rounded-lg border border-ink-200 bg-white p-3 text-sm shadow-panel"
+    >
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <span className="font-semibold text-ink-900">
           Assessed on {manifest.documents.length} document
@@ -215,7 +224,7 @@ export function ManifestSummary({ manifest }: { manifest: AnalysisManifest }) {
       </div>
       <ul className="mt-2 space-y-1">
         {manifest.documents.map((d) => (
-          <li key={d.id} className="flex flex-wrap items-baseline gap-x-2 text-ink-700">
+          <li key={d.id} data-document-id={d.id} className="flex flex-wrap items-baseline gap-x-2 text-ink-700">
             <a
               href={analysisDocumentUrl(manifest.analysis_id, d.id)}
               target="_blank"
@@ -232,7 +241,10 @@ export function ManifestSummary({ manifest }: { manifest: AnalysisManifest }) {
           </li>
         ))}
       </ul>
-      <p className="mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900">
+      <p
+        data-manifest="retention"
+        className="mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900"
+      >
         {manifest.retention_note}
       </p>
     </div>

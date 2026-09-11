@@ -128,6 +128,7 @@ export function GroupPanel({
         <label className="text-sm">
           <span className="mb-1 block text-ink-500">Entity</span>
           <input
+            data-field="group-entity"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Acme Holdings Pte Ltd"
@@ -137,6 +138,7 @@ export function GroupPanel({
         <label className="text-sm">
           <span className="mb-1 block text-ink-500">Role</span>
           <select
+            data-field="group-role"
             value={role}
             onChange={(e) => setRole(e.target.value)}
             className="rounded border border-ink-300 px-2 py-1.5"
@@ -150,6 +152,7 @@ export function GroupPanel({
         </label>
         <button
           type="button"
+          data-action="add-to-group"
           onClick={add}
           disabled={disabled || !name.trim()}
           className="rounded border border-regblue-600 px-3 py-1.5 text-xs font-semibold text-regblue-600 disabled:opacity-40"
@@ -158,6 +161,7 @@ export function GroupPanel({
         </button>
         <button
           type="button"
+          data-action="suggest-group"
           onClick={suggest}
           disabled={disabled || !analysisId}
           className="rounded border border-ink-300 px-3 py-1.5 text-xs text-ink-600 disabled:opacity-40"
@@ -190,7 +194,7 @@ export function GroupPanel({
             </thead>
             <tbody>
               {entities.map((entity, index) => (
-                <tr key={entity.id} className="border-b border-ink-100">
+                <tr key={entity.id} data-entity={entity.id} className="border-b border-ink-100">
                   <th scope="row" className="py-1 pr-3 text-left font-normal text-ink-700">
                     {entity.name}
                     <span className="block text-[10px] uppercase tracking-wide text-ink-400">

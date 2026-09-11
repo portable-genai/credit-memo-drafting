@@ -31,7 +31,10 @@ export function GlobalCashFlowView({ gcf }: { gcf: GlobalCashFlow }) {
   return (
     <div className="space-y-2">
       {gcf.complete ? null : (
-        <p className="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+        <p
+          data-gcf="incomplete"
+          className="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900"
+        >
           <strong>Incomplete.</strong> No figures were supplied for{" "}
           {gcf.entities_without_figures.join(", ")}. They contribute nothing to the totals
           below because nobody uploaded their statements, not because they have nothing to
@@ -118,7 +121,7 @@ export function ScenarioView({ scenarios }: { scenarios: ScenarioResult[] }) {
         </thead>
         <tbody>
           {scenarios.map((s) => (
-            <tr key={s.scenario_id} className="border-b border-ink-100">
+            <tr key={s.scenario_id} data-scenario={s.scenario_id} className="border-b border-ink-100">
               <th scope="row" className="py-1.5 pr-3 text-left font-normal text-ink-700">
                 {s.scenario_name}
               </th>

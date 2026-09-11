@@ -130,7 +130,7 @@ class Act:
 # --------------------------------------------------------------------------- #
 def _upload_files(stage: Stage) -> None:
     """Put the credit file into the console's upload panel."""
-    stage.page.get_by_label(loc.DOCUMENTS_INPUT, exact=True).set_input_files(
+    stage.page.locator(loc.DOCUMENTS_INPUT).set_input_files(
         [
             {
                 "name": "flowserve-fy2025-financial-extract.pdf",
@@ -155,29 +155,33 @@ def _upload_files(stage: Stage) -> None:
         "flowserve-covenant-position.txt": "Covenant compliance certificate",
     }
     for filename, label in kinds.items():
-        stage.page.get_by_label(f"Document kind for {filename}", exact=True).select_option(
-            label=label
-        )
-        stage.page.get_by_label(f"Date {filename} speaks to", exact=True).fill(fx.PERIOD_ENDED)
+        stage.page.locator(loc.document_kind(filename)).select_option(label=label)
+        stage.page.locator(loc.document_as_of(filename)).fill(fx.PERIOD_ENDED)
 
 
 def _fill_request(stage: Stage, kind: str = "New facility", tenor: int = FACILITY_TENOR) -> None:
     page = stage.page
-    loc.choose(page, "Memo kind", kind)
-    loc.choose(page, "Loan type", "C&I term / working capital")
-    loc.choose(page, "Facility type", "term loan")
-    page.get_by_label("Amount (USD, millions)", exact=True).fill(str(FACILITY_AMOUNT))
-    page.get_by_label("Tenor (months)", exact=True).fill(str(tenor))
-    page.get_by_label("Primary repayment source", exact=True).fill(REPAYMENT_SOURCE)
-    page.get_by_label("Purpose").fill(FACILITY_PURPOSE)
-    page.get_by_label("Security", exact=True).fill(FACILITY_SECURITY)
+    page.locator(loc.MEMO_KIND).select_option(label=kind)
+    page.locator(loc.LOAN_TYPE).select_option(label="C&I term / working capital")
+    page.locator(loc.FACILITY_TYPE).select_option(label="term loan")
+    page.locator(loc.AMOUNT).fill(str(FACILITY_AMOUNT))
+    page.locator(loc.TENOR).fill(str(tenor))
+    page.locator(loc.REPAYMENT_SOURCE).fill(REPAYMENT_SOURCE)
+    page.locator(loc.PURPOSE).fill(FACILITY_PURPOSE)
+    page.locator(loc.SECURITY).fill(FACILITY_SECURITY)
 
 
 def _build(stage: Stage, timeout: int = 60_000) -> None:
-    """Press Build and wait for either the memo or a refusal to appear."""
-    loc.button(stage.page, loc.BUILD).click()
-    stage.page.wait_for_function(
-        "() => !document.body.innerText.includes('Building...')", timeout=timeout
+    """Press Build and wait until that attempt has settled, answered or refused.
+
+    Keyed on the console's count of settled attempts rather than on the "Building..." label
+    going away: an attempt the console refuses before it starts never shows that label, so a
+    wait for it to disappear could return before the press had been handled at all.
+    """
+    settled = int(stage.page.locator(loc.OUTCOME).get_attribute("data-outcomes") or "0")
+    stage.page.locator(loc.BUILD).click()
+    stage.page.locator(f'{loc.OUTCOME}[data-outcomes="{settled + 1}"]').wait_for(
+        state="attached", timeout=timeout
     )
 
 
@@ -200,11 +204,7 @@ def act_identity(stage: Stage) -> None:
     # The picker is filled by a fetch the page makes after it hydrates, so waiting for the
     # OPTIONS rather than for the control is the difference between reading the personas
     # and reading an empty select that is about to be filled.
-    # Not exact: the label wraps its own hint text, so an exact match finds nothing. And
-    # the options arrive from a fetch the page makes after it hydrates, so waiting for the
-    # OPTIONS rather than the control is the difference between reading the personas and
-    # reading an empty select that is about to be filled.
-    picker = page.get_by_label(loc.PERSONA)
+    picker = page.locator(loc.PERSONA)
     # ``attached`` rather than ``visible``: an <option> is never visible in its own right,
     # so waiting for visibility waits for something that cannot happen.
     picker.locator("option").first.wait_for(state="attached", timeout=30_000)
@@ -225,9 +225,9 @@ def act_identity(stage: Stage) -> None:
 # --------------------------------------------------------------------------- #
 def act_credit_file(stage: Stage) -> None:
     page = stage.page
-    page.get_by_label(loc.BORROWER, exact=True).fill(fx.BORROWER_NAME)
-    page.get_by_label(loc.SECTOR, exact=True).fill(fx.SECTOR)
-    page.get_by_label(loc.JURISDICTION, exact=True).fill(fx.JURISDICTION)
+    page.locator(loc.BORROWER).fill(fx.BORROWER_NAME)
+    page.locator(loc.SECTOR).fill(fx.SECTOR)
+    page.locator(loc.JURISDICTION).fill(fx.JURISDICTION)
     _upload_files(stage)
     stage.cue(
         Point(
@@ -246,16 +246,15 @@ def act_credit_file(stage: Stage) -> None:
 
     # Opening the analysis is what puts the evidence in custody, and the console does it
     # on the first step that needs it. Extract is that step.
-    loc.button(page, loc.EXTRACT).click()
-    page.wait_for_selector("text=Not yet anybody's figures", timeout=60_000)
+    page.locator(loc.EXTRACT).click()
+    page.locator(loc.SPREAD_CANDIDATE).wait_for(timeout=60_000)
 
-    # The console does not surface the analysis id as data, so recover it from the
-    # manifest the page rendered. That is not a workaround: the manifest naming the
-    # analysis on screen IS the reader-facing claim this act is about.
+    # The manifest carries the analysis id as a hook, and the id must ALSO be on screen: the
+    # manifest naming the analysis is the reader-facing claim this act is about.
+    analysis_id = page.locator(loc.MANIFEST).first.get_attribute("data-analysis-id") or ""
     body = _text(stage)
-    if "an-" not in body:
+    if not analysis_id.startswith("an-") or analysis_id not in body:
         raise ActFailed("the manifest did not name the analysis on screen")
-    analysis_id = next(word for word in body.split() if word.startswith("an-"))
     stage.state["analysis_id"] = analysis_id
 
     manifest = _ok(stage.get(f"/v1/analyses/{analysis_id}"), "read the manifest").json()
@@ -270,7 +269,7 @@ def act_credit_file(stage: Stage) -> None:
         raise ActFailed("a document reached custody without a digest")
     if not manifest["retention_note"] or "deleted" not in manifest["retention_note"]:
         raise ActFailed(f"the manifest does not say when the evidence goes: {manifest}")
-    if "available until" not in body:
+    if "available until" not in page.locator(loc.RETENTION).first.inner_text():
         raise ActFailed("the retention note is not on screen")
     stage.state["manifest"] = manifest
     stage.cue(
@@ -302,8 +301,8 @@ def act_extraction_is_a_proposal(stage: Stage) -> None:
         raise ActFailed("a proposed figure does not say where it was read")
 
     # The quote a reviewer checks the figure against, opened from the row itself.
-    page.get_by_role("button", name="Show the quote").first.click()
-    if "Open" not in _text(stage):
+    page.locator(loc.SHOW_QUOTE).first.click()
+    if page.locator(loc.OPEN_SOURCE).count() == 0:
         raise ActFailed("the quote does not link back to the document it came from")
     stage.state["candidate"] = candidate
     stage.cue(
@@ -325,16 +324,11 @@ def act_extraction_is_a_proposal(stage: Stage) -> None:
 # --------------------------------------------------------------------------- #
 def act_confirm_the_spread(stage: Stage) -> None:
     page = stage.page
-    page.get_by_role("radio", name="reject").nth(_row_index(stage, fx.REJECTED_CODE)).check()
-    adjust_row = _row_index(stage, fx.ADJUSTED_CODE)
-    page.get_by_role("radio", name="adjust").nth(adjust_row).check()
-    line = loc.SPREAD_LINE_LABELS[fx.ADJUSTED_CODE]
-    page.get_by_label(f"Adjusted value for {line}, {fx.PERIOD}", exact=True).fill(
-        str(fx.ADJUSTED_TO)
-    )
-    page.get_by_label(f"Reason for adjusting {line}, {fx.PERIOD}", exact=True).fill(
-        fx.ADJUSTMENT_REASON
-    )
+    _spread_row(stage, fx.REJECTED_CODE).locator(loc.verdict("reject")).check()
+    adjusted_row = _spread_row(stage, fx.ADJUSTED_CODE)
+    adjusted_row.locator(loc.verdict("adjust")).check()
+    adjusted_row.locator(loc.ADJUSTED_VALUE).fill(str(fx.ADJUSTED_TO))
+    adjusted_row.locator(loc.ADJUSTMENT_REASON).fill(fx.ADJUSTMENT_REASON)
     stage.cue(
         Point(
             f"REJECT the cash line of USD {fx.REJECTED_VALUE:,.1f}m.",
@@ -355,8 +349,9 @@ def act_confirm_the_spread(stage: Stage) -> None:
         "anything is confirmed",
     )
 
-    loc.button(page, loc.CONFIRM).click()
-    page.wait_for_selector("text=Confirmed by", timeout=60_000)
+    page.locator(loc.CONFIRM).click()
+    confirmed_line = page.locator(loc.SPREAD_CONFIRMED)
+    confirmed_line.wait_for(timeout=60_000)
 
     spread = _ok(stage.get(f"/v1/analyses/{stage.analysis_id}/spreads"), "read the spreads").json()[
         "confirmed"
@@ -383,6 +378,8 @@ def act_confirm_the_spread(stage: Stage) -> None:
         )
     if not adjusted.get("citations"):
         raise ActFailed("the adjusted figure lost the page its original was read from")
+    if confirmed_line.get_attribute("data-confirmed-by") != spread["confirmed_by"]:
+        raise ActFailed("the confirmation on screen names somebody the service did not record")
     stage.state["spread"] = spread
     stage.cue(
         Point(f"Confirmed by {spread['confirmed_by']}."),
@@ -418,9 +415,9 @@ def act_build_the_memo(stage: Stage) -> None:
     body = _text(stage)
     if loc.REVIEW_BANNER not in body:
         raise ActFailed("the maker-checker banner is not on the memo")
-    for heading in loc.ALWAYS_PRESENT:
-        if loc.section(stage.page, heading).count() != 1:
-            raise ActFailed(f"the memo does not show the {heading!r} section")
+    for selector in loc.ALWAYS_PRESENT:
+        if stage.page.locator(selector).count() != 1:
+            raise ActFailed(f"the memo does not show the {selector} section")
 
     memo = _ok(
         stage.post(f"/v1/analyses/{stage.analysis_id}/build", {"request": _request_body()}),
@@ -528,9 +525,11 @@ def act_the_breach_stands(stage: Stage) -> None:
     if dscr is None or dscr["status"] != "compliant":
         raise ActFailed(f"DSCR of {fx.dscr():.2f}x against 1.25x should be met, saw {dscr}")
 
-    body = _text(stage)
-    if "breach" not in body.lower():
-        raise ActFailed("the breach is not visible on screen")
+    statuses = stage.page.locator(loc.covenant("leverage")).evaluate_all(
+        "cards => cards.map((card) => card.dataset.status)"
+    )
+    if "breach" not in statuses:
+        raise ActFailed(f"the breach is not visible on screen: leverage shows {statuses}")
 
 
 # --------------------------------------------------------------------------- #
@@ -578,11 +577,11 @@ def act_policy_and_rating(stage: Stage) -> None:
     if rating["provenance"] != "computed":
         raise ActFailed("the grade is not the scorecard's arithmetic")
 
-    body = _text(stage)
-    for heading in (loc.SECTION_POLICY, loc.SECTION_RATING):
-        if loc.section(stage.page, heading).count() != 1:
-            raise ActFailed(f"the {heading!r} section is not on screen")
-    if breach["rule_id"] not in body:
+    for selector in (loc.SECTION_POLICY, loc.SECTION_RATING):
+        if stage.page.locator(selector).count() != 1:
+            raise ActFailed(f"the {selector} section is not on screen")
+    rule_on_screen = stage.page.locator(loc.policy_rule(breach["rule_id"]))
+    if rule_on_screen.count() == 0 or breach["rule_id"] not in rule_on_screen.first.inner_text():
         raise ActFailed("the breached rule is not named on screen")
 
 
@@ -603,7 +602,7 @@ def act_reconciliation(stage: Stage) -> None:
     for finding in certificate:
         if finding["expected"] == finding["actual"]:
             raise ActFailed("a reconciliation was raised on figures that agree")
-    if loc.section(stage.page, loc.SECTION_TIE_OUT).count() != 1:
+    if stage.page.locator(loc.SECTION_TIE_OUT).count() != 1:
         raise ActFailed("the reconciliation findings are not on screen")
 
 
@@ -625,13 +624,13 @@ def act_the_group(stage: Stage) -> None:
     different one to exercise the feature is exactly the fabrication this demo removed.
     """
     page = stage.page
-    page.get_by_label("Entity", exact=True).fill(fx.SUBSIDIARY_NAME)
-    loc.choose(page, "Role", "Subsidiary")
-    loc.button(page, loc.ADD_TO_GROUP).click()
+    page.locator(loc.GROUP_ENTITY).fill(fx.SUBSIDIARY_NAME)
+    page.locator(loc.GROUP_ROLE).select_option(label="Subsidiary")
+    page.locator(loc.ADD_TO_GROUP).click()
 
-    page.get_by_label("Entity", exact=True).fill(fx.AFFILIATE_NAME)
-    loc.choose(page, "Role", "Affiliate")
-    loc.button(page, loc.ADD_TO_GROUP).click()
+    page.locator(loc.GROUP_ENTITY).fill(fx.AFFILIATE_NAME)
+    page.locator(loc.GROUP_ROLE).select_option(label="Affiliate")
+    page.locator(loc.ADD_TO_GROUP).click()
     stage.cue(
         Point(
             "Two real subsidiaries, out of Exhibit 21 of the same filing.",
@@ -667,8 +666,8 @@ def act_the_group(stage: Stage) -> None:
         raise ActFailed("the consolidated revenue does not show who contributed it")
     stage.state["group_memo"] = memo
 
-    body = _text(stage)
-    if fx.SUBSIDIARY_NAME not in body:
+    notice = stage.page.locator(loc.GCF_INCOMPLETE)
+    if notice.count() != 1 or fx.SUBSIDIARY_NAME not in notice.inner_text():
         raise ActFailed("the entity the consolidation could not include is not on screen")
     stage.cue(
         Point(
@@ -906,7 +905,7 @@ def act_public_context(stage: Stage) -> None:
     because the fence is the claim.
     """
     page = stage.page
-    page.get_by_label("Search the public web", exact=True).fill(SECTOR_QUERY)
+    page.locator(loc.RESEARCH_QUERY).fill(SECTOR_QUERY)
     stage.cue(
         Point(
             "An analyst wants sector context, and would otherwise open a browser for it.",
@@ -919,8 +918,8 @@ def act_public_context(stage: Stage) -> None:
         ),
         look_at="the search box, before the query runs",
     )
-    loc.button(page, "Search public context").click()
-    page.wait_for_selector("text=None of the above is in the memo", timeout=60_000)
+    page.locator(loc.RESEARCH).click()
+    page.locator(loc.RESEARCH_FENCE).wait_for(timeout=60_000)
 
     found = _ok(
         stage.get(f"/v1/analyses/{stage.analysis_id}/research?query={SECTOR_QUERY}"),
@@ -1060,9 +1059,11 @@ def act_refusals(stage: Stage) -> None:
         stage.page = console
     page = stage.page
     page.goto(stage.ui_base, wait_until="load")
-    page.get_by_label(loc.BORROWER, exact=True).fill(fx.BORROWER_NAME)
-    loc.button(page, loc.BUILD).click()
-    page.wait_for_selector("text=Add the borrower's documents", timeout=30_000)
+    page.locator(loc.BORROWER).fill(fx.BORROWER_NAME)
+    _build(stage, timeout=30_000)
+    refusal = page.locator(loc.ERROR)
+    if refusal.count() != 1 or "Add the borrower's documents" not in refusal.inner_text():
+        raise ActFailed("building with an empty credit file did not refuse and say what to add")
     stage.cue(
         Point("Build with an empty credit file: it refuses, and says what to add."),
         Point(
@@ -1073,7 +1074,7 @@ def act_refusals(stage: Stage) -> None:
     )
 
     # And a request that tries to talk to the model rather than about the borrower.
-    page.get_by_label(loc.BORROWER, exact=True).fill(f"{fx.BORROWER_NAME} {fx.INJECTION_PHRASE}")
+    page.locator(loc.BORROWER).fill(f"{fx.BORROWER_NAME} {fx.INJECTION_PHRASE}")
     _upload_files(stage)
     _fill_request(stage)
     stage.cue(
@@ -1085,8 +1086,7 @@ def act_refusals(stage: Stage) -> None:
         look_at=f"the borrower field, ending '{fx.INJECTION_PHRASE}'",
     )
     _build(stage)
-    body = _text(stage)
-    if loc.BLOCKED_BANNER not in body:
+    if page.locator(loc.GUARDRAIL_BLOCKED).count() != 1:
         raise ActFailed("an injection attempt produced a memo instead of a refusal")
     stage.cue(
         Point("Blocked by the guardrail, before any retrieval and before any drafting."),
@@ -1137,15 +1137,16 @@ def act_evidence_goes_away(stage: Stage) -> None:
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
-def _row_index(stage: Stage, code: str) -> int:
-    """Which row of the review table holds ``code``, in the order it is rendered."""
+def _spread_row(stage: Stage, code: str) -> Any:
+    """The review row proposing ``code`` for the demo's period, named by what it is."""
     candidate = stage.state.get("candidate")
     if not candidate:
         raise ActFailed("no candidate spread has been extracted")
-    codes = [item["code"] for item in candidate["items"]]
-    if code not in codes:
+    row = stage.page.locator(loc.spread_row(code, fx.PERIOD))
+    if row.count() != 1:
+        codes = [item["code"] for item in candidate["items"]]
         raise ActFailed(f"the extractor proposed no {code!r} row to act on: {codes}")
-    return codes.index(code)
+    return row
 
 
 ACTS: tuple[Act, ...] = (
