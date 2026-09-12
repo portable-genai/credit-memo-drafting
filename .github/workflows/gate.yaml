@@ -35,6 +35,8 @@ jobs:
       extra_lockfiles: "requirements-demo.lock"
       extra_lockfiles_first: true
       demo_browser_required: true
+      npm_directory: "ui"
+      npm_directory_first: true
 
   lint-gcp:
     uses: portable-genai/.github/.github/workflows/fleet-gate.yaml@c8e3eb537e377c6590372645a2ff5e8c5928fcd0

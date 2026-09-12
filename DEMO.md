@@ -153,8 +153,8 @@ make walkthrough ACT="The checker"    # just one use case
 make walkthrough-list                 # what you can name
 ```
 
-The same acts run asserted and headless as `make demo-console`, so the demo cannot rot
-between presentations. A run writes screenshots, a video and a Playwright trace to
+The same acts run asserted and headless as `make demo-console`, and CI's `demo-browser` job
+runs them on every pull request, so the demo cannot rot between presentations. A run writes screenshots, a video and a Playwright trace to
 `out/demo/`. `make verify-deployed` runs the same steps against a *deployed* service instead
 of a laptop console — see "Checking a deployment" in `docs/demo-use-cases.md`. Swapping the
 demo to a different real company is real research, not a rename; see "Swapping the demo
