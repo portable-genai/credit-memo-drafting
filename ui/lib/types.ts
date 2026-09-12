@@ -386,6 +386,71 @@ export interface CreditMemo {
   questions_for_client: string[];
   /** Exactly which uploaded files this memo was assessed on. */
   manifest: AnalysisManifest | null;
+  /**
+   * What moved since the memo before this one. Present on the kinds written AGAINST a prior
+   * memo (renewal, annual review, rating action) and null on the rest, where "what changed"
+   * is a question about a facility that did not exist last cycle.
+   */
+  renewal_delta: RenewalDelta | null;
+}
+
+/** How one line moved between the prior memo and this one. */
+export interface SectionDelta {
+  label: string;
+  before: number | null;
+  after: number | null;
+  unit: string;
+  detail: string;
+  /** Computed by the engine, not here: "up", "down", "unchanged", "new" or "gone". */
+  direction: string;
+  change: number | null;
+}
+
+/**
+ * What changed since the last review, which is the whole point of a renewal.
+ *
+ * `no_comparison_reason` is the field to read first. There is no memo of record in this
+ * service, so the baseline is whatever the analyst uploaded; when nothing was uploaded, or
+ * what was uploaded is not a memo this service produced, the delta says so in a sentence.
+ * An empty delta would read as "nothing moved", which is a claim about the borrower rather
+ * than about what the analysis was given.
+ */
+export interface RenewalDelta {
+  prior_version: string;
+  prior_at: string;
+  /** The uploaded file the movement was measured against, by name. */
+  prior_filename: string;
+  /** Set when no comparison was made. Empty when `ratios`/`spread`/`covenants` are real. */
+  no_comparison_reason: string;
+  ratios: SectionDelta[];
+  spread: SectionDelta[];
+  covenants: SectionDelta[];
+  rating_before: string;
+  rating_after: string;
+  new_exceptions: string[];
+  cleared_exceptions: string[];
+  /** Sections a reader already knows, named so they can skip them rather than re-read them. */
+  unchanged_sections: string[];
+}
+
+/**
+ * What this kind of memo needs, and what this analysis was not given.
+ *
+ * The point of serving it is WHEN an analyst learns: a renewal without the prior memo is a
+ * new-facility memo wearing a renewal's title, and finding that out at intake is the
+ * difference between a question and a committee paper that cannot answer one.
+ */
+export interface InputChecklist {
+  kind: MemoKind;
+  loan_type: LoanType;
+  required: DocType[];
+  recommended: DocType[];
+  /** The kinds this analysis actually holds. */
+  present: DocType[];
+  missing_required: DocType[];
+  missing_recommended: DocType[];
+  /** Whether this kind is written against the memo before it, which is why it wants one. */
+  compares_with_prior: boolean;
 }
 
 export interface TieOutFinding {

@@ -21,6 +21,7 @@ Pure domain code: no ports, no I/O, no model.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from .models import RenewalDelta, SectionDelta
@@ -38,10 +39,46 @@ def _material(before: float | None, after: float | None) -> bool:
     return abs(after - before) > scale * _MATERIAL
 
 
+def read_prior_memo(content: bytes) -> dict | None:
+    """The uploaded prior memo as a dict, or ``None`` when the upload is not one.
+
+    Only this service's own JSON export can be compared: it is the memo's wire shape, and
+    every field the comparison reads is a key of it. A PDF of last year's memo is a perfectly
+    good document and a useless baseline, so it is refused rather than parsed hopefully, and
+    the refusal reaches the reader as a sentence rather than as an empty delta.
+
+    Stdlib only, like the rest of this module.
+    """
+    if not content:
+        return None
+    try:
+        parsed = json.loads(content.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    # A memo, not merely JSON. An upload carrying none of these keys would produce a delta
+    # claiming every figure in this memo is new, which reads as a year of dramatic movement.
+    if not any(key in parsed for key in ("summary", "ratios", "covenants", "spreads")):
+        return None
+    return parsed
+
+
 class RenewalDiffService:
     """Compare this memo against the prior one and report what actually moved."""
 
-    def compare(self, current: Any, prior: dict) -> RenewalDelta:
+    @staticmethod
+    def no_comparison(reason: str, filename: str = "") -> RenewalDelta:
+        """A memo whose kind leads with what changed, and which had nothing to compare against.
+
+        Deliberately not an empty delta: that would tell a committee nothing moved, which is a
+        statement about the borrower rather than about what the analysis was given. Two causes
+        reach here, no prior memo at all and one that is not a memo this service produced, and
+        both are said in the reason.
+        """
+        return RenewalDelta(prior_filename=filename, no_comparison_reason=reason)
+
+    def compare(self, current: Any, prior: dict, prior_filename: str = "") -> RenewalDelta:
         """The movement between ``prior`` (an uploaded memo's JSON) and ``current``.
 
         ``prior`` is a dict rather than a ``CreditMemo`` because it arrives as an
@@ -52,6 +89,7 @@ class RenewalDiffService:
         return RenewalDelta(
             prior_version=str(prior.get("policy_version") or ""),
             prior_at=str(prior.get("generated_at") or ""),
+            prior_filename=prior_filename,
             ratios=self._ratio_deltas(current, prior),
             spread=self._spread_deltas(current, prior),
             covenants=self._covenant_deltas(current, prior),

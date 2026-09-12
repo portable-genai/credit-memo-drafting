@@ -8,7 +8,7 @@ of timing.
 
 Each point is a phrase to say; its justification prints underneath in a dimmer hand, for
 the question the phrase provokes rather than to be read out. See
-:mod:`demo_console.narrative`, which the eighteen-act console walkthrough renders through
+:mod:`demo_console.narrative`, which the nineteen-act console walkthrough renders through
 too, so the two demos read the same way.
 
 Usage (two terminals)::

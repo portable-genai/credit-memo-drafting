@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import contextlib
 from contextlib import nullcontext
+from dataclasses import replace
 from typing import Any
 
 from . import _grounded as g
@@ -58,6 +59,7 @@ from .models import (
     CreditMemo,
     Decision,
     Direction,
+    DocType,
     EntityRole,
     Filing,
     FinancialSpread,
@@ -68,6 +70,7 @@ from .models import (
     PolicyException,
     Ratio,
     RelatedEntity,
+    RenewalDelta,
     RetrievedPassage,
     RiskFlag,
     RiskRatingProposal,
@@ -78,6 +81,7 @@ from .peer_comp_service import PeerCompService
 from .policy_exception_service import PolicyExceptionService
 from .ratio_catalogue import catalogue_version
 from .ratio_service import RatioService
+from .renewal_diff_service import RenewalDiffService, read_prior_memo
 from .review_policy import CreditReviewPolicy
 from .risk_flag_service import RiskFlagService
 from .risk_rating_service import RiskRatingService
@@ -304,6 +308,12 @@ class CreditMemoService:
             manifest=manifest,
         )
 
+        # 11b) What moved since the memo before this one, when the analyst supplied it. The
+        #      memo is assembled first because the comparison is against its own figures.
+        renewal_delta = self._renewal_delta(memo_input, manifest, memo, (*acl_tags, *principals))
+        if renewal_delta is not None:
+            memo = replace(memo, renewal_delta=renewal_delta)
+
         # 12) Guardrail screen (OUTPUT) on the assembled prose.
         out_text = f"{memo.summary}\n{memo.recommendation_rationale}"
         out_verdict: GuardrailVerdict = self._guardrail.screen(out_text, Direction.OUTPUT)
@@ -344,6 +354,50 @@ class CreditMemoService:
             return None
         return result if isinstance(result, AnalysisManifest) else None
 
+    def _renewal_delta(
+        self,
+        memo_input: MemoInput,
+        manifest: AnalysisManifest | None,
+        memo: CreditMemo,
+        acl_principals: tuple[str, ...],
+    ) -> RenewalDelta | None:
+        """What moved since the prior memo this analysis was given, if it was given one.
+
+        The prior memo arrives as an upload like everything else, because this service keeps no
+        memo of record: the baseline is whatever the analyst supplied, and the manifest names
+        which file it was, so a reader can see what the deltas are measured against.
+
+        Only the kinds that are WRITTEN against the memo before them compare (renewal, annual
+        review, rating action). A new-facility memo with a prior memo in its credit file has
+        one as evidence, not as a baseline, and saying "what changed" about a facility that did
+        not exist last year would be an answer to a question nobody asked.
+        """
+        if manifest is None or self._analysis_bundle is None or memo_input.request is None:
+            return None
+        if not template_for(memo_input.request.kind).compares_with_prior:
+            return None
+        priors = [d for d in manifest.documents if d.doc_type is DocType.PRIOR_MEMO]
+        if not priors:
+            return RenewalDiffService.no_comparison(
+                "no prior memo was uploaded, so there is nothing to compare this against. A "
+                "renewal leads with what changed, and that needs the memo being renewed: "
+                "export it as JSON and add it to the credit file."
+            )
+        # The most recent one the uploader dated, then the most recently uploaded: an analyst
+        # who supplies two is renewing against the later of them.
+        latest = sorted(priors, key=lambda d: (d.declared_as_of, d.uploaded_at))[-1]
+        prior = read_prior_memo(
+            self._document_bytes(memo_input.analysis_id, latest.id, acl_principals)
+        )
+        if prior is None:
+            return RenewalDiffService.no_comparison(
+                f"{latest.filename} is not a memo this service produced. Export the memo being "
+                "renewed as JSON and upload that; a scan or a rendered document cannot be "
+                "compared figure by figure.",
+                filename=latest.filename,
+            )
+        return RenewalDiffService().compare(memo, prior, prior_filename=latest.filename)
+
     def _ingest_all(
         self,
         memo_input: MemoInput,
@@ -361,6 +415,12 @@ class CreditMemoService:
         """
         if manifest is not None:
             for stored in manifest.documents:
+                if stored.doc_type is DocType.PRIOR_MEMO:
+                    # Last cycle's memo is the BASELINE a renewal is measured against, not
+                    # evidence about the borrower now. Indexing it would let last year's
+                    # figures grounded a covenant or a ratio in this year's memo, and a
+                    # citation to it would read as support for a number it predates.
+                    continue
                 pages = self._extract_and_ingest(
                     Filing(
                         id=stored.id,

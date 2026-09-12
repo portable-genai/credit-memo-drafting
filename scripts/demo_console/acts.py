@@ -46,6 +46,11 @@ REPAYMENT_SOURCE = "Operating cash flow"
 #: The tenor that trips the policy pack's one knockout rule (TEN-01, maximum 84 months).
 KNOCKOUT_TENOR = 96
 
+#: What the renewal act uploads as the memo being renewed: the JSON the committee-pack act
+#: downloaded out of this same console. A .json name on purpose, because only this service's own
+#: wire shape can be compared figure by figure and a rendered document cannot.
+PRIOR_MEMO_FILENAME = "flowserve-prior-credit-memo.json"
+
 #: What the analyst rewrites the summary to, and what they rewrite it to again once the
 #: checker asks who is being asked to waive the exception.
 REVISED_SUMMARY = (
@@ -142,32 +147,39 @@ class Act:
 # --------------------------------------------------------------------------- #
 # Shared console helpers
 # --------------------------------------------------------------------------- #
-def _upload_files(stage: Stage) -> None:
-    """Put the credit file into the console's upload panel."""
-    stage.page.locator(loc.DOCUMENTS_INPUT).set_input_files(
-        [
-            {
-                "name": "flowserve-fy2025-financial-extract.pdf",
-                "mimeType": "application/pdf",
-                "buffer": fx.audited_financials(),
-            },
-            {
-                "name": "flowserve-fy2025-spread.csv",
-                "mimeType": "text/csv",
-                "buffer": fx.spread_csv(),
-            },
-            {
-                "name": "flowserve-covenant-position.txt",
-                "mimeType": "text/plain",
-                "buffer": fx.covenant_position(),
-            },
-        ]
-    )
+def _upload_files(stage: Stage, extra: dict[str, tuple[str, str, bytes]] | None = None) -> None:
+    """Put the credit file into the console's upload panel, plus ``extra`` where given.
+
+    One ``set_input_files`` call, because a second REPLACES the first rather than adding to it:
+    the renewal's prior memo has to go up alongside the three documents, not instead of them.
+    ``extra`` maps filename to (kind label, media type, bytes).
+    """
+    files = [
+        {
+            "name": "flowserve-fy2025-financial-extract.pdf",
+            "mimeType": "application/pdf",
+            "buffer": fx.audited_financials(),
+        },
+        {
+            "name": "flowserve-fy2025-spread.csv",
+            "mimeType": "text/csv",
+            "buffer": fx.spread_csv(),
+        },
+        {
+            "name": "flowserve-covenant-position.txt",
+            "mimeType": "text/plain",
+            "buffer": fx.covenant_position(),
+        },
+    ]
     kinds = {
         "flowserve-fy2025-financial-extract.pdf": "Audited financial statements",
         "flowserve-fy2025-spread.csv": "Your own spread",
         "flowserve-covenant-position.txt": "Covenant compliance certificate",
     }
+    for filename, (kind_label, mime_type, content) in (extra or {}).items():
+        files.append({"name": filename, "mimeType": mime_type, "buffer": content})
+        kinds[filename] = kind_label
+    stage.page.locator(loc.DOCUMENTS_INPUT).set_input_files(files)
     for filename, label in kinds.items():
         stage.page.locator(loc.document_kind(filename)).select_option(label=label)
         stage.page.locator(loc.document_as_of(filename)).fill(fx.PERIOD_ENDED)
@@ -1061,10 +1073,14 @@ def act_committee_pack(stage: Stage) -> None:
         raise ActFailed("the committee pack does not carry the reconciliation findings")
 
     # The memo as the service stores it, which is the only form a LATER analysis can read
-    # back when it has to say what changed since this one.
-    wire = json.loads(_download(stage, "json").decode("utf-8"))
+    # back when it has to say what changed since this one. Kept, because the renewal act is
+    # that later analysis: the baseline it measures against is this download and nothing else,
+    # which is what "no memo of record" means in practice.
+    exported = _download(stage, "json")
+    wire = json.loads(exported.decode("utf-8"))
     if not any(e["rule_id"] == "LEV-01" for e in wire["policy_exceptions"]):
         raise ActFailed("the memo's own form dropped the exception the pack shows")
+    stage.state["prior_memo"] = exported
 
     refused = stage.post(f"/v1/analyses/{analysis_id}/export?fmt=pdf")
     if refused.ok:
@@ -1098,7 +1114,197 @@ def act_committee_pack(stage: Stage) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# 16. Is this even bankable
+# 16. Next year, and what changed
+# --------------------------------------------------------------------------- #
+def act_the_renewal(stage: Stage) -> None:
+    """A renewal, measured against the memo this demo has just exported.
+
+    Two beats, and the first one matters more. Switching the deal's own credit file to a
+    renewal shows the checklist naming the prior memo as missing AT INTAKE, which is the only
+    moment the answer is any use. Then a second analysis brings the prior memo, and the memo
+    leads with what moved and names the file it was measured against.
+
+    The baseline is genuinely the download from act 15. There is no memo of record in this
+    service, so the only thing a renewal can be measured against is a file somebody uploaded,
+    and naming that file is part of the claim rather than a nicety.
+    """
+    prior = stage.state.get("prior_memo")
+    if not prior:
+        raise ActFailed("the committee pack act did not export the memo; act 15 must run first")
+
+    # -- Beat 1: the deal's own credit file, re-read as a renewal ------------------ #
+    deal = _console_page(stage)
+    stage.page = deal
+    deal.locator(loc.MEMO_KIND).select_option(label="Renewal")
+    checklist = deal.locator(loc.INPUT_CHECKLIST)
+    # The panel re-asks the service whenever the kind changes, so the assertion waits for the
+    # ANSWER about a renewal rather than for whatever was on screen about a new facility.
+    deal.locator(f'{loc.INPUT_CHECKLIST}[data-kind="renewal"]').wait_for(timeout=30_000)
+    if checklist.get_attribute("data-compares-with-prior") != "yes":
+        raise ActFailed("the console does not know a renewal is written against a prior memo")
+    prior_row = deal.locator(loc.required_doc("prior_memo"))
+    if prior_row.count() != 1:
+        raise ActFailed("a renewal's checklist does not require the memo being renewed")
+    if prior_row.get_attribute("data-held") != "no":
+        raise ActFailed(
+            "this analysis holds no prior memo and the checklist says otherwise, which is the "
+            "one thing it exists to report"
+        )
+    if deal.locator(loc.WHY_PRIOR_MEMO).count() != 1:
+        raise ActFailed("the checklist names the gap without saying why the document is wanted")
+    stage.cue(
+        Point(
+            "Same credit file, read as next year's renewal instead of a new facility.",
+            "Nothing was re-uploaded. Only the kind of memo being written changed.",
+        ),
+        Point(
+            "The console says immediately that the memo being renewed is missing.",
+            "At intake, which is the only moment it is any use. Learning it from a committee "
+            "that asks what changed is learning it too late.",
+        ),
+        look_at="the amber checklist naming the prior memo, and the line saying why it is wanted",
+    )
+    # Left as the analyst found it: the acts after this one drive this page, and a kind nobody
+    # chose is the kind of state that makes a later failure unreadable.
+    deal.locator(loc.MEMO_KIND).select_option(label="New facility")
+    deal.locator(f'{loc.INPUT_CHECKLIST}[data-kind="new_facility"]').wait_for(timeout=30_000)
+
+    # -- Beat 2: the same deal a year on, with the memo being renewed -------------- #
+    renewal = deal.context.new_page()
+    stage.state["console_page"] = deal
+    stage.page = renewal
+    page = renewal
+    page.goto(stage.ui_base, wait_until="load")
+    _as_persona(stage, ANALYST)
+    page.locator(loc.BORROWER).fill(fx.BORROWER_NAME)
+    page.locator(loc.SECTOR).fill(fx.SECTOR)
+    page.locator(loc.JURISDICTION).fill(fx.JURISDICTION)
+    _upload_files(
+        stage, extra={PRIOR_MEMO_FILENAME: ("Prior credit memo", "application/json", prior)}
+    )
+    _fill_request(stage, kind="Renewal")
+    stage.cue(
+        Point(
+            "The same credit file, plus the memo the committee approved last cycle.",
+            "Exported from this product a moment ago. There is no archive here, so the "
+            "baseline is a file somebody brings.",
+        ),
+        look_at="the prior credit memo on the upload list, beside the three documents",
+    )
+
+    page.locator(loc.EXTRACT).click()
+    page.locator(loc.SPREAD_CANDIDATE).wait_for(timeout=60_000)
+    analysis_id = page.locator(loc.MANIFEST).first.get_attribute("data-analysis-id") or ""
+    if not analysis_id.startswith("an-"):
+        raise ActFailed("the renewal analysis did not reach custody")
+    page.locator(f'{loc.INPUT_CHECKLIST}[data-kind="renewal"]').wait_for(timeout=30_000)
+    if page.locator(loc.required_doc("prior_memo")).get_attribute("data-held") != "yes":
+        raise ActFailed("the prior memo is in this credit file and the checklist says otherwise")
+    # This credit file genuinely has no debt schedule, and the panel still says so. A checklist
+    # that went green the moment the document somebody was nagged about arrived would be
+    # reporting the nagging rather than the file.
+    if page.locator(loc.required_doc("debt_schedule")).get_attribute("data-held") != "no":
+        raise ActFailed(
+            "the checklist reports a document this credit file does not hold, so it is not "
+            "reading the file"
+        )
+
+    # The prior memo is in the file as a BASELINE, never as evidence about the borrower now.
+    # Nothing proposed here may have been read off it: last cycle's figures arriving with a
+    # quote and a page would look exactly like this period's, read off the borrower's own
+    # statements.
+    candidate = _ok(stage.get(f"/v1/analyses/{analysis_id}/spreads"), "read the spreads").json()[
+        "candidate"
+    ]
+    stage.state["candidate"] = candidate
+    prior_id = next(
+        d["id"]
+        for d in _ok(stage.get(f"/v1/analyses/{analysis_id}"), "read the manifest").json()[
+            "documents"
+        ]
+        if d["doc_type"] == "prior_memo"
+    )
+    read_from = {item["document_id"] for item in candidate["items"]}
+    if prior_id in read_from:
+        raise ActFailed(
+            "a figure in this period's spread was read off last cycle's memo, which would "
+            "present it as something the borrower's own statements say"
+        )
+
+    _spread_row(stage, fx.REJECTED_CODE).locator(loc.verdict("reject")).check()
+    adjusted = _spread_row(stage, fx.ADJUSTED_CODE)
+    adjusted.locator(loc.verdict("adjust")).check()
+    adjusted.locator(loc.ADJUSTED_VALUE).fill(str(fx.ADJUSTED_TO))
+    adjusted.locator(loc.ADJUSTMENT_REASON).fill(fx.ADJUSTMENT_REASON)
+    page.locator(loc.CONFIRM).click()
+    page.locator(loc.SPREAD_CONFIRMED).wait_for(timeout=60_000)
+    _build(stage)
+
+    section = page.locator(loc.SECTION_RENEWAL)
+    if section.count() != 1:
+        raise ActFailed("a renewal's memo does not lead with what changed")
+    if page.locator(loc.RENEWAL_NO_COMPARISON).count():
+        raise ActFailed(
+            "a prior memo was uploaded and the memo still says nothing was compared against"
+        )
+    measured = section.locator(loc.RENEWAL_MEASURED_AGAINST).inner_text()
+    if PRIOR_MEMO_FILENAME not in measured:
+        raise ActFailed(
+            f"the memo does not name the file its deltas are measured against: {measured!r}"
+        )
+
+    # The pack a committee reads carries the same section. An export that dropped it would be
+    # the regression act 15 exists for, in a different section: the console would show what
+    # changed and the document that leaves the building would not.
+    pack = _ok(
+        stage.post(f"/v1/analyses/{analysis_id}/export?fmt=html"), "export the renewal pack"
+    ).text()
+    if "What changed since the last review" not in pack or PRIOR_MEMO_FILENAME not in pack:
+        raise ActFailed("the committee pack for a renewal does not carry what changed")
+
+    delta = _ok(
+        stage.post(f"/v1/analyses/{analysis_id}/export?fmt=json"), "read the renewal's own form"
+    ).json()["renewal_delta"]
+    if delta is None or delta["no_comparison_reason"]:
+        raise ActFailed(f"the renewal carries no comparison: {delta}")
+    if delta["prior_filename"] != PRIOR_MEMO_FILENAME:
+        raise ActFailed(f"the delta names the wrong baseline: {delta['prior_filename']!r}")
+    if not delta["prior_at"]:
+        raise ActFailed("the delta does not say when the memo it compares against was generated")
+    # A delta with every field empty is the failure this act guards: it would render as
+    # "nothing moved", which is a claim about the borrower rather than about the comparison.
+    if not any(
+        delta[field]
+        for field in ("ratios", "covenants", "spread", "unchanged_sections", "new_exceptions")
+    ):
+        raise ActFailed("the comparison reports nothing at all, in either direction")
+    stage.state["renewal_delta"] = delta
+    stage.cue(
+        Point(
+            "The renewal opens with what changed, and names the file it was measured against.",
+            "A reader can see WHICH prior memo this is a delta from, which matters when the "
+            "baseline is something an analyst uploaded rather than something a system kept.",
+        ),
+        Point(
+            "Here the figures held, and the memo says so rather than restating them.",
+            "Same filing on both sides, so nothing moved. 'Unchanged' is information, and "
+            "stating it is what makes a renewal shorter than a new memo rather than the same "
+            "document with a different title.",
+        ),
+        Point(
+            "Nothing in this period's spread was read off last cycle's memo.",
+            "It is in the credit file as the baseline, not as evidence about the borrower now.",
+        ),
+        Point(
+            "And the debt schedule this file still lacks is reported as missing.",
+            "The checklist reads the file rather than reporting that somebody was asked.",
+        ),
+        look_at="the 'What changed since the last review' section, and the filename in it",
+    )
+
+
+# --------------------------------------------------------------------------- #
+# 17. Is this even bankable
 # --------------------------------------------------------------------------- #
 def act_pre_screen_knockout(stage: Stage) -> None:
     memo = _ok(
@@ -1119,7 +1325,7 @@ def act_pre_screen_knockout(stage: Stage) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# 17. What it will not do
+# 18. What it will not do
 # --------------------------------------------------------------------------- #
 def act_refusals(stage: Stage) -> None:
     # A page of its own, and act 15 left the rendered pack on screen in another. The deal's
@@ -1171,7 +1377,7 @@ def act_refusals(stage: Stage) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# 18. The evidence goes away
+# 19. The evidence goes away
 # --------------------------------------------------------------------------- #
 def act_evidence_goes_away(stage: Stage) -> None:
     analysis_id = stage.analysis_id
@@ -1485,6 +1691,41 @@ ACTS: tuple[Act, ...] = (
         ),
         act_committee_pack,
         point_at="the rendered pack: the standing sentence, then LEV-01 and the reconciliation",
+    ),
+    Act(
+        "Next year, and what changed",
+        (
+            Point(
+                "The same credit file, read as next year's renewal.",
+                "Nothing re-uploaded. Only the kind of memo being written changed.",
+            ),
+            Point(
+                "The console says at intake that the memo being renewed is missing.",
+                "A renewal without it is a new-facility memo wearing a renewal's title, and "
+                "the committee's first question is the one it cannot answer.",
+            ),
+            Point(
+                "Bring that memo, and the renewal leads with what moved.",
+                "Naming the file it was measured against, because the baseline is something "
+                "an analyst uploaded rather than something this service kept.",
+            ),
+            Point(
+                "The debt schedule is still absent, and the panel still says so.",
+                "A checklist that went green as soon as the document somebody was nagged "
+                "about arrived would be reporting the nagging rather than the file.",
+            ),
+            Point(
+                "Where the figures held, it says so instead of restating them.",
+                "'Unchanged' is information. It is what makes a renewal shorter than a new "
+                "memo rather than the same document with a different title.",
+            ),
+            Point(
+                "Last cycle's memo is never read for this period's figures.",
+                "It is the baseline, not evidence about the borrower now.",
+            ),
+        ),
+        act_the_renewal,
+        point_at="the 'What changed since the last review' section, and the filename in it",
     ),
     Act(
         "Is this even bankable",

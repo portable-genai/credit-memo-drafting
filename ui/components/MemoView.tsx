@@ -5,6 +5,7 @@ import { PeerComparisonView } from "./PeerComparisonView";
 import { ManifestSummary } from "./DocumentPanel";
 import { ProvenanceLegend, ProvenanceTag } from "./Provenance";
 import { RatioTable } from "./RatioTable";
+import { RenewalDeltaView } from "./RenewalDeltaView";
 import { RiskFlagList } from "./RiskFlagList";
 import { GlobalCashFlowView, GroupRoster, ScenarioView } from "./GroupAndStress";
 
@@ -106,6 +107,15 @@ export function MemoView({ memo }: { memo: CreditMemo }) {
             </ul>
           ) : null}
         </div>
+      ) : null}
+
+      {/* First among the sections, for the kinds written against the memo before them: that
+          is what their reader came for. A renewal that opens with a borrower history its
+          reader already knows has buried its own point. */}
+      {memo.renewal_delta ? (
+        <Section title="What changed since the last review" hook="renewal-delta">
+          <RenewalDeltaView delta={memo.renewal_delta} />
+        </Section>
       ) : null}
 
       <Section title="Summary" hook="summary">

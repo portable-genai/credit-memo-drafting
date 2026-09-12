@@ -27,7 +27,7 @@ from demo_console.narrative import Point, render  # noqa: E402
 def test_every_act_is_distinct_and_says_what_to_look_at() -> None:
     titles = [act.title for act in ACTS]
     assert len(set(titles)) == len(titles), "two acts share a title, so --act cannot pick one"
-    assert len(ACTS) >= 18
+    assert len(ACTS) >= 19
     for act in ACTS:
         assert act.narration, f"{act.title} has nothing for the presenter to say"
         assert act.point_at.strip(), f"{act.title} does not say what to look at"
@@ -144,8 +144,11 @@ class _FakeContext:
     def new_page(self) -> str:
         if self.video and not self._renderer:
             raise RuntimeError(
+                # The path is deliberately not a home directory. A fixture quoting one reads
+                # as somebody's real machine to the publish scrub scan, and it proves nothing
+                # here: what the code under test keys on is the ffmpeg sentence.
                 "BrowserContext.new_page: Executable doesn't exist at "
-                "/home/ci/.cache/ms-playwright/ffmpeg-1011/ffmpeg-linux. "
+                "<playwright-cache>/ffmpeg-1011/ffmpeg-linux. "
                 "Video rendering requires ffmpeg binary."
             )
         return "page"

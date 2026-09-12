@@ -1440,6 +1440,14 @@ class RenewalDelta:
 
     prior_version: str = ""
     prior_at: str = ""
+    #: The uploaded file the movement was measured against, by name, so a reader can see
+    #: WHICH prior memo this is a delta from. There is no memo of record here: the baseline is
+    #: whatever the analyst supplied, which makes naming it part of the claim.
+    prior_filename: str = ""
+    #: Why no comparison was made: no prior memo was uploaded, or the one uploaded could not
+    #: be read as a memo. An empty delta would say "nothing moved", which is a claim about the
+    #: borrower; this is a claim about the inputs, and the two are not interchangeable.
+    no_comparison_reason: str = ""
     ratios: tuple[SectionDelta, ...] = ()
     spread: tuple[SectionDelta, ...] = ()
     covenants: tuple[SectionDelta, ...] = ()

@@ -19,7 +19,7 @@ Step-by-step scripts for demoing `credit-memo-drafting` two ways:
   downloadable) and the memo grounds on the uploaded evidence instead.
 
 - **The full business walkthrough** (`make walkthrough`, and the section below): one deal
-  through the real console in eighteen acts, on **Flowserve Corporation's** own filed
+  through the real console in nineteen acts, on **Flowserve Corporation's** own filed
   FY2025 figures. It runs offline like Demo A, but nothing in it is invented: the credit
   file is committed under [`demo/documents/`](demo/documents/) with the accession number of
   every figure, so an audience can open the 10-K and check the memo against it.
@@ -135,7 +135,7 @@ options (`SLOWMO_MS`, `HEADLESS`, `CHROME_PATH`, ...) are in
 Section 2.1 walks the original four artifacts on the presenter server. The product has
 since grown the whole credit-file lifecycle, and
 [`docs/demo-use-cases.md`](docs/demo-use-cases.md) is the walkthrough that shows it: one
-deal through the REAL console and service, in eighteen acts — upload the credit file,
+deal through the REAL console and service, in nineteen acts: upload the credit file,
 extract and confirm the spread, state the ask, build, watch the bank's arithmetic disagree
 with what the borrower reports, add the group, run the checker's comment thread, search the
 public web without any of it reaching the memo, export the committee pack, and delete the

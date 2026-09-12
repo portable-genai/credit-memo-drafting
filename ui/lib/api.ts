@@ -21,7 +21,10 @@ import type {
   CreditRequest,
   FinancialSpread,
   HealthStatus,
+  InputChecklist,
   LineItemCode,
+  LoanType,
+  MemoKind,
   Period,
   EntityGroup,
   MarketContext,
@@ -196,6 +199,27 @@ export async function openAnalysis(
     signal,
   });
   return (await parseJsonOrThrow(res)) as AnalysisManifest;
+}
+
+/**
+ * What this kind of memo needs, measured against what this analysis actually holds.
+ *
+ * Both `kind` and `loan_type` are sent because the service requires both. It will not answer
+ * about a memo kind nobody named: the one answer that matters most here is "a renewal needs
+ * the memo being renewed", and a defaulted new-facility answer would hide it.
+ */
+export async function analysisChecklist(
+  analysisId: string,
+  kind: MemoKind,
+  loanType: LoanType,
+  signal?: AbortSignal,
+): Promise<InputChecklist> {
+  const query = new URLSearchParams({ kind, loan_type: loanType });
+  const res = await fetch(
+    `${API_BASE}/v1/analyses/${encodeURIComponent(analysisId)}/checklist?${query}`,
+    { method: "GET", headers: jsonHeaders(), signal },
+  );
+  return (await parseJsonOrThrow(res)) as InputChecklist;
 }
 
 /** Build the memo from evidence already in the analysis. */
@@ -514,6 +538,7 @@ export async function deleteAnalysis(analysisId: string, signal?: AbortSignal): 
 }
 
 export const api = {
+  analysisChecklist,
   amendMemo,
   listRevisions,
   addComment,

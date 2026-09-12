@@ -143,6 +143,7 @@ carries its own documents in the body.
 | POST | `/v1/analyses/{id}/spreads/extract` | `{document_ids[], periods[], currency, unit}` -> SpreadCandidate |
 | POST | `/v1/analyses/{id}/spreads/confirm` | `{rejected[], adjustments[], added[]}` -> FinancialSpread |
 | GET | `/v1/analyses/{id}/spreads` | -> `{candidate, confirmed}` |
+| GET | `/v1/analyses/{id}/checklist` | `?kind=&loan_type=` (both required) -> InputChecklist: what this kind of memo needs against what the analysis holds |
 | GET | `/v1/analyses/{id}/group/suggestions` | `?name=&jurisdiction=` -> EntityGroup (opt-in) |
 | GET | `/v1/analyses/{id}/research` | `?query=&purpose=` -> MarketContext (opt-in; analyst only, never in the memo) |
 | POST | `/v1/analyses/{id}/build` | `{request?, spreads[]?, related_entities[]?, guarantors[]?, entity_spreads{}?, eliminations[]?}` -> CreditMemo |
@@ -161,6 +162,15 @@ carries its own documents in the body.
 | GET | `/v1/personas` | -> `[{id, subject, tenant, principals}]` (local profile only) |
 | GET | `/healthz` | -> `{status, profile, region}` |
 | GET | `/.well-known/agent-card.json` | -> AgentCard |
+
+A renewal, an annual review and a rating action are written AGAINST the memo before them, so
+`POST .../build` attaches a `renewal_delta` for those kinds and for no others. The baseline is
+an uploaded `prior_memo` and nothing else, because this service keeps no memo of record: the
+delta names the file it was measured against, that file is never read for this period's
+figures or indexed as evidence about the borrower, and when there is nothing to compare (no
+prior memo, or one that is not this service's own JSON export) the delta carries a
+`no_comparison_reason` rather than being empty. An empty delta would read as "nothing moved",
+which is a claim about the borrower rather than about what the analysis was given.
 
 Three rules the analysis routes enforce and the table cannot show. Confirmation applies to
 the candidate the analysis already holds, never to a table the caller composes, so a

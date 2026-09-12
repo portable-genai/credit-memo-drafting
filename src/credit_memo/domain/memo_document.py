@@ -119,6 +119,101 @@ def build_document(memo: CreditMemo) -> MemoDocument:
                 Block(kind="paragraph", text=f"Repayment source: {facility.repayment_source}")
             )
 
+    # What changed, for the kinds that are written against the memo before them. First among
+    # the sections, because that is what their reader came for: a renewal that opens with a
+    # borrower history the reader already knows has buried its own point.
+    if template.compares_with_prior:
+        blocks.append(Block(kind="heading", text="What changed since the last review", level=2))
+        delta = memo.renewal_delta
+        if delta is None:
+            blocks.append(
+                Block(
+                    kind="note",
+                    text=(
+                        "No prior memo was supplied, so this memo cannot say what changed. "
+                        "Read it as a full assessment rather than as a delta."
+                    ),
+                )
+            )
+        elif delta.no_comparison_reason:
+            blocks.append(
+                Block(
+                    kind="note",
+                    text=(
+                        f"Nothing is compared against: {delta.no_comparison_reason} Read what "
+                        "follows as a full assessment rather than as a delta."
+                    ),
+                )
+            )
+        else:
+            measured = delta.prior_filename or "the prior memo supplied"
+            dated = f", generated {delta.prior_at[:10]}" if delta.prior_at else ""
+            blocks.append(Block(kind="paragraph", text=f"Measured against {measured}{dated}."))
+            moved = (*delta.ratios, *delta.covenants, *delta.spread)
+            if moved:
+                blocks.append(
+                    Block(
+                        kind="table",
+                        headers=("Line", "Last time", "Now", "Movement"),
+                        rows=tuple(
+                            (
+                                d.label,
+                                _fmt(d.before, d.unit),
+                                _fmt(d.after, d.unit),
+                                d.direction,
+                            )
+                            for d in moved
+                        ),
+                    )
+                )
+            else:
+                blocks.append(
+                    Block(
+                        kind="paragraph",
+                        text=(
+                            "No ratio, covenant or spread line moved materially since that "
+                            "memo. Stated rather than left out: that the figures held is "
+                            "something a reader can act on."
+                        ),
+                    )
+                )
+            if delta.rating_moved:
+                blocks.append(
+                    Block(
+                        kind="paragraph",
+                        text=(
+                            f"The proposed grade moved from {delta.rating_before} to "
+                            f"{delta.rating_after}."
+                        ),
+                    )
+                )
+            if delta.new_exceptions:
+                blocks.append(
+                    Block(
+                        kind="bullets",
+                        text="Policy exceptions new since the last review:",
+                        items=delta.new_exceptions,
+                    )
+                )
+            if delta.cleared_exceptions:
+                blocks.append(
+                    Block(
+                        kind="bullets",
+                        text="Cleared since the last review:",
+                        items=delta.cleared_exceptions,
+                    )
+                )
+            if delta.unchanged_sections:
+                blocks.append(
+                    Block(
+                        kind="paragraph",
+                        text=(
+                            "Unchanged, and not restated here: "
+                            f"{', '.join(delta.unchanged_sections)}."
+                        ),
+                    )
+                )
+
     # What this was assessed on, and until when. Near the front, because a reader deciding
     # how much weight to give the pack needs it before the conclusions rather than after.
     if memo.manifest:
