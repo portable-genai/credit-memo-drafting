@@ -9,6 +9,7 @@ answered from the recording rather than from memory.
 
 from __future__ import annotations
 
+import contextlib
 import re
 from pathlib import Path
 from typing import Any
@@ -66,3 +67,43 @@ def capture(page: Any, index: int, title: str) -> Path:
     except Exception:  # noqa: BLE001 - evidence is a courtesy, never the demo's point
         return path
     return path
+
+
+#: What a missing video renderer says, in the message Playwright raises.
+_NO_RENDERER = "ffmpeg"
+
+
+def open_context(browser: Any, out: Path, **options: Any) -> tuple[Any, Any, str]:
+    """A context and its first page, recording a video where one can be rendered.
+
+    The video is a courtesy and it costs a binary Playwright downloads separately from the
+    browser. The CI runner ships a distribution Chromium and no ffmpeg, so asking for a video
+    there fails at the first ``new_page`` with "Executable doesn't exist at .../ffmpeg-linux"
+    and takes every act down with it: the demo reported nineteen errors about a renderer
+    nobody needs, rather than anything about the product.
+
+    So a missing renderer costs the video and nothing else. The trace and the screenshots are
+    the evidence that matters and neither needs ffmpeg. It is REPORTED rather than swallowed,
+    in the returned note, because "there is no video" and "the video is somewhere you have not
+    looked" are different things to tell a presenter. Any other failure is re-raised: a browser
+    that cannot open a page at all is the demo failing, not its evidence.
+
+    Returns ``(context, page, note)``, where ``note`` is "" when the video is being recorded.
+    """
+    context = None
+    try:
+        context = browser.new_context(record_video_dir=str(out / "video"), **options)
+        return context, context.new_page(), ""
+    except Exception as exc:  # noqa: BLE001 - re-raised below unless it is the renderer
+        if _NO_RENDERER not in str(exc).lower():
+            raise
+        if context is not None:
+            with contextlib.suppress(Exception):
+                context.close()
+    context = browser.new_context(**options)
+    return (
+        context,
+        context.new_page(),
+        "no video this run: this machine has no Playwright ffmpeg binary "
+        "(`playwright install ffmpeg` adds one). The trace and the screenshots are unaffected.",
+    )

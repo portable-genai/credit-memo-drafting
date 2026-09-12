@@ -94,15 +94,18 @@ def stage(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stage]:
                 except Exception as exc:  # pragma: no cover - environment-dependent
                     _unavailable(f"no pinned browser binary available: {exc}")
                 out = evidence.reset()
-                context = browser.new_context(
-                    viewport={"width": 1280, "height": 1400},
-                    record_video_dir=str(out / "video"),
+                # A video needs a renderer this runner does not ship; the trace and the
+                # screenshots do not. See evidence.open_context.
+                context, page, note = evidence.open_context(
+                    browser, out, viewport={"width": 1280, "height": 1400}
                 )
+                if note:
+                    print(note)
                 context.tracing.start(screenshots=True, snapshots=True, sources=False)
                 request = p.request.new_context(base_url=api_base)
                 try:
                     yield Stage(
-                        page=context.new_page(),
+                        page=page,
                         api=request,
                         ui_base=ui_base,
                         api_base=api_base,
