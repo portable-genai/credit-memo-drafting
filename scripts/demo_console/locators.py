@@ -57,6 +57,18 @@ REPAYMENT_SOURCE = '[data-field="repayment-source"]'
 PURPOSE = '[data-field="purpose"]'
 SECURITY = '[data-field="security"]'
 
+# --- what this kind of memo needs, measured at intake ------------------------ #
+#: Carries ``data-kind``, ``data-missing-required`` and ``data-compares-with-prior``.
+INPUT_CHECKLIST = '[data-panel="input-checklist"]'
+#: The sentence saying why a renewal wants the memo being renewed.
+WHY_PRIOR_MEMO = '[data-checklist="why-prior-memo"]'
+
+
+def required_doc(doc_type: str) -> str:
+    """The checklist row for a required kind; carries ``data-held``."""
+    return f'[data-required-doc="{doc_type}"]'
+
+
 # --- the spread: propose, review, confirm ------------------------------------ #
 EXTRACT = '[data-action="extract"]'
 SPREAD_CANDIDATE = '[data-panel="spread-candidate"]'
@@ -145,6 +157,10 @@ def comment_row(comment_id: str) -> str:
 
 
 # --- the memo's sections ------------------------------------------------------ #
+SECTION_RENEWAL = '[data-section="renewal-delta"]'
+#: Inside it, whichever of the two answers applies: a comparison, or why there was none.
+RENEWAL_NO_COMPARISON = '[data-renewal="no-comparison"]'
+RENEWAL_MEASURED_AGAINST = '[data-renewal="measured-against"]'
 SECTION_SUMMARY = '[data-section="summary"]'
 SECTION_RATIOS = '[data-section="ratios"]'
 SECTION_FINANCIAL = '[data-section="financial-analysis"]'

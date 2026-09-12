@@ -629,6 +629,28 @@ class MarketContextModel(BaseModel):
         )
 
 
+class InputChecklistModel(BaseModel):
+    """What this kind of memo needs, and what this analysis was not given.
+
+    ``AnalysisManifest.missing()`` computed it. The point of serving it is WHEN an analyst
+    learns: a renewal without the prior memo is a new-facility memo wearing a renewal's title,
+    and finding that out at intake is the difference between a question and a committee paper
+    that cannot answer one.
+    """
+
+    kind: str
+    loan_type: str
+    required: list[str] = Field(default_factory=list)
+    recommended: list[str] = Field(default_factory=list)
+    #: The kinds this analysis actually holds, so a console can show the file against the list.
+    present: list[str] = Field(default_factory=list)
+    missing_required: list[str] = Field(default_factory=list)
+    missing_recommended: list[str] = Field(default_factory=list)
+    #: Whether this kind is written AGAINST the memo before it. Carried so a reader learns WHY
+    #: the prior memo is on the required list, rather than reading it as one more form to fill.
+    compares_with_prior: bool = False
+
+
 class AnalysisBuildRequest(BaseModel):
     """Build the memo for an analysis that already holds its uploaded evidence.
 
@@ -1200,8 +1222,16 @@ class SectionDeltaModel(BaseModel):
     after: float | None = None
     unit: str = ""
     detail: str = ""
+    #: Derived in the domain and carried rather than recomputed by each reader. "up" is not
+    #: subtraction: appearing and disappearing are their own answers ("new", "gone"), and a
+    #: browser that reimplemented the rule would be a second definition of what moved.
+    direction: str = ""
+    change: float | None = None
 
     def to_domain(self) -> m.SectionDelta:
+        # ``direction`` and ``change`` are deliberately not passed: they are properties of the
+        # domain object, so a round trip recomputes them from the figures rather than trusting
+        # what a caller sent for them.
         return m.SectionDelta(
             label=self.label,
             before=self.before,
@@ -1212,7 +1242,15 @@ class SectionDeltaModel(BaseModel):
 
     @classmethod
     def from_domain(cls, d: m.SectionDelta) -> SectionDeltaModel:
-        return cls(label=d.label, before=d.before, after=d.after, unit=d.unit, detail=d.detail)
+        return cls(
+            label=d.label,
+            before=d.before,
+            after=d.after,
+            unit=d.unit,
+            detail=d.detail,
+            direction=d.direction,
+            change=d.change,
+        )
 
 
 class RenewalDeltaModel(BaseModel):
@@ -1220,6 +1258,11 @@ class RenewalDeltaModel(BaseModel):
 
     prior_version: str = ""
     prior_at: str = ""
+    #: Which uploaded file the movement was measured against.
+    prior_filename: str = ""
+    #: Set when no comparison was made: nothing to compare against, or an upload that is not a
+    #: memo. An empty delta would say nothing moved, which is a different claim entirely.
+    no_comparison_reason: str = ""
     ratios: list[SectionDeltaModel] = Field(default_factory=list)
     spread: list[SectionDeltaModel] = Field(default_factory=list)
     covenants: list[SectionDeltaModel] = Field(default_factory=list)
@@ -1233,6 +1276,8 @@ class RenewalDeltaModel(BaseModel):
         return m.RenewalDelta(
             prior_version=self.prior_version,
             prior_at=self.prior_at,
+            prior_filename=self.prior_filename,
+            no_comparison_reason=self.no_comparison_reason,
             ratios=tuple(d.to_domain() for d in self.ratios),
             spread=tuple(d.to_domain() for d in self.spread),
             covenants=tuple(d.to_domain() for d in self.covenants),
@@ -1248,6 +1293,8 @@ class RenewalDeltaModel(BaseModel):
         return cls(
             prior_version=d.prior_version,
             prior_at=d.prior_at,
+            prior_filename=d.prior_filename,
+            no_comparison_reason=d.no_comparison_reason,
             ratios=[SectionDeltaModel.from_domain(x) for x in d.ratios],
             spread=[SectionDeltaModel.from_domain(x) for x in d.spread],
             covenants=[SectionDeltaModel.from_domain(x) for x in d.covenants],

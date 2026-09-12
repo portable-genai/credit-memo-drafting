@@ -42,6 +42,7 @@ from ..domain.errors import (
     RetrievalEmptyError,
     SpreadNotConfirmedError,
 )
+from ..domain.memo_templates import recommended_documents, required_documents, template_for
 from ..domain.revision_service import EDITABLE_SECTIONS, RevisionService
 from ..domain.services import CreditMemoService
 from ..domain.spread_service import SpreadService
@@ -63,6 +64,7 @@ from .schemas import (
     EntityGroupModel,
     FinancialSpreadModel,
     HealthResponse,
+    InputChecklistModel,
     MarketContextModel,
     MemoAmendRequest,
     MemoCommentModel,
@@ -598,6 +600,56 @@ def delete_analysis(analysis_id: str, principal: CurrentPrincipal) -> Response:
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@app.get(
+    "/v1/analyses/{analysis_id}/checklist", response_model=InputChecklistModel, tags=["analyses"]
+)
+def analysis_checklist(
+    analysis_id: str,
+    principal: CurrentPrincipal,
+    kind: str,
+    loan_type: str,
+) -> InputChecklistModel | JSONResponse:
+    """Which documents this kind of memo needs, and which this analysis was not given.
+
+    The kind and the loan type are the caller's because the analyst picks both before a memo is
+    built and changes either freely; what this route owns is the comparison against what is
+    actually in custody, which is the manifest's own ``missing()``.
+
+    Both are REQUIRED rather than defaulted. A default would answer confidently about a
+    different kind of memo than the one being written, and the one answer that matters here is
+    "a renewal needs the memo being renewed": defaulting to a new facility would hide exactly
+    the omission this route exists to report.
+    """
+    try:
+        memo_kind = m.MemoKind(kind)
+        loan = m.LoanType(loan_type)
+    except ValueError:
+        return _ungrounded_response(
+            f"unknown memo kind {kind!r} or loan type {loan_type!r}. The kinds are "
+            f"{', '.join(k.value for k in m.MemoKind)}; the loan types are "
+            f"{', '.join(t.value for t in m.LoanType)}."
+        )
+    try:
+        manifest = _read_analysis(analysis_id, principal)
+    except AnalysisNotFoundError as exc:
+        return _analysis_gone(exc)
+    except BorrowerAccessDeniedError as exc:
+        return _denied_response(exc)
+
+    required = required_documents(memo_kind, loan)
+    recommended = recommended_documents(memo_kind, loan)
+    return InputChecklistModel(
+        kind=kind,
+        loan_type=loan_type,
+        required=[d.value for d in required],
+        recommended=[d.value for d in recommended],
+        present=sorted({d.doc_type.value for d in manifest.documents}),
+        missing_required=[d.value for d in manifest.missing(required)],
+        missing_recommended=[d.value for d in manifest.missing(recommended)],
+        compares_with_prior=template_for(memo_kind).compares_with_prior,
+    )
+
+
 @app.post("/v1/analyses/{analysis_id}/build", response_model=CreditMemoResponse, tags=["analyses"])
 def build_analysis_memo(
     analysis_id: str,
@@ -799,8 +851,18 @@ def _extraction_documents(
     principals: tuple[str, ...],
     wanted: list[str],
 ) -> tuple[m.LlmDocument, ...]:
-    """The uploaded bytes for the documents named, or all of them when none are named."""
-    records = [d for d in manifest.documents if not wanted or d.id in wanted]
+    """The uploaded bytes for the documents named, or the borrower's evidence when none are.
+
+    A prior memo is in the credit file as the BASELINE a renewal is measured against, so it is
+    never read for figures unless a caller names it: extracting from it would propose last
+    cycle's numbers as this period's, with a quote and a page to make them look read off the
+    borrower's own statements.
+    """
+    records = [
+        d
+        for d in manifest.documents
+        if (d.id in wanted if wanted else d.doc_type is not m.DocType.PRIOR_MEMO)
+    ]
     out: list[m.LlmDocument] = []
     for record in records:
         content = container.analysis_bundle.get_document(analysis_id, record.id, principals)

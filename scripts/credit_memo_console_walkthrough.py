@@ -1,4 +1,4 @@
-"""Presenter-controlled walkthrough of the credit-memo console: one deal, eighteen acts.
+"""Presenter-controlled walkthrough of the credit-memo console: one deal, nineteen acts.
 
 A real browser opens. Before each act the script prints the business points to make, in
 order, and what to look at; inside an act it stops again at the beats worth talking
@@ -19,7 +19,7 @@ Usage — build the console once, then run it::
 
     npm ci --prefix ui && NEXT_TELEMETRY_DISABLED=1 npm --prefix ui run build
 
-    .venv/bin/python scripts/credit_memo_console_walkthrough.py           # all 18 acts
+    .venv/bin/python scripts/credit_memo_console_walkthrough.py           # all 19 acts
     .venv/bin/python scripts/credit_memo_console_walkthrough.py --list    # the act names
     .venv/bin/python scripts/credit_memo_console_walkthrough.py --act "The checker"
     .venv/bin/python scripts/credit_memo_console_walkthrough.py --act 6 --act 9
@@ -216,7 +216,7 @@ def main(argv: list[str] | None = None) -> int:
         prog="credit_memo_console_walkthrough",
         description="Walk the credit-memo console through its business use cases.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="With no --act the whole demo runs, all eighteen acts in order.",
+        epilog="With no --act the whole demo runs, all nineteen acts in order.",
     )
     parser.add_argument(
         "--act",

@@ -1,12 +1,12 @@
 # The business use-case demo
 
 One deal, walked end to end through the product a credit team would actually use: the
-built console talking to the real service. Eighteen acts, each a beat a credit audience
+built console talking to the real service. Nineteen acts, each a beat a credit audience
 recognises, and each one asserted so the demo cannot quietly rot.
 
 ```bash
 # Build the console once (its API base is inlined at build time), then present.
-make walkthrough                      # a browser opens; all eighteen acts
+make walkthrough                      # a browser opens; all nineteen acts
 
 make walkthrough ACT="The checker"    # just one use case
 make walkthrough-list                 # what you can name
@@ -79,15 +79,17 @@ reports compliance.
 | 13 | Figures are not editable prose | The refusal, which names the sections that *are* editable |
 | 14 | Public context, for the analyst only | The results with their suggestion chips, then the line saying none of it is in the memo |
 | 15 | The committee pack | The rendered pack: the standing sentence, then `LEV-01` and the reconciliation |
-| 16 | Is this even bankable | The `TEN-01` knockout, and the absent rating |
-| 17 | What it will not do | The inline refusal, then the amber guardrail notice |
-| 18 | The evidence goes away | The 404 that does not confirm the analysis exists |
+| 16 | Next year, and what changed | The checklist naming the missing prior memo, then the delta naming the file it measured against |
+| 17 | Is this even bankable | The `TEN-01` knockout, and the absent rating |
+| 18 | What it will not do | The inline refusal, then the amber guardrail notice |
+| 19 | The evidence goes away | The 404 that does not confirm the analysis exists |
 
-Every act drives the console. Acts 12, 15 and 18 could not until it grew the controls they
-need: the reviewer's thread, the pack and the delete were API-only. Where an act still calls
-the API it is to check what the console did, or to show a refusal the console cannot express
-(act 13 types over a computed section, which its editor does not offer). The pack still goes
-on screen as well as into a file: act 15 renders it in a browser tab.
+Every act drives the console. Acts 12, 15 and 19 could not until it grew the controls they
+need: the reviewer's thread, the pack and the delete were API-only. Nor could act 16: the
+renewal diff had no route, no wire field and no control. Where an act still calls the API it
+is to check what the console did, or to show a refusal the console cannot express (act 13
+types over a computed section, which its editor does not offer). The pack still goes on screen
+as well as into a file: act 15 renders it in a browser tab.
 
 ## Presenting
 
@@ -112,7 +114,7 @@ make walkthrough ACT=checker                # any unambiguous part of the title
 ```
 
 An ambiguous name (`--act "The "`) is refused rather than guessed at, and an unknown one
-prints the eighteen titles. Slow motion is a launch-time Playwright setting, so the
+prints the nineteen titles. Slow motion is a launch-time Playwright setting, so the
 set-up acts run at whatever `SLOWMO_MS` the presented act uses; on this machine eleven
 set-up acts take a few seconds headless.
 
@@ -269,23 +271,26 @@ grounding that mixed fiscal years, an offline drafter that ignored its borrower,
 extractor whose placeholder left the presenter demo reporting figures its evidence never
 held.
 
-**Still open.** `RenewalDiffService` is written, contract-tested and reachable by nobody —
-no route, no wire field, no console control. A renewal act was planned for this demo and
-dropped for exactly that reason. It is the same pattern, and it is still there.
+`RenewalDiffService` was the sixth and last of them: written, contract-tested and reachable by
+nobody, with no route computing a `renewal_delta`, nothing reading an uploaded `prior_memo`,
+and `AnalysisManifest.missing()` absent from the wire, so nothing could tell an analyst that a
+renewal needs the memo being renewed. Act 16 is the renewal act that was planned for this demo
+and dropped for exactly that reason. The build now attaches a delta for the kinds written
+against a prior memo, `GET .../checklist` serves the comparison against what the analysis
+actually holds, and the console carries both: the checklist at intake and the delta as the
+memo's first section.
 
+Two things that act asserts are worth naming, because both are how this could quietly stop
+being true. There is no memo of record here, so the delta NAMES the upload it was measured
+against, and when there is nothing to compare it says so in a sentence rather than rendering an
+empty table that would read as "nothing moved". And the prior memo is never read for this
+period's figures or indexed as evidence: last cycle's numbers arriving with a quote and a page
+would look exactly like figures read off the borrower's own statements.
 
-
-Recorded here rather than fixed, because each is product work with its own review:
-
-1. **`RenewalDiffService` is unreachable.** It is written, unit-tested and bound to nothing:
-   no route computes `renewal_delta`, nothing reads an uploaded `prior_memo`, and
-   `AnalysisManifest.missing()` — which would tell an analyst a renewal needs the prior memo
-   — is not on the wire. A renewal act was planned for this demo and removed for that
-   reason. This is a sixth instance of the pattern in note 1.
-2. **Stale claims in the docs.** [`DEMO.md`](../DEMO.md) refers to an "Upload borrower
-   evidence" panel and [`ui/README.md`](../ui/README.md) to a `.env.local.example`; neither
-   exists. [`README.md`](../README.md)'s HTTP table lists six routes where the service
-   serves about twenty-four — [`SPEC.md`](../SPEC.md) §6.1 is the current list.
+**Still open.** Stale claims in the docs. [`DEMO.md`](../DEMO.md) refers to an "Upload borrower
+evidence" panel and [`ui/README.md`](../ui/README.md) to a `.env.local.example`; neither
+exists. [`README.md`](../README.md)'s HTTP table lists six routes where the service serves
+about twenty-five. [`SPEC.md`](../SPEC.md) §6.1 is the current list.
 
 ## Gated in CI
 

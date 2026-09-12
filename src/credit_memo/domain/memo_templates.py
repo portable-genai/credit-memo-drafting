@@ -49,6 +49,11 @@ class MemoTemplate:
     #: borrower from a two-document package would put a number in front of a committee
     #: that the package cannot support.
     proposes_rating: bool = True
+    #: Whether this kind is written AGAINST the memo before it, and so leads with what moved.
+    #: A new facility has no prior memo to compare with by definition, and a pre-screen is
+    #: answering a different question, so a prior memo in either credit file is evidence like
+    #: any other rather than a baseline.
+    compares_with_prior: bool = False
 
 
 _TEMPLATES: dict[MemoKind, MemoTemplate] = {
@@ -89,6 +94,7 @@ _TEMPLATES: dict[MemoKind, MemoTemplate] = {
         # memo wearing a renewal's title, and "what changed" is unanswerable.
         required=(_D.FINANCIAL_STATEMENT, _D.PRIOR_MEMO),
         recommended=(_D.COVENANT_CERTIFICATE, _D.DEBT_SCHEDULE, _D.POLICY_PACK),
+        compares_with_prior=True,
     ),
     MemoKind.ANNUAL_REVIEW: MemoTemplate(
         kind=MemoKind.ANNUAL_REVIEW,
@@ -106,6 +112,7 @@ _TEMPLATES: dict[MemoKind, MemoTemplate] = {
         ),
         required=(_D.FINANCIAL_STATEMENT, _D.COVENANT_CERTIFICATE),
         recommended=(_D.PRIOR_MEMO, _D.RM_NOTE, _D.POLICY_PACK),
+        compares_with_prior=True,
     ),
     MemoKind.INTERIM_REVIEW: MemoTemplate(
         kind=MemoKind.INTERIM_REVIEW,
@@ -138,6 +145,7 @@ _TEMPLATES: dict[MemoKind, MemoTemplate] = {
         ),
         required=(_D.FINANCIAL_STATEMENT,),
         recommended=(_D.PRIOR_MEMO, _D.POLICY_PACK, _D.COVENANT_CERTIFICATE),
+        compares_with_prior=True,
     ),
     MemoKind.PRE_SCREEN: MemoTemplate(
         kind=MemoKind.PRE_SCREEN,

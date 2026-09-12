@@ -20,6 +20,7 @@ import { confirmBody, SpreadReview } from "@/components/SpreadReview";
 import { groupBody, GroupPanel, type GroupEntityDraft } from "@/components/GroupPanel";
 import { PublicContext } from "@/components/PublicContext";
 import { DocumentPanel, type PendingDocument } from "@/components/DocumentPanel";
+import { InputChecklistPanel } from "@/components/InputChecklist";
 import { ReviewPanel } from "@/components/ReviewPanel";
 
 const IS_EMBEDDED = process.env.NEXT_PUBLIC_EMBED === "1";
@@ -278,6 +279,24 @@ export default function Home() {
           </span>
           <FacilityForm request={request} onChange={setRequest} />
         </div>
+
+        {/* The credit file measured against what THIS kind of memo needs, as soon as the
+            evidence is in custody and the kind is picked. Before the build, which is the
+            only moment the answer is any use: a renewal missing the memo being renewed is a
+            new-facility memo wearing a renewal's title, and that is a question to ask the RM
+            rather than something to discover from the committee. */}
+        {analysisId ? (
+          <div className="xl:col-span-3">
+            <span className="mb-2 block text-sm font-semibold text-ink-900">
+              What this memo needs
+            </span>
+            <InputChecklistPanel
+              analysisId={analysisId}
+              kind={request.kind}
+              loanType={request.loan_type}
+            />
+          </div>
+        ) : null}
 
         <div className="xl:col-span-3">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
