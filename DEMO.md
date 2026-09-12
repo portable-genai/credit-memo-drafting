@@ -49,8 +49,10 @@ curl -s -X POST localhost:8093/v1/credit-memo -H 'Content-Type: application/json
 ```
 
 Audience data: `GET /v1/documents/template` (CSV of the form fields) and
-`POST /v1/documents` (multipart: file + borrower_id + title), or the "Upload borrower
-evidence" panel in the UI; the next memo build for that borrower cites the upload.
+`POST /v1/documents` (multipart: file + borrower_id + title); the next memo build for that
+borrower cites the upload. In the console the equivalent is **The credit file**, which uploads
+per analysis rather than per borrower: the evidence is brought to the question, so the memo
+carries the manifest of exactly what answered it and the files expire with the analysis.
 
 ---
 

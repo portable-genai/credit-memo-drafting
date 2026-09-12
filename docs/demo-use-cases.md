@@ -298,10 +298,20 @@ empty table that would read as "nothing moved". And the prior memo is never read
 period's figures or indexed as evidence: last cycle's numbers arriving with a quote and a page
 would look exactly like figures read off the borrower's own statements.
 
-**Still open.** Stale claims in the docs. [`DEMO.md`](../DEMO.md) refers to an "Upload borrower
-evidence" panel and [`ui/README.md`](../ui/README.md) to a `.env.local.example`; neither
-exists. [`README.md`](../README.md)'s HTTP table lists six routes where the service serves
-about twenty-five. [`SPEC.md`](../SPEC.md) §6.1 is the current list.
+**Closed too.** The stale doc claims, and each with a guard rather than a correction. The
+console panel `DEMO.md` named has been **The credit file** since uploads became per-analysis, and
+the `.env.local.example` [`ui/README.md`](../ui/README.md) told a reader to copy never existed:
+`NEXT_PUBLIC_API_BASE` is read in three states, so an example file would invite a fourth, a
+copied value nobody chose. [`README.md`](../README.md)'s HTTP table listed six routes where the
+service serves twenty-six, and a copied table is stale the moment a route lands with nothing
+watching. [`tests/unit/test_the_documented_surface_is_the_served_one.py`](../tests/unit/test_the_documented_surface_is_the_served_one.py)
+now compares both that table and [`SPEC.md`](../SPEC.md) §6.1 against the routes the app
+registers, in both directions, so neither can describe a fraction of the surface again and
+neither can keep advertising a path that was removed.
+
+**Still open.** Nothing this demo surfaced. What remains for this repository is recorded on its
+row in the maintainer's system tracker: the `hex-service-kit` bump the fleet is mid-way through,
+and two unmeasured evaluations ([`docs/evals.md`](evals.md)).
 
 ## Gated in CI
 
