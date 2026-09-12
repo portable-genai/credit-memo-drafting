@@ -15,9 +15,10 @@ API_APP     := credit_memo.api.app:app
 API_HOST    ?= 127.0.0.1  # no-auth local dev binds loopback; override deliberately
 API_PORT    ?= 8093
 UI_DIR      := ui
-# The console's API base is inlined at BUILD time (ui/lib/api.ts) and its CSP connect-src is
-# built from the same value (ui/lib/csp.mjs), so the build and the run must agree on it.
-CONSOLE_API_BASE ?= http://localhost:8093
+# The console's API base is inlined at BUILD time. Empty builds with NEXT_PUBLIC_API_BASE unset,
+# which calls the loopback API and admits it in connect-src (ui/lib/api-base.mjs resolves both),
+# and is what the demo and CI build. Set it to build a console for another API.
+CONSOLE_API_BASE ?=
 # One use case by name or number, e.g. `make walkthrough ACT="The checker"`. Empty runs all.
 ACT         ?=
 TF_DIR      := infra/terraform
@@ -75,18 +76,18 @@ check: lint test eval eval-narrative evals-doc-check demo-selftest portability p
 demo-selftest: ## Prove the served presenter states and evidence hooks cannot rot silently.
 	PYTHONPATH=src:scripts $(PYTHON) scripts/demo_selftest.py
 
-demo-browser: ## Drive the SERVED demo through pinned headless Chromium (needs the [demo] extra).
-	CREDIT_MEMO_PROFILE=local $(PYTHON) -m pytest $(TESTS)/browser -m 'not console' -q -rs
+demo-browser: ui-build ## CI's browser job: the presenter server AND the business acts in the BUILT console.
+	CREDIT_MEMO_PROFILE=local $(PYTHON) -m pytest $(TESTS)/browser -q -rs
 
-demo-console: ui-build ## Walk the 18 business use cases through the BUILT console and assert each.
+demo-console: ui-build ## Walk the business use cases through the BUILT console and assert each.
 	CREDIT_MEMO_PROFILE=local $(PYTHON) -m pytest \
 		$(TESTS)/browser/test_console_use_cases.py -m console -q -rs
 
 ui-build: ## Build the console the demo presents from (never `next dev`: see ui/lib/csp.mjs).
-	NEXT_PUBLIC_API_BASE=$(CONSOLE_API_BASE) NEXT_TELEMETRY_DISABLED=1 \
+	$(if $(CONSOLE_API_BASE),NEXT_PUBLIC_API_BASE=$(CONSOLE_API_BASE) )NEXT_TELEMETRY_DISABLED=1 \
 		npm --prefix $(UI_DIR) run build
 
-walkthrough: ui-build ## Presenter-paced walkthrough of the same 18 acts (ACT="..." for just one).
+walkthrough: ui-build ## Presenter-paced walkthrough of the same acts (ACT="..." for just one).
 	$(PYTHON) scripts/credit_memo_console_walkthrough.py $(if $(ACT),--act "$(ACT)",)
 
 verify-deployed: ## Walk the demo's steps against a DEPLOYED service and assert each.

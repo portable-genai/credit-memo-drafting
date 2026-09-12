@@ -11,7 +11,7 @@ make walkthrough                      # a browser opens; all eighteen acts
 make walkthrough ACT="The checker"    # just one use case
 make walkthrough-list                 # what you can name
 
-# The same acts, asserted, with no window:
+# The same acts, asserted, with no window. CI runs them in its demo-browser job.
 make demo-console
 ```
 
@@ -278,30 +278,30 @@ Recorded here rather than fixed, because each is product work with its own revie
    exists. [`README.md`](../README.md)'s HTTP table lists six routes where the service
    serves about twenty-four — [`SPEC.md`](../SPEC.md) §6.1 is the current list.
 
-## Not yet gated in CI
+## Gated in CI
 
-`.github/workflows/gate.yaml` is GENERATED from `ci/gcp/repository-policy.json` in
-`org-metadata`, and the gate fails when the checked-in file differs from what the contract
-renders — so this job cannot be added by editing the workflow here. Registering it means
-adding one entry to this repository's `jobs` array in that policy and re-rendering:
+The acts run on every pull request, in the `demo-browser` job. That target now builds the
+console and runs the whole browser suite rather than excluding the console acts by marker, and
+this repository's entry in `ci/gcp/repository-policy.json` gives the job what it needs to do
+that: `npm_directory: ui` with `npm_directory_first` for the console's node modules, the pinned
+`[demo]` extra through `extra_lockfiles`, and `demo_browser_required`, so an absent browser
+fails the job instead of skipping it and reporting the same green a run reports.
 
-```json
-{
-  "job_id": "demo-console",
-  "make_targets": ["demo-console"],
-  "npm_directory": "ui",
-  "npm_directory_first": true,
-  "extra_lockfiles": ["requirements-demo.lock"],
-  "extra_lockfiles_first": true,
-  "demo_browser_required": true,
-  "runtime_key": "python3.14-node24"
-}
-```
+The acts do not ride in a job of their own, and the reason is worth recording rather than
+rediscovering. The runner refuses any make target outside a reviewed allowlist (`APPROVED_TARGETS`
+in `org-metadata/scripts/render-gcp-ci-manifest.py`, mirrored in the runner's own
+`run-grc-ci`), and `demo-console` is not on it: a job declaring
+`"make_targets": ["demo-console"]` exits 2 with `refusing unapproved Make target` and runs
+nothing at all. Adding a target to that allowlist means rebuilding and re-releasing the pinned
+runner image, which is a fleet change rather than a repository one. So the acts ride in the
+approved `demo-browser` target, and `make demo-console` stays the local entry point for the acts
+without the presenter-server suite.
 
-It needs both Node and the pinned `[demo]` extra, which is why it is its own job rather
-than an addition to `demo-browser` (no node) or `offline-gate` (no browser). Until that
-lands, the demo is verified locally by `make demo-console` and is not enforced on a pull
-request.
+`.github/workflows/gate.yaml` is GENERATED from that policy and `--check` fails the gate on
+drift, so the job cannot be added by editing the workflow here.
+[`tests/unit/test_console_demo_is_gated.py`](../tests/unit/test_console_demo_is_gated.py) holds
+both halves offline: that `demo-browser` builds the console and does not exclude the acts, and
+that the rendered caller still hands that job its node modules and a required browser.
 
 The demo's borrower is real and its figures are its own published SEC filings
 ([`SOURCES.md`](../demo/documents/SOURCES.md)); the facility, the covenant thresholds and
