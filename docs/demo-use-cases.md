@@ -247,6 +247,17 @@ refused by the browser before it reached a route.
 `tests/unit/test_the_console_reaches_the_api.py` holds both halves structurally, so a new
 route with no client fails on the day it is added.
 
+The pack a committee reads now carries every section that console shows, which it did not.
+The wire shape and the console had both been fixed; the document builder simply had no code
+for the peer comparison, the group, the global cash flow, the stress results or the model's
+normalised metrics, so four acts of this demo showed a committee something the document they
+receive left out. That is the same defect as the dropped policy exceptions arriving from the
+other side, and invisible to the guard that watches the wire, because nothing was missing from
+the wire. `tests/unit/test_the_pack_carries_what_the_console_shows.py` now compares the two
+surfaces instead: it reads the console's own section hooks and fails when one has no pack
+section, in both directions, so a section added to either side fails on the day it is added.
+Act 15 asserts the four on the downloaded pack as well.
+
 The console also now carries stable `data-*` hooks on every control and panel
 the acts drive or read (`data-panel`, `data-field`, `data-action`, `data-section`, and
 identifying attributes on repeated rows such as `data-line` and `data-covenant`), and

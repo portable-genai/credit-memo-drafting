@@ -1071,6 +1071,18 @@ def act_committee_pack(stage: Stage) -> None:
             raise ActFailed(f"the committee pack does not carry {required!r}")
     if "certificate" not in pack.lower():
         raise ActFailed("the committee pack does not carry the reconciliation findings")
+    # And the sections the builder had no code for at all, which is the same defect arriving
+    # from the other side: the wire carried them and the console rendered them, so nothing
+    # downstream went red while the document a committee reads left them out. Each is the
+    # subject of an earlier act, so a pack without them contradicts the demo itself.
+    for heading in ("Peer comparison", "The group", "Global cash flow", "Stress"):
+        if heading not in pack:
+            raise ActFailed(
+                f"the committee pack has no {heading!r} section, so the pack carries less "
+                "than the screen the analyst signed off"
+            )
+    if "survives everything modelled" not in pack and "this scenario" not in pack:
+        raise ActFailed("the pack's stress table carries no break-even a committee can argue with")
 
     # The memo as the service stores it, which is the only form a LATER analysis can read
     # back when it has to say what changed since this one. Kept, because the renewal act is
@@ -1686,6 +1698,11 @@ ACTS: tuple[Act, ...] = (
             Point(
                 "It once dropped the last two while still looking complete.",
                 "Which is why the pack's contents are asserted here rather than eyeballed.",
+            ),
+            Point(
+                "Everything on the screen is in the document: the peers, the group, the stress.",
+                "The pack used to leave those four sections behind, so a committee read less "
+                "than the analyst signed off and nothing said so.",
             ),
             Point("A format this deployment cannot produce is refused, not quietly substituted."),
         ),

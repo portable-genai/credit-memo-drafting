@@ -84,6 +84,22 @@ def _fmt(value: float | None, unit: str = "") -> str:
     return f"{value:,.2f}"
 
 
+def _covenant_verdict(threshold: float | None, passes: bool | None) -> str:
+    """A stressed result against the covenant, or the absence of one, said either way."""
+    if threshold is None:
+        return "no covenant states one"
+    return f"{'passes' if passes else 'fails'} {threshold:,.2f}x"
+
+
+def _break_even(breaks_at: float | None) -> str:
+    """How far it can fall. "Survives everything modelled" is an answer, not a blank cell."""
+    if breaks_at is None:
+        return "survives everything modelled"
+    if breaks_at == 0:
+        return "already below the covenant before any stress"
+    return f"{breaks_at:,.2f}x this scenario"
+
+
 def build_document(memo: CreditMemo) -> MemoDocument:
     """Render ``memo`` into ordered blocks, in the section order its kind expects."""
     kind = memo.request.kind if memo.request else MemoKind.NEW_FACILITY
@@ -268,6 +284,39 @@ def build_document(memo: CreditMemo) -> MemoDocument:
             )
         )
 
+    # The model's normalised view of the same figures, AFTER the engine's arithmetic and
+    # labelled as drafted. The console shows it; a pack that silently dropped it would differ
+    # from the screen the analyst signed off, which is its own kind of defect. Where the two
+    # disagree the Ratios table above is the memo, and this says so.
+    if memo.financial_metrics:
+        blocks.append(Block(kind="heading", text="Financial analysis", level=2))
+        blocks.append(
+            Block(
+                kind="paragraph",
+                text=(
+                    "Normalised by the model from the evidence, and "
+                    f"{_PROVENANCE_LABEL[Provenance.MODEL_DRAFTED.value]}. The Ratios table "
+                    "above is the engine's own arithmetic; where the two disagree, the engine "
+                    "is the memo."
+                ),
+            )
+        )
+        blocks.append(
+            Block(
+                kind="table",
+                headers=("Metric", "Period", "Value", "Currency"),
+                rows=tuple(
+                    (
+                        metric.name,
+                        metric.period or "not stated",
+                        _fmt(metric.value),
+                        metric.currency,
+                    )
+                    for metric in memo.financial_metrics
+                ),
+            )
+        )
+
     if memo.covenants:
         blocks.append(Block(kind="heading", text="Covenants", level=2))
         blocks.append(
@@ -378,6 +427,28 @@ def build_document(memo: CreditMemo) -> MemoDocument:
                     )
                 )
 
+    # Where this borrower sits against companies a committee can compare it with. The
+    # percentile is the part worth printing: a leverage of 3.18x means one thing in a sector
+    # whose median is 2.0x and another where it is 3.5x.
+    if memo.peer_comparison:
+        blocks.append(Block(kind="heading", text="Peer comparison", level=2))
+        blocks.append(
+            Block(
+                kind="table",
+                headers=("Metric", "This borrower", "Peer median", "Percentile", "Peers"),
+                rows=tuple(
+                    (
+                        comparison.metric.replace("_", " "),
+                        _fmt(comparison.borrower_value),
+                        _fmt(comparison.peer_median),
+                        f"{comparison.percentile * 100:,.0f}th",
+                        ", ".join(peer.peer_name for peer in comparison.peers) or "not named",
+                    )
+                    for comparison in memo.peer_comparison
+                ),
+            )
+        )
+
     if memo.tie_out:
         blocks.append(Block(kind="heading", text="Reconciliation findings", level=2))
         blocks.append(
@@ -385,6 +456,115 @@ def build_document(memo: CreditMemo) -> MemoDocument:
                 kind="bullets",
                 text="These figures should agree and do not:",
                 items=tuple(f"[{f.severity.value}] {f.detail}" for f in memo.tie_out),
+            )
+        )
+
+    # Who else stands behind this, and whose cash actually services it. Three committee
+    # questions the memo can answer and the pack used to leave on the screen: who is in the
+    # group, what the combined position is and who was left out of it, and how far the
+    # coverage can fall before the covenant breaks.
+    if memo.related_entities or memo.guarantors:
+        blocks.append(Block(kind="heading", text="The group", level=2))
+        blocks.append(
+            Block(
+                kind="table",
+                headers=("Entity", "Role", "Held", "Jurisdiction"),
+                rows=(
+                    *(
+                        (
+                            entity.name,
+                            entity.role.value.replace("_", " "),
+                            f"{entity.ownership_pct:,.0f}%"
+                            if entity.ownership_pct is not None
+                            else "not stated",
+                            entity.jurisdiction or "not stated",
+                        )
+                        for entity in memo.related_entities
+                    ),
+                    *(
+                        (
+                            guarantor.name,
+                            "personal guarantee"
+                            if guarantor.is_personal
+                            else "corporate guarantee",
+                            "limited" if guarantor.limited else "unlimited",
+                            guarantor.reliance or "no view recorded",
+                        )
+                        for guarantor in memo.guarantors
+                    ),
+                ),
+            )
+        )
+
+    if memo.global_cash_flow:
+        gcf = memo.global_cash_flow
+        blocks.append(Block(kind="heading", text="Global cash flow", level=2))
+        if not gcf.complete:
+            # First, not in a footnote. A cash flow that silently omits the guarantor whose
+            # accounts nobody uploaded reads as though that guarantor contributes nothing,
+            # which is a stronger claim than "we did not look".
+            blocks.append(
+                Block(
+                    kind="note",
+                    text=(
+                        "Incomplete. No figures were supplied for "
+                        f"{', '.join(gcf.entities_without_figures)}. They contribute nothing to "
+                        "the totals below because nobody uploaded their statements, not because "
+                        "they have nothing to contribute."
+                    ),
+                )
+            )
+        blocks.append(
+            Block(
+                kind="table",
+                headers=("Line", "Period", f"Group ({gcf.currency})", "Made up of"),
+                rows=tuple(
+                    (
+                        line.code.value.replace("_", " "),
+                        line.period,
+                        _fmt(line.total),
+                        "; ".join(
+                            [
+                                *(f"{c.entity_name} {c.value:,.1f}" for c in line.contributions),
+                                *(
+                                    f"less {e.amount:,.1f} ({e.reason or e.between})"
+                                    for e in line.eliminations
+                                ),
+                            ]
+                        )
+                        or "no contribution recorded",
+                    )
+                    for line in gcf.lines
+                ),
+            )
+        )
+
+    if memo.scenarios:
+        blocks.append(Block(kind="heading", text="Stress", level=2))
+        blocks.append(
+            Block(
+                kind="paragraph",
+                text=(
+                    "Both the stressed value and the break-even, because a committee has no "
+                    "way to judge whether a given shock is the right test for this sector this "
+                    "year. They can judge 'it survives twice that'."
+                ),
+            )
+        )
+        blocks.append(
+            Block(
+                kind="table",
+                headers=("Scenario", "Base", "Stressed", "Against the covenant", "Breaks at"),
+                rows=tuple(
+                    (
+                        result.scenario_name,
+                        _fmt(result.base_value, "x"),
+                        _fmt(result.stressed_value, "x"),
+                        _covenant_verdict(result.threshold, result.passes),
+                        _break_even(result.breaks_at),
+                    )
+                    for result in memo.scenarios
+                ),
             )
         )
 
