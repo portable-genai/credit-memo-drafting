@@ -287,12 +287,15 @@ def main(argv: list[str] | None = None) -> int:
                 headless=headless, slow_mo=slowmo, executable_path=chrome_path
             )
             out = evidence.reset() if everything else evidence.prepare()
-            context = browser.new_context(
-                viewport={"width": 1280, "height": 1400}, record_video_dir=str(out / "video")
+            # A video needs a renderer the machine may not carry; the trace does not.
+            context, page, note = evidence.open_context(
+                browser, out, viewport={"width": 1280, "height": 1400}
             )
+            if note:
+                print(note)
             context.tracing.start(screenshots=True, snapshots=True, sources=False)
             request = p.request.new_context(base_url=api_base)
-            stage = Stage(page=context.new_page(), api=request, ui_base=ui_base, api_base=api_base)
+            stage = Stage(page=page, api=request, ui_base=ui_base, api_base=api_base)
             # Load the console before the first pause, not during it. Act 1 itself does
             # this navigation too — it is the thing act 1 is ABOUT — but the presenter's
             # very first prompt happens before any act has run, and a screen showing

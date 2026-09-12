@@ -209,10 +209,12 @@ those fixed limits is a property of the company, not something to tune.
 
 ## What the run leaves behind
 
-`out/demo/` — one full-page screenshot per act, a video, and a Playwright trace
-(`trace.zip`). The trace is the artefact worth keeping: it holds the DOM, the network and a
-screencast at every step, so a question asked after the demo can be answered from the
-recording rather than from memory.
+`out/demo/` — one full-page screenshot per act, a Playwright trace (`trace.zip`), and a video
+where the machine can render one. The trace is the artefact worth keeping: it holds the DOM,
+the network and a screencast at every step, so a question asked after the demo can be answered
+from the recording rather than from memory. The video needs Playwright's own ffmpeg binary
+(`playwright install ffmpeg`), which the CI runner does not ship, so a run there records
+everything except the video and says so rather than failing the acts over it.
 
 ## Side notes for a technical questioner
 

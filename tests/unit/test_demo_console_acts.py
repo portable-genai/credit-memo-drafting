@@ -131,3 +131,70 @@ def test_the_demo_drives_the_api_origin_an_unconfigured_console_calls() -> None:
     match = re.search(r'export const DEFAULT_API_BASE = "([^"]+)";', source)
     assert match, "ui/lib/api-base.mjs no longer declares DEFAULT_API_BASE"
     assert match.group(1) == servers.API_BASE_FOR_BROWSER
+
+
+class _FakeContext:
+    """A context that fails the way Playwright does when the video renderer is absent."""
+
+    def __init__(self, video: bool, *, renderer: bool) -> None:
+        self.video = video
+        self._renderer = renderer
+        self.closed = False
+
+    def new_page(self) -> str:
+        if self.video and not self._renderer:
+            raise RuntimeError(
+                "BrowserContext.new_page: Executable doesn't exist at "
+                "/home/ci/.cache/ms-playwright/ffmpeg-1011/ffmpeg-linux. "
+                "Video rendering requires ffmpeg binary."
+            )
+        return "page"
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _FakeBrowser:
+    def __init__(self, *, renderer: bool, fail_with: str = "") -> None:
+        self._renderer = renderer
+        self._fail_with = fail_with
+        self.contexts: list[_FakeContext] = []
+
+    def new_context(self, **options: object) -> _FakeContext:
+        if self._fail_with:
+            raise RuntimeError(self._fail_with)
+        context = _FakeContext(bool(options.get("record_video_dir")), renderer=self._renderer)
+        self.contexts.append(context)
+        return context
+
+
+def test_a_machine_with_no_video_renderer_still_runs_the_acts(tmp_path: Path) -> None:
+    """CI ships a distribution Chromium and no ffmpeg, and reported nineteen errors about it.
+
+    The video is a courtesy; the trace and the screenshots are the evidence. So a missing
+    renderer costs the video, is reported, and costs nothing else.
+    """
+    from demo_console import evidence
+
+    browser = _FakeBrowser(renderer=False)
+    context, page, note = evidence.open_context(browser, tmp_path)
+    assert page == "page"
+    assert not context.video, "the fallback context still asks for a video"
+    assert browser.contexts[0].closed, "the context that could not render was left open"
+    assert "ffmpeg" in note and "trace" in note
+
+
+def test_a_machine_that_can_render_one_records_it(tmp_path: Path) -> None:
+    from demo_console import evidence
+
+    context, page, note = evidence.open_context(_FakeBrowser(renderer=True), tmp_path)
+    assert context.video and page == "page"
+    assert note == ""
+
+
+def test_a_failure_that_is_not_the_renderer_is_not_swallowed(tmp_path: Path) -> None:
+    """A browser that cannot open a page at all is the demo failing, not its evidence."""
+    from demo_console import evidence
+
+    with pytest.raises(RuntimeError, match="no browser"):
+        evidence.open_context(_FakeBrowser(renderer=True, fail_with="no browser here"), tmp_path)
