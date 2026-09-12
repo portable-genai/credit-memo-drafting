@@ -56,8 +56,8 @@ request header, with the first persona as the default.
 export CREDIT_MEMO_PROFILE=local
 make run-api                      # uvicorn on http://localhost:8093
 
-# UI (in ./ui)
-cp .env.local.example .env.local  # NEXT_PUBLIC_API_BASE defaults to http://localhost:8093
+# UI (in ./ui). NEXT_PUBLIC_API_BASE unset takes the loopback default above; there is no
+# environment file to copy. ui/README.md has the three states it is read in.
 npm install && npm run dev        # http://localhost:3000
 ```
 

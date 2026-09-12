@@ -143,11 +143,41 @@ credit-memo serve --port 8093
 
 ## HTTP API
 
+Three surfaces. An **analysis** is the unit of work: open one with its evidence, spread it,
+confirm it, build, review, export, and let it expire. The **artifact** routes remain for a
+caller that carries its own documents in the body rather than uploading them. The rest is
+**ops and discovery**.
+
+[`SPEC.md` §6.1](SPEC.md) owns the request and response shapes. This table is the paths only,
+and `tests/unit/test_the_documented_surface_is_the_served_one.py` compares both documents
+against the routes the app actually registers, in both directions, so neither can list a
+fraction of them again.
+
 | Method | Path | Purpose |
 | --- | --- | --- |
-| POST | `/v1/credit-memo` | Build a full cited credit memo for a borrower |
+| POST | `/v1/analyses` | Open an analysis: upload the credit file, get the manifest back |
+| GET | `/v1/analyses/{analysis_id}` | What this analysis was given, and until when it can be reopened |
+| DELETE | `/v1/analyses/{analysis_id}` | Delete it now, without waiting for the retention window |
+| GET | `/v1/analyses/{analysis_id}/documents/{document_id}` | One uploaded file inline, so a citation opens the page it names |
+| GET | `/v1/analyses/{analysis_id}/checklist` | What this kind of memo needs, against what the analysis holds |
+| POST | `/v1/analyses/{analysis_id}/spreads/extract` | Propose figures off the documents. A proposal, never a spread |
+| POST | `/v1/analyses/{analysis_id}/spreads/confirm` | A named person accepts, adjusts or rejects each proposed figure |
+| GET | `/v1/analyses/{analysis_id}/spreads` | The proposal and the confirmed spread, side by side |
+| GET | `/v1/analyses/{analysis_id}/group/suggestions` | Candidate group entities from a public register (opt-in) |
+| GET | `/v1/analyses/{analysis_id}/research` | Public context for the analyst only, never in the memo (opt-in) |
+| POST | `/v1/analyses/{analysis_id}/build` | Build the memo from the evidence in custody |
+| PATCH | `/v1/analyses/{analysis_id}/memo` | Amend the prose sections. The figures are not editable |
+| GET | `/v1/analyses/{analysis_id}/revisions` | The hash-linked chain, and whether it verifies |
+| POST | `/v1/analyses/{analysis_id}/comments` | A checker's objection, anchored to the revision they read |
+| GET | `/v1/analyses/{analysis_id}/comments` | The thread, with its open and stale counts |
+| POST | `/v1/analyses/{analysis_id}/comments/{comment_id}/resolve` | Resolve one, by name |
+| POST | `/v1/analyses/{analysis_id}/export` | The committee pack as bytes (`?fmt=`) |
+| GET | `/v1/analyses/{analysis_id}/export/formats` | What this deployment can actually produce |
+| POST | `/v1/credit-memo` | Build a full cited credit memo from documents in the body |
 | POST | `/v1/covenants` | Extract covenants (with tested status) from documents |
 | POST | `/v1/risk-flags` | Identify risk flags for a borrower |
+| POST | `/v1/documents` | Upload borrower evidence outside an analysis |
+| GET | `/v1/documents/template` | The upload contract as a CSV template |
 | GET | `/v1/personas` | List seeded dev personas for the picker (local profile only) |
 | GET | `/healthz` | Liveness/readiness (reports profile and region) |
 | GET | `/.well-known/agent-card.json` | A2A AgentCard for discovery (`agent-registry`) |

@@ -12,10 +12,19 @@ deployment set `CREDIT_MEMO_RESEARCH_ENABLED`.
 ## Run locally
 
 ```bash
-cp .env.local.example .env.local   # set NEXT_PUBLIC_API_BASE (default http://localhost:8093)
 npm install
 npm run dev                        # http://localhost:3000
 ```
+
+There is no environment file to copy, and deliberately none to ship. `NEXT_PUBLIC_API_BASE` is
+read in three states by `lib/api-base.mjs`: **unset** takes the documented loopback default
+`http://localhost:8093`, which is what a laptop wants and what `make ui-check` builds against;
+**set** is used as given, either an absolute http(s) URL for a cross-origin API or a rooted path
+for the same-origin deployment a host portal mounts this console under; **set and empty**
+refuses to start rather than inheriting the default, because an emptied variable names nothing
+and a deliberate lockdown must not be byte-identical to an omission. An example file would
+invite a fourth state, a copied value nobody chose, and Next inlines the variable at BUILD time,
+so a value corrected in the environment afterwards changes nothing.
 
 Point it at a running `credit-memo-drafting` API (`make run-api` in the repo root, FastAPI on :8093). The
 console submits a borrower to `POST /v1/credit-memo` and renders the returned
