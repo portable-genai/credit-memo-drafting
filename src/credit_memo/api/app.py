@@ -213,11 +213,19 @@ app = FastAPI(
     ),
 )
 
+#: The verbs the console actually issues, and no others. It was GET, POST and OPTIONS while the
+#: console had no control for amending a memo or deleting an analysis; the moment those controls
+#: existed, a cross-origin PATCH or DELETE would have been refused by the browser before it ever
+#: reached a route, and the failure shows up only in the browser's console. The list is held equal
+#: to the client's own calls by ``tests/unit/test_the_console_reaches_the_api.py``, so adding a
+#: verb to ``ui/lib/api.ts`` without widening this fails the gate instead of the request.
+_CONSOLE_METHODS = ["GET", "POST", "PATCH", "DELETE", "OPTIONS"]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins(),
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=_CONSOLE_METHODS,
     allow_headers=["Content-Type", "Authorization", "X-Dev-Persona"],
 )
 
@@ -685,6 +693,18 @@ def build_analysis_memo(
     return response
 
 
+#: The memo exactly as this service stores it, which is the format a LATER analysis can read
+#: back: a renewal's "what changed" is computed against an uploaded prior memo, and only the
+#: wire shape survives that round trip. It is not a rendering, so it belongs here rather than in
+#: an export adapter, whose job is turning a memo into a document for a person.
+_WIRE_FORMAT = "json"
+
+
+def _export_formats(container: Any) -> list[str]:
+    """What this deployment can actually produce, documents first."""
+    return [*container.export.formats(), _WIRE_FORMAT]
+
+
 @app.post("/v1/analyses/{analysis_id}/export", tags=["analyses"])
 def export_analysis_memo(
     analysis_id: str, principal: CurrentPrincipal, fmt: str = "docx"
@@ -706,6 +726,26 @@ def export_analysis_memo(
         return _denied_response(exc)
     if stored is None:
         return _ungrounded_response("this analysis has no memo yet; build one before exporting it")
+
+    advertised = _export_formats(container)
+    if fmt not in advertised:
+        # Refused here rather than at the adapter, because the advertised list is this route's:
+        # a caller who asked for one format and received another finds out at the worst moment.
+        return _ungrounded_response(
+            f"this deployment cannot export {fmt!r}; it produces {', '.join(advertised)}"
+        )
+    if fmt == _WIRE_FORMAT:
+        import json as _json
+
+        return Response(
+            content=_json.dumps(stored, indent=2, sort_keys=True),
+            media_type="application/json",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="credit-memo-{_slug(analysis_id)}.json"'
+                )
+            },
+        )
 
     try:
         payload, content_type = container.export.export(
@@ -737,7 +777,7 @@ def export_formats(analysis_id: str, principal: CurrentPrincipal) -> Any:
         return _analysis_gone(exc)
     except BorrowerAccessDeniedError as exc:
         return _denied_response(exc)
-    return {"formats": list(deps.get_container().export.formats())}
+    return {"formats": _export_formats(deps.get_container())}
 
 
 # --------------------------------------------------------------------------- #
@@ -1177,7 +1217,15 @@ def read_revisions(
         for r in _stored_revisions(container, analysis_id, principals)
     ]
     intact, detail = RevisionService().verify(tuple(r.to_domain() for r in models))
-    return RevisionListResponse(revisions=models, chain_intact=intact, chain_detail=detail)
+    return RevisionListResponse(
+        revisions=models,
+        chain_intact=intact,
+        chain_detail=detail,
+        # The console offers exactly these in its editor. A client that kept its own list would
+        # offer a section the service refuses, and the analyst would meet a 422 instead of a
+        # control that does what it says.
+        editable_sections=list(EDITABLE_SECTIONS),
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -1204,6 +1252,12 @@ def _comment_view(
         comments=rows,
         open_count=sum(1 for r in rows if r.open),
         stale_count=sum(1 for r in rows if r.stale),
+        # Which sections a comment may name, which is the service's rule rather than the
+        # console's: a reviewer objects to a figure as readily as to a sentence, so it is every
+        # section the memo has plus the editable ones, exactly as CommentService.add allows.
+        sections=sorted(set(revisions[-1].memo_json) | set(EDITABLE_SECTIONS))
+        if revisions
+        else list(EDITABLE_SECTIONS),
     )
 
 

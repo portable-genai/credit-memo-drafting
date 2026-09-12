@@ -1773,6 +1773,9 @@ class RevisionListResponse(BaseModel):
     revisions: list[MemoRevisionModel] = Field(default_factory=list)
     chain_intact: bool = True
     chain_detail: str = ""
+    #: The sections this service will accept an edit to. Served rather than assumed, so a
+    #: console cannot offer a control the service refuses.
+    editable_sections: list[str] = Field(default_factory=list)
 
 
 class MemoCommentModel(BaseModel):
@@ -1847,6 +1850,8 @@ class CommentListResponse(BaseModel):
     comments: list[MemoCommentModel] = Field(default_factory=list)
     open_count: int = 0
     stale_count: int = 0
+    #: The sections a comment may name, which is the service's rule and not the console's.
+    sections: list[str] = Field(default_factory=list)
 
 
 class RiskFlagListResponse(BaseModel):

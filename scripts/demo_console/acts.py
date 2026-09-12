@@ -9,17 +9,20 @@ Every expectation is recomputed from the running application: covenant status fr
 threshold and the operator, ratios from the confirmed spread, the peer percentile from the
 peer table. Nothing here matches a sentence the product happens to render today.
 
-Three acts have no console UI and are driven over the API in the same run: the committee
-pack, the reviewer's comment thread, and deleting the borrower's evidence. They are here
-because a credit audience asks for exactly those three; that they are unreachable from the
-console is a product gap, recorded in docs/demo-use-cases.md, not a reason to hide them.
+Every act drives the CONSOLE. Three of them could not, until the console grew the controls:
+the committee pack, the reviewer's comment thread and deleting the evidence were API-only,
+which made them indistinguishable from capabilities nobody had built. Where an act still calls
+the API it is to CHECK what the console did, or to prove a refusal a console cannot even
+express, such as typing over a computed section.
 """
 
 from __future__ import annotations
 
+import contextlib
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from . import fixtures as fx
@@ -42,6 +45,17 @@ REPAYMENT_SOURCE = "Operating cash flow"
 
 #: The tenor that trips the policy pack's one knockout rule (TEN-01, maximum 84 months).
 KNOCKOUT_TENOR = 96
+
+#: What the analyst rewrites the summary to, and what they rewrite it to again once the
+#: checker asks who is being asked to waive the exception.
+REVISED_SUMMARY = (
+    "Revised by the analyst: leverage of 3.18x breaches the 3.00x covenant and the exception "
+    "needs Regional Credit Committee waiver."
+)
+ANSWERED_SUMMARY = (
+    "Revised again: the Regional Credit Committee is the waiver authority for the leverage "
+    "exception."
+)
 
 
 class ActFailed(AssertionError):
@@ -193,6 +207,44 @@ def _ok(response: Any, what: str) -> Any:
 
 def _text(stage: Stage) -> str:
     return str(stage.page.inner_text("body"))
+
+
+def _as_persona(stage: Stage, persona: str) -> None:
+    """Become somebody else in the console, which is what its identity picker is for.
+
+    Every request the page makes after this carries that persona. The SERVICE still resolves
+    the actor from it: what the console sends is a choice of seeded person, never a claim
+    about who they are, which is why the confirmer, the comment author and the resolver all
+    come back from the service rather than from the browser.
+    """
+    stage.page.locator(loc.PERSONA).select_option(persona)
+
+
+def _console_page(stage: Stage) -> Any:
+    """The deal's console page, closing whatever page an earlier act left on screen.
+
+    Act 15 puts the rendered pack on screen and act 17 runs in a page of its own, so the page
+    the stage holds is not always the console. The deal's page is the one that matters: it
+    holds the memo, its revision chain, the comment thread and the delete, and a reload would
+    lose all four.
+    """
+    console = stage.state.pop("console_page", None)
+    if console is None:
+        return stage.page
+    if stage.page is not console:
+        with contextlib.suppress(Exception):
+            stage.page.close()
+    stage.page = console
+    return console
+
+
+def _download(stage: Stage, fmt: str) -> bytes:
+    """Press the console's own download button and read back what the browser saved."""
+    page = stage.page
+    page.locator(loc.EXPORT_FORMAT).select_option(fmt)
+    with page.expect_download() as saved:
+        page.locator(loc.EXPORT).click()
+    return Path(saved.value.path()).read_bytes()
 
 
 # --------------------------------------------------------------------------- #
@@ -747,49 +799,47 @@ def act_stress(stage: Stage) -> None:
 # 12. The checker
 # --------------------------------------------------------------------------- #
 def act_the_checker(stage: Stage) -> None:
+    page = stage.page
     analysis_id = stage.analysis_id
-    amended = _ok(
-        stage.patch(
-            f"/v1/analyses/{analysis_id}/memo",
-            {
-                "sections": {
-                    "summary": (
-                        "Revised by the analyst: leverage of 3.18x breaches the 3.00x covenant "
-                        "and the exception needs Regional Credit Committee waiver."
-                    )
-                },
-                "reason": "The drafted summary understated the breach.",
-                "note": "Rewritten to lead with the covenant position.",
-            },
-        ),
-        "amend the memo",
-    ).json()
-    if amended["revision"] < 2:
+
+    # The analyst rewrites the summary in the console's own editor.
+    page.locator(loc.AMEND_SECTION).select_option("summary")
+    page.locator(loc.AMEND_TEXT).fill(REVISED_SUMMARY)
+    page.locator(loc.AMEND_REASON).fill("The drafted summary understated the breach.")
+    page.locator(loc.AMEND_NOTE).fill("Rewritten to lead with the covenant position.")
+    page.locator(loc.AMEND).click()
+    page.locator(loc.revisions_numbering(2)).wait_for(timeout=30_000)
+
+    chain = _ok(stage.get(f"/v1/analyses/{analysis_id}/revisions"), "read the revisions").json()
+    amended = chain["revisions"][-1]["revision"]
+    if amended < 2:
         raise ActFailed("an edit did not open a new revision")
+    if REVISED_SUMMARY not in _text(stage):
+        raise ActFailed("the edited summary is not the one on screen")
     stage.cue(
-        Point(
-            f"The analyst rewrites the summary to lead with the breach (revision "
-            f"{amended['revision']})."
-        ),
+        Point(f"The analyst rewrites the summary to lead with the breach (revision {amended})."),
         Point(
             "The draft nobody touched is still there.",
             "And so is the reason this revision was written, in the author's own words.",
         ),
-        look_at=f"revision {amended['revision']}, with its reason and note",
+        look_at=f"revision {amended}, with its reason and note",
     )
 
-    comment = _ok(
-        stage.post(
-            f"/v1/analyses/{analysis_id}/comments",
-            {"section": "summary", "body": "Say who is being asked to waive this."},
-            persona=APPROVER,
-        ),
-        "leave a comment",
-    ).json()
-    if comment["revision"] != amended["revision"]:
+    # The approver objects, as themselves.
+    _as_persona(stage, APPROVER)
+    page.locator(loc.COMMENT_SECTION).select_option("summary")
+    page.locator(loc.COMMENT_BODY).fill("Say who is being asked to waive this.")
+    page.locator(loc.ADD_COMMENT).click()
+    page.locator(f'{loc.COMMENTS}[data-open-count="1"]').wait_for(timeout=30_000)
+
+    thread = _ok(stage.get(f"/v1/analyses/{analysis_id}/comments"), "list the comments").json()
+    comment = thread["comments"][-1]
+    if comment["revision"] != amended:
         raise ActFailed("the comment is not anchored to the text its author read")
     if "@" not in comment["author"]:
         raise ActFailed("an unattributed comment")
+    if page.locator(loc.comment_row(comment["id"])).count() != 1:
+        raise ActFailed("the comment the service recorded is not on screen")
     stage.cue(
         Point("The approver objects."),
         Point(
@@ -800,25 +850,18 @@ def act_the_checker(stage: Stage) -> None:
         look_at=f"the comment by {comment['author']}, anchored to revision {comment['revision']}",
     )
 
-    _ok(
-        stage.patch(
-            f"/v1/analyses/{analysis_id}/memo",
-            {
-                "sections": {
-                    "summary": (
-                        "Revised again: the Regional Credit Committee is the waiver authority "
-                        "for the leverage exception."
-                    )
-                },
-                "reason": "Answering the checker.",
-                "note": "Named the waiver authority.",
-            },
-        ),
-        "amend again",
-    )
-    listing = _ok(stage.get(f"/v1/analyses/{analysis_id}/comments"), "list comments").json()
-    flagged = [c for c in listing["comments"] if c["stale"]]
-    if not flagged:
+    # The analyst answers it, and the comment goes stale rather than away.
+    _as_persona(stage, ANALYST)
+    page.locator(loc.AMEND_SECTION).select_option("summary")
+    page.locator(loc.AMEND_TEXT).fill(ANSWERED_SUMMARY)
+    page.locator(loc.AMEND_REASON).fill("Answering the checker.")
+    page.locator(loc.AMEND_NOTE).fill("Named the waiver authority.")
+    page.locator(loc.AMEND).click()
+    page.locator(loc.revisions_numbering(3)).wait_for(timeout=30_000)
+    page.locator(f'{loc.comment_row(comment["id"])}[data-stale="true"]').wait_for(timeout=30_000)
+
+    listing = _ok(stage.get(f"/v1/analyses/{analysis_id}/comments"), "list the comments").json()
+    if not [c for c in listing["comments"] if c["stale"]]:
         raise ActFailed(
             "editing the text underneath a comment did not flag it; a comment that lapsed "
             "because the text moved was lost, not answered"
@@ -835,14 +878,15 @@ def act_the_checker(stage: Stage) -> None:
         look_at=f"the comment marked stale, with {listing['open_count']} still open",
     )
 
-    resolved = _ok(
-        stage.post(
-            f"/v1/analyses/{analysis_id}/comments/{comment['id']}/resolve",
-            {"resolution": "Named the Regional Credit Committee in the summary."},
-            persona=APPROVER,
-        ),
-        "resolve the comment",
-    ).json()
+    # And the approver closes it, by name and with what was done about it.
+    _as_persona(stage, APPROVER)
+    row = page.locator(loc.comment_row(comment["id"]))
+    row.locator(loc.RESOLUTION).fill("Named the Regional Credit Committee in the summary.")
+    row.locator(loc.RESOLVE).click()
+    page.locator(f'{loc.comment_row(comment["id"])}[data-open="false"]').wait_for(timeout=30_000)
+
+    closed = _ok(stage.get(f"/v1/analyses/{analysis_id}/comments"), "list the comments").json()
+    resolved = next(c for c in closed["comments"] if c["id"] == comment["id"])
     if "@" not in (resolved.get("resolved_by") or ""):
         raise ActFailed("the resolution does not name the person who made it")
 
@@ -851,6 +895,8 @@ def act_the_checker(stage: Stage) -> None:
         raise ActFailed(f"the revision chain is broken: {revisions['chain_detail']}")
     if len(revisions["revisions"]) < 3:
         raise ActFailed("the chain does not start at the draft nobody touched")
+    if page.locator(f'{loc.REVISIONS}[data-chain-intact="true"]').count() != 1:
+        raise ActFailed("the console does not report the chain it just extended as intact")
     stage.state["revisions"] = revisions
     stage.cue(
         Point(
@@ -870,6 +916,20 @@ def act_the_checker(stage: Stage) -> None:
 # 13. Figures are not editable prose
 # --------------------------------------------------------------------------- #
 def act_figures_are_not_prose(stage: Stage) -> None:
+    # The console offers exactly the sections the service accepts, and it ASKS which those
+    # are rather than keeping a list that can drift out of agreement with the refusal.
+    offered = stage.page.eval_on_selector_all(
+        f"{loc.AMEND_SECTION} option", "options => options.map((option) => option.value)"
+    )
+    editable = _ok(
+        stage.get(f"/v1/analyses/{stage.analysis_id}/revisions"), "read the revisions"
+    ).json()["editable_sections"]
+    if sorted(offered) != sorted(editable):
+        raise ActFailed(f"the editor offers {offered}; the service accepts {editable}")
+    if "ratios" in offered:
+        raise ActFailed("the console offers to type over a computed section")
+
+    # And the refusal holds for a caller that never goes through the console.
     response = stage.patch(
         f"/v1/analyses/{stage.analysis_id}/memo",
         {
@@ -974,19 +1034,24 @@ def act_public_context(stage: Stage) -> None:
 # 15. The committee pack
 # --------------------------------------------------------------------------- #
 def act_committee_pack(stage: Stage) -> None:
+    page = stage.page
     analysis_id = stage.analysis_id
-    formats = _ok(
-        stage.get(f"/v1/analyses/{analysis_id}/export/formats"), "list export formats"
-    ).json()["formats"]
-    if "docx" not in formats or "html" not in formats:
-        raise ActFailed(f"this deployment produces {formats}, which a committee cannot use")
+    offered = page.eval_on_selector_all(
+        f"{loc.EXPORT_FORMAT} option", "options => options.map((option) => option.value)"
+    )
+    for wanted in ("docx", "html", "json"):
+        if wanted not in offered:
+            raise ActFailed(f"this deployment offers {offered}, which a committee cannot use")
+    if "pdf" in offered:
+        # Advertised rather than assumed: the console offers what the service says it can
+        # produce, so there is no button here that fails when it is pressed.
+        raise ActFailed("the console offers a format this deployment cannot produce")
 
-    docx = _ok(stage.post(f"/v1/analyses/{analysis_id}/export?fmt=docx"), "export a docx")
-    if docx.body()[:2] != b"PK":
+    docx = _download(stage, "docx")
+    if docx[:2] != b"PK":
         raise ActFailed("the exported .docx is not a document Word can open")
 
-    html = _ok(stage.post(f"/v1/analyses/{analysis_id}/export?fmt=html"), "export the pack")
-    pack = html.body().decode("utf-8")
+    pack = _download(stage, "html").decode("utf-8")
     # The regression this act exists for: a pack that dropped the policy breaches and the
     # failed reconciliations while still looking complete.
     for required in ("LEV-01", "Decision support, not a credit decision"):
@@ -995,24 +1060,29 @@ def act_committee_pack(stage: Stage) -> None:
     if "certificate" not in pack.lower():
         raise ActFailed("the committee pack does not carry the reconciliation findings")
 
+    # The memo as the service stores it, which is the only form a LATER analysis can read
+    # back when it has to say what changed since this one.
+    wire = json.loads(_download(stage, "json").decode("utf-8"))
+    if not any(e["rule_id"] == "LEV-01" for e in wire["policy_exceptions"]):
+        raise ActFailed("the memo's own form dropped the exception the pack shows")
+
     refused = stage.post(f"/v1/analyses/{analysis_id}/export?fmt=pdf")
     if refused.ok:
         raise ActFailed("a format this deployment cannot produce was not refused")
     if "cannot export" not in refused.text():
         raise ActFailed("the refusal does not say what it can produce instead")
 
-    # Put it on screen: the pack is the deliverable, and a demo that only asserts bytes
-    # has not shown anybody the thing they asked for. It replaces the stage's page for the
-    # rest of the run so the act's own screenshot is OF THE PACK. A frame of the console
-    # behind it would be evidence of the wrong thing.
-    pack_page = stage.page.context.new_page()
+    # Put it on screen: the pack is the deliverable, and a demo that only asserts bytes has
+    # not shown anybody the thing they asked for. The console page is kept, because the acts
+    # after this one still drive it.
+    pack_page = page.context.new_page()
     pack_page.set_content(pack)
-    stage.state["console_page"] = stage.page
+    stage.state["console_page"] = page
     stage.page = pack_page
     stage.cue(
         Point(
             "This is what leaves the building: the same pack, as a Word document.",
-            "Which is how a committee actually circulates it.",
+            "Downloaded from the console, which is how a committee actually gets it.",
         ),
         Point(
             "Standing sentence first, then the policy exceptions and the failed reconciliations.",
@@ -1020,8 +1090,8 @@ def act_committee_pack(stage: Stage) -> None:
             "regression this act exists for.",
         ),
         Point(
-            "PDF, which this deployment cannot produce, is refused.",
-            "Rather than quietly substituted with something else.",
+            "PDF, which this deployment cannot produce, is not even offered.",
+            "And is refused rather than quietly substituted if something asks for it anyway.",
         ),
         look_at="the standing sentence, then LEV-01 and the certificate reconciliation in the pack",
     )
@@ -1052,12 +1122,14 @@ def act_pre_screen_knockout(stage: Stage) -> None:
 # 17. What it will not do
 # --------------------------------------------------------------------------- #
 def act_refusals(stage: Stage) -> None:
-    # Back to the console: act 14 left the committee pack on screen.
-    console = stage.state.pop("console_page", None)
-    if console is not None:
-        stage.page.close()
-        stage.page = console
-    page = stage.page
+    # A page of its own, and act 15 left the rendered pack on screen in another. The deal's
+    # console page is kept aside rather than reloaded: it holds the memo, the revision chain
+    # and the delete that act 18 presses, and a reload here would lose all three.
+    deal = _console_page(stage)
+    refusals = deal.context.new_page()
+    stage.state["console_page"] = deal
+    stage.page = refusals
+    page = refusals
     page.goto(stage.ui_base, wait_until="load")
     page.locator(loc.BORROWER).fill(fx.BORROWER_NAME)
     _build(stage, timeout=30_000)
@@ -1124,9 +1196,12 @@ def act_evidence_goes_away(stage: Stage) -> None:
         look_at="the two answers: 404 to the stranger, 200 to the auditor",
     )
 
-    deleted = stage.delete(f"/v1/analyses/{analysis_id}")
-    if deleted.status != 204:
-        raise ActFailed(f"delete answered {deleted.status}")
+    # Back to the deal's console, where the analyst presses it themselves: two presses, because
+    # this is the one irreversible thing in the product.
+    page = _console_page(stage)
+    page.locator(loc.DELETE_ANALYSIS).click()
+    page.locator(loc.CONFIRM_DELETE).click()
+    page.locator(loc.DELETED).wait_for(timeout=30_000)
     if stage.get(f"/v1/analyses/{analysis_id}").status != 404:
         raise ActFailed("the analysis survived its own deletion")
     gone = stage.post(f"/v1/analyses/{analysis_id}/export?fmt=html")

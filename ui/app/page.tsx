@@ -20,6 +20,7 @@ import { confirmBody, SpreadReview } from "@/components/SpreadReview";
 import { groupBody, GroupPanel, type GroupEntityDraft } from "@/components/GroupPanel";
 import { PublicContext } from "@/components/PublicContext";
 import { DocumentPanel, type PendingDocument } from "@/components/DocumentPanel";
+import { ReviewPanel } from "@/components/ReviewPanel";
 
 const IS_EMBEDDED = process.env.NEXT_PUBLIC_EMBED === "1";
 
@@ -70,6 +71,10 @@ export default function Home() {
   // it starts never shows the label, so a wait keyed on it can return before the press was
   // handled at all.
   const [outcomes, setOutcomes] = useState(0);
+  // The evidence is gone and the page says so. Not merely an empty screen: "deleted" and
+  // "nothing was ever here" are different answers, and the retention promise is the product's
+  // most load-bearing one.
+  const [deleted, setDeleted] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -165,6 +170,7 @@ export default function Home() {
     }
     setLoading(true);
     setError(null);
+    setDeleted(false);
     setMemo(null);
     setBlocked(null);
     try {
@@ -418,6 +424,35 @@ export default function Home() {
       </div>
 
       {memo ? <MemoView memo={memo} /> : null}
+
+      {/* Everything a memo has after it is built: the edit, the objection, the pack, the
+          delete. All four were API-only, so the people the product is for could not reach
+          them. */}
+      {memo && analysisId ? (
+        <ReviewPanel
+          analysisId={analysisId}
+          memo={memo}
+          onMemoChange={setMemo}
+          onDeleted={() => {
+            setDeleted(true);
+            setMemo(null);
+            setManifest(null);
+            setAnalysisId("");
+            setCandidate(null);
+            setDocuments([]);
+          }}
+        />
+      ) : null}
+
+      {deleted ? (
+        <p
+          data-panel="deleted"
+          className="mt-4 rounded border border-ink-300 bg-ink-50 p-3 text-sm text-ink-700"
+        >
+          Deleted. The analysis, the files it held and the memo built from them are gone, and
+          nothing here can reopen them. Upload a credit file to start another one.
+        </p>
+      ) : null}
     </main>
   );
 }
