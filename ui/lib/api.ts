@@ -10,6 +10,10 @@
 
 import type {
   AnalysisManifest,
+  CommentList,
+  MemoComment,
+  MemoRevision,
+  RevisionList,
   BlockedEnvelope,
   Borrower,
   Covenant,
@@ -68,6 +72,11 @@ function jsonHeaders(): Record<string, string> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (devPersona) headers["X-Dev-Persona"] = devPersona;
   return headers;
+}
+
+/** The dev-persona header alone, for requests that carry no JSON body (uploads, downloads). */
+function personaHeaders(): Record<string, string> {
+  return devPersona ? { "X-Dev-Persona": devPersona } : {};
 }
 
 export interface Persona {
@@ -363,7 +372,156 @@ export async function uploadBorrowerDocument(
   return (await parseJsonOrThrow(res)) as DocumentUploadResult;
 }
 
+/**
+ * Rewrite one or more PROSE sections, and record who rewrote them.
+ *
+ * The service decides which sections are editable and says so in `listRevisions`, so the
+ * console offers exactly those rather than keeping a list that can drift out of agreement
+ * with the refusal. The figures are never among them: a memo whose leverage could be typed
+ * over by hand would put a number in front of a committee that no formula produced.
+ */
+export async function amendMemo(
+  analysisId: string,
+  body: { sections: Record<string, string>; reason?: string; note?: string },
+  signal?: AbortSignal,
+): Promise<MemoRevision> {
+  const res = await fetch(`${API_BASE}/v1/analyses/${encodeURIComponent(analysisId)}/memo`, {
+    method: "PATCH",
+    headers: jsonHeaders(),
+    body: JSON.stringify(body),
+    signal,
+  });
+  return (await parseJsonOrThrow(res)) as MemoRevision;
+}
+
+/** Every version, and whether the chain from the first to the last still holds. */
+export async function listRevisions(
+  analysisId: string,
+  signal?: AbortSignal,
+): Promise<RevisionList> {
+  const res = await fetch(`${API_BASE}/v1/analyses/${encodeURIComponent(analysisId)}/revisions`, {
+    method: "GET",
+    headers: jsonHeaders(),
+    signal,
+  });
+  return (await parseJsonOrThrow(res)) as RevisionList;
+}
+
+/**
+ * Leave a note against one section of the memo as it stands right now.
+ *
+ * There is no author in the body: it is the server-verified principal, which is what a
+ * committee asks about. The comment anchors to the current revision, so an edit three
+ * versions later cannot silently re-point the objection at text its author never saw.
+ */
+export async function addComment(
+  analysisId: string,
+  body: { section: string; body: string },
+  signal?: AbortSignal,
+): Promise<MemoComment> {
+  const res = await fetch(`${API_BASE}/v1/analyses/${encodeURIComponent(analysisId)}/comments`, {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify(body),
+    signal,
+  });
+  return (await parseJsonOrThrow(res)) as MemoComment;
+}
+
+/** Every note, with the ones whose text has moved on flagged rather than closed. */
+export async function listComments(
+  analysisId: string,
+  signal?: AbortSignal,
+): Promise<CommentList> {
+  const res = await fetch(`${API_BASE}/v1/analyses/${encodeURIComponent(analysisId)}/comments`, {
+    method: "GET",
+    headers: jsonHeaders(),
+    signal,
+  });
+  return (await parseJsonOrThrow(res)) as CommentList;
+}
+
+/** Close one comment, saying what was done about it rather than merely that it is closed. */
+export async function resolveComment(
+  analysisId: string,
+  commentId: string,
+  resolution: string,
+  signal?: AbortSignal,
+): Promise<MemoComment> {
+  const res = await fetch(
+    `${API_BASE}/v1/analyses/${encodeURIComponent(analysisId)}/comments/${encodeURIComponent(commentId)}/resolve`,
+    { method: "POST", headers: jsonHeaders(), body: JSON.stringify({ resolution }), signal },
+  );
+  return (await parseJsonOrThrow(res)) as MemoComment;
+}
+
+/** Which formats this deployment can actually produce, asked rather than assumed. */
+export async function exportFormats(analysisId: string, signal?: AbortSignal): Promise<string[]> {
+  const res = await fetch(
+    `${API_BASE}/v1/analyses/${encodeURIComponent(analysisId)}/export/formats`,
+    { method: "GET", headers: jsonHeaders(), signal },
+  );
+  const raw = (await parseJsonOrThrow(res)) as Record<string, unknown>;
+  return ((raw?.formats as string[]) ?? []).slice();
+}
+
+/**
+ * The committee pack as bytes, with the name to save it under.
+ *
+ * The filename is built here rather than read from `Content-Disposition`: that header is not
+ * readable cross-origin unless the service exposes it, and a pack that downloads as
+ * "download" is a pack somebody has to rename before circulating it.
+ */
+export async function exportMemo(
+  analysisId: string,
+  fmt: string,
+  signal?: AbortSignal,
+): Promise<{ blob: Blob; filename: string }> {
+  const res = await fetch(
+    `${API_BASE}/v1/analyses/${encodeURIComponent(analysisId)}/export?fmt=${encodeURIComponent(fmt)}`,
+    { method: "POST", headers: personaHeaders(), signal },
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    let detail = text;
+    try {
+      const parsed = JSON.parse(text);
+      detail = (parsed && (parsed.detail || parsed.message)) || text;
+    } catch {
+      /* keep the raw text */
+    }
+    throw new ApiError(`${res.status} ${res.statusText}: ${detail}`, res.status, text);
+  }
+  return { blob: await res.blob(), filename: `credit-memo-${analysisId}.${fmt}` };
+}
+
+/**
+ * Delete the analysis now, rather than waiting for the retention window.
+ *
+ * The memo dies with the evidence it was built from: there is no memo of record here, which
+ * is what makes the retention promise something a user can act on rather than read about.
+ */
+export async function deleteAnalysis(analysisId: string, signal?: AbortSignal): Promise<void> {
+  const res = await fetch(`${API_BASE}/v1/analyses/${encodeURIComponent(analysisId)}`, {
+    method: "DELETE",
+    headers: personaHeaders(),
+    signal,
+  });
+  if (!res.ok && res.status !== 404) {
+    const text = await res.text();
+    throw new ApiError(`${res.status} ${res.statusText}: ${text}`, res.status, text);
+  }
+}
+
 export const api = {
+  amendMemo,
+  listRevisions,
+  addComment,
+  listComments,
+  resolveComment,
+  exportFormats,
+  exportMemo,
+  deleteAnalysis,
   openAnalysis,
   extractSpread,
   confirmSpread,

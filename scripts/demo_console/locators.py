@@ -111,6 +111,39 @@ def policy_rule(rule_id: str) -> str:
     return f'[data-rule="{rule_id}"]'
 
 
+# --- after the memo: the edit, the objection, the pack, the delete ----------- #
+AMEND_SECTION = '[data-field="amend-section"]'
+AMEND_TEXT = '[data-field="amend-text"]'
+AMEND_REASON = '[data-field="amend-reason"]'
+AMEND_NOTE = '[data-field="amend-note"]'
+AMEND = '[data-action="amend-memo"]'
+#: Carries ``data-revisions`` and ``data-chain-intact``.
+REVISIONS = '[data-panel="revisions"]'
+#: Carries ``data-open-count`` and ``data-stale-count``.
+COMMENTS = '[data-panel="comments"]'
+COMMENT_SECTION = '[data-field="comment-section"]'
+COMMENT_BODY = '[data-field="comment-body"]'
+ADD_COMMENT = '[data-action="add-comment"]'
+RESOLUTION = '[data-field="resolution"]'
+RESOLVE = '[data-action="resolve-comment"]'
+EXPORT_FORMAT = '[data-field="export-format"]'
+EXPORT = '[data-action="export-memo"]'
+DELETE_ANALYSIS = '[data-action="delete-analysis"]'
+CONFIRM_DELETE = '[data-action="confirm-delete"]'
+DELETED = '[data-panel="deleted"]'
+REVIEW_ERROR = '[data-panel="review-error"]'
+
+
+def revisions_numbering(count: int) -> str:
+    """The chain once it holds ``count`` versions, so an act waits for the saved edit."""
+    return f'[data-panel="revisions"][data-revisions="{count}"]'
+
+
+def comment_row(comment_id: str) -> str:
+    """One comment, by the id the service gave it; carries ``data-open`` and ``data-stale``."""
+    return f'[data-comment-id="{comment_id}"]'
+
+
 # --- the memo's sections ------------------------------------------------------ #
 SECTION_SUMMARY = '[data-section="summary"]'
 SECTION_RATIOS = '[data-section="ratios"]'

@@ -83,9 +83,11 @@ reports compliance.
 | 17 | What it will not do | The inline refusal, then the amber guardrail notice |
 | 18 | The evidence goes away | The 404 that does not confirm the analysis exists |
 
-Acts 12, 13, 15 and 18 are driven over the API rather than the console, because the console
-has no control for them (see **Gaps** below). Where there is something to look at, it still
-goes on screen: act 14 renders the committee pack in a browser tab.
+Every act drives the console. Acts 12, 15 and 18 could not until it grew the controls they
+need: the reviewer's thread, the pack and the delete were API-only. Where an act still calls
+the API it is to check what the console did, or to show a refusal the console cannot express
+(act 13 types over a computed section, which its editor does not offer). The pack still goes
+on screen as well as into a file: act 15 renders it in a browser tab.
 
 ## Presenting
 
@@ -234,7 +236,16 @@ did not come for them. Each is one command:
 
 ## Gaps this demo surfaced
 
-**Closed since.** The console now carries stable `data-*` hooks on every control and panel
+**Closed since.** Export, memo amendment with its revision chain, comments and delete were
+API-only: routes and tests with no client in `ui/lib/api.ts`, which from outside is
+indistinguishable from capabilities nobody built. The console now carries all four in one
+review panel, the client issues `PATCH` and `DELETE`, and the API's CORS allowlist admits
+exactly the verbs the client sends, which it did not before: a cross-origin `PATCH` was
+refused by the browser before it reached a route.
+`tests/unit/test_the_console_reaches_the_api.py` holds both halves structurally, so a new
+route with no client fails on the day it is added.
+
+The console also now carries stable `data-*` hooks on every control and panel
 the acts drive or read (`data-panel`, `data-field`, `data-action`, `data-section`, and
 identifying attributes on repeated rows such as `data-line` and `data-covenant`), and
 [`scripts/demo_console/locators.py`](../scripts/demo_console/locators.py) locates by them
@@ -266,16 +277,12 @@ dropped for exactly that reason. It is the same pattern, and it is still there.
 
 Recorded here rather than fixed, because each is product work with its own review:
 
-1. **Four capabilities are API-only.** Export, memo amendment plus revisions, comments and
-   delete have no console control; `ui/lib/api.ts` has no client for any of them. The API's
-   CORS allowlist compounds it — `allow_methods` is `GET, POST, OPTIONS`, so a browser
-   console could not reach `PATCH` or `DELETE` cross-origin even if the buttons existed.
-2. **`RenewalDiffService` is unreachable.** It is written, unit-tested and bound to nothing:
+1. **`RenewalDiffService` is unreachable.** It is written, unit-tested and bound to nothing:
    no route computes `renewal_delta`, nothing reads an uploaded `prior_memo`, and
    `AnalysisManifest.missing()` — which would tell an analyst a renewal needs the prior memo
    — is not on the wire. A renewal act was planned for this demo and removed for that
    reason. This is a sixth instance of the pattern in note 1.
-3. **Stale claims in the docs.** [`DEMO.md`](../DEMO.md) refers to an "Upload borrower
+2. **Stale claims in the docs.** [`DEMO.md`](../DEMO.md) refers to an "Upload borrower
    evidence" panel and [`ui/README.md`](../ui/README.md) to a `.env.local.example`; neither
    exists. [`README.md`](../README.md)'s HTTP table lists six routes where the service
    serves about twenty-four — [`SPEC.md`](../SPEC.md) §6.1 is the current list.

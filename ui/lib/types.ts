@@ -538,6 +538,70 @@ export interface ScenarioResult {
 }
 
 // --------------------------------------------------------------------------- //
+// Revisions and comments: which version a committee read, and who objected
+// --------------------------------------------------------------------------- //
+export interface SectionEdit {
+  section: string;
+  before: string;
+  after: string;
+  actor: string;
+  at: string;
+  reason: string;
+}
+
+/**
+ * One saved version, chained to the one before it.
+ *
+ * `memo_json` is the whole memo as it stood, not a patch: a committee that approved revision 3
+ * approved a document, and rebuilding it from deltas is a chance to rebuild it wrongly.
+ */
+export interface MemoRevision {
+  revision: number;
+  memo_json: CreditMemo;
+  actor: string;
+  digest: string;
+  parent_digest: string;
+  edits: SectionEdit[];
+  authorship: Record<string, string>;
+  at: string;
+  note: string;
+}
+
+export interface RevisionList {
+  revisions: MemoRevision[];
+  /** Recomputed on read: a stored flag says what was true when it was written. */
+  chain_intact: boolean;
+  chain_detail: string;
+  /** The sections the SERVICE accepts an edit to. The console offers exactly these. */
+  editable_sections: string[];
+}
+
+export interface MemoComment {
+  id: string;
+  section: string;
+  body: string;
+  author: string;
+  /** The revision whose text its author actually read. */
+  revision: number;
+  at: string;
+  anchor_digest: string;
+  resolved_by: string;
+  resolved_at: string | null;
+  resolution: string;
+  open: boolean;
+  /** The section changed after this was written: still open, and to be re-read. */
+  stale: boolean;
+}
+
+export interface CommentList {
+  comments: MemoComment[];
+  open_count: number;
+  stale_count: number;
+  /** Which sections a comment may name, which is the service's rule and not the console's. */
+  sections: string[];
+}
+
+// --------------------------------------------------------------------------- //
 // Governance / health
 // --------------------------------------------------------------------------- //
 export interface HealthStatus {
