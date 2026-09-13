@@ -45,11 +45,36 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# A digest pin freezes the base image, which means it also freezes its unpatched packages.
+# Reproducible and vulnerable are not opposites, and the pin quietly guarantees the second while
+# being cited as evidence of the first. Without this line the promotion scan reports 30 fixable
+# HIGH from the Debian base alone, most of them the util-linux family plus openssl. This image was
+# pushed on 2026-09-05 outside the promotion path and was never scanned, and this is why a rebuild
+# is owed rather than optional. Its sibling `compliance-advisory` adopted the same two blocks on
+# 2026-09-12 and went from thirty-two findings to zero; `cdd-sow-research` has upgraded in its
+# runtime stage all along, which is why its images pass the same blocking scan.
+RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
+ && rm -rf /var/lib/apt/lists/*
+
 RUN useradd --create-home --uid 10001 appuser
 
 COPY --from=builder /opt/venv /opt/venv
 COPY src ./src
 COPY config ./config
+
+# Remove pip from the RUNTIME image, in both the system prefix and the venv.
+#
+# A serving container installs nothing, so shipping a package manager in it adds an install
+# capability an attacker can use and the application never can. pip also VENDORS its dependencies,
+# so a scanner reports pip's bundled copies as installed packages: that is where the last two
+# findings came from in the sibling, and neither was a dependency of the application nor reachable
+# by any lock move, because they were never resolved. They arrived inside pip itself.
+RUN rm -rf /usr/local/lib/python3.14/site-packages/pip \
+           /usr/local/lib/python3.14/site-packages/pip-*.dist-info \
+           /opt/venv/lib/python3.14/site-packages/pip \
+           /opt/venv/lib/python3.14/site-packages/pip-*.dist-info \
+           /usr/local/bin/pip /usr/local/bin/pip3 /opt/venv/bin/pip /opt/venv/bin/pip3
 
 USER appuser
 EXPOSE 8093
