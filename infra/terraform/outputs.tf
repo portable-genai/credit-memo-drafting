@@ -16,7 +16,7 @@ output "region" {
 # --------------------------------- KMS -------------------------------------- #
 output "kms_key" {
   description = "Regional CMEK crypto key id (settings.yaml kms_key / CREDIT_MEMO_KMS_KEY)."
-  value       = google_kms_crypto_key.credit_memo.id
+  value       = one(google_kms_crypto_key.credit_memo[*].id)
 }
 
 # ------------------------------- WORM logging ------------------------------- #
