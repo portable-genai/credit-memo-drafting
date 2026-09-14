@@ -90,7 +90,11 @@ def test_the_bucket_is_regional_and_encrypted_with_the_regional_key() -> None:
     assert "location = var.region" in body, (
         "borrower evidence must sit in the deploy region, not a multi-region"
     )
-    assert "google_kms_crypto_key.credit_memo.id" in body, "CMEK is not applied to the bucket"
+    # Bound only when cmek_enabled is true: one() reads as null when the key does not exist,
+    # so the attribute is omitted rather than pointed at nothing.
+    assert "one(google_kms_crypto_key.credit_memo[*].id)" in body, (
+        "CMEK is not applied to the bucket"
+    )
     assert 'public_access_prevention    = "enforced"' in body.replace("  ", "  ")
 
 
