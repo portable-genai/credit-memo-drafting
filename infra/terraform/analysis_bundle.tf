@@ -61,8 +61,11 @@ resource "google_storage_bucket" "analysis_bundles" {
     enabled = false
   }
 
-  encryption {
-    default_kms_key_name = google_kms_crypto_key.credit_memo.id
+  dynamic "encryption" {
+    for_each = var.cmek_enabled ? [1] : []
+    content {
+      default_kms_key_name = one(google_kms_crypto_key.credit_memo[*].id)
+    }
   }
 
   labels = {
@@ -98,7 +101,8 @@ resource "google_storage_bucket_iam_member" "analysis_bundles_rw_additional" {
 # agent needs the key. Without this the bucket create fails with a permission error that
 # names KMS rather than the bucket, which is a confusing way to learn about CMEK.
 resource "google_kms_crypto_key_iam_member" "storage" {
-  crypto_key_id = google_kms_crypto_key.credit_memo.id
+  count         = var.cmek_enabled ? 1 : 0
+  crypto_key_id = one(google_kms_crypto_key.credit_memo[*].id)
   role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
   member        = "serviceAccount:service-${data.google_project.this.number}@gs-project-accounts.iam.gserviceaccount.com"
 }

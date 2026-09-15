@@ -9,6 +9,7 @@
 #         key ring + crypto key here and wire it in per-resource.
 
 resource "google_kms_key_ring" "credit_memo" {
+  count    = var.cmek_enabled ? 1 : 0
   name     = "credit-memo-ring"
   location = var.region # asia-southeast1 — regional, in-country key material (P-05)
 
@@ -16,8 +17,9 @@ resource "google_kms_key_ring" "credit_memo" {
 }
 
 resource "google_kms_crypto_key" "credit_memo" {
+  count    = var.cmek_enabled ? 1 : 0
   name     = "credit-memo-cmek"
-  key_ring = google_kms_key_ring.credit_memo.id
+  key_ring = one(google_kms_key_ring.credit_memo[*].id)
 
   purpose         = "ENCRYPT_DECRYPT"
   rotation_period = "7776000s" # 90 days — periodic rotation for key hygiene
@@ -43,14 +45,16 @@ data "google_project" "this" {
 
 # Vertex AI / Agent Runtime service agent.
 resource "google_kms_crypto_key_iam_member" "aiplatform" {
-  crypto_key_id = google_kms_crypto_key.credit_memo.id
+  count         = var.cmek_enabled ? 1 : 0
+  crypto_key_id = one(google_kms_crypto_key.credit_memo[*].id)
   role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
   member        = "serviceAccount:service-${data.google_project.this.number}@gcp-sa-aiplatform.iam.gserviceaccount.com"
 }
 
 # Cloud Logging service agent (CMEK on the WORM bucket).
 resource "google_kms_crypto_key_iam_member" "logging" {
-  crypto_key_id = google_kms_crypto_key.credit_memo.id
+  count         = var.cmek_enabled ? 1 : 0
+  crypto_key_id = one(google_kms_crypto_key.credit_memo[*].id)
   role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
   member        = "serviceAccount:service-${data.google_project.this.number}@gcp-sa-logging.iam.gserviceaccount.com"
 }
