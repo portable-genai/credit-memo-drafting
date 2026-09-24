@@ -74,16 +74,15 @@ def build_credit_memo(
       actor: Authenticated identity the request is made for.
 
     Returns:
-      A JSON-safe ``CreditMemo`` dict.
+      A JSON-safe ``CreditMemo`` dict, plus ``review_routing``: what happened to the
+      human-review hand-off (``routed``, ``failed``, ``off`` or ``not_required``).
     """
-    from ..api.deps import build_credit_memo_service
-    from ..domain.models import MemoInput
     from ..domain.serialization import to_jsonable
 
-    c = _container(settings)
-    service = build_credit_memo_service(c)
-    borrower = _borrower(borrower_name, sector, jurisdiction)
-    return to_jsonable(service.build(MemoInput(borrower=borrower), actor))
+    memo, routing = _memo(borrower_name, sector, jurisdiction, actor, settings)
+    payload: dict[str, Any] = to_jsonable(memo)
+    payload["review_routing"] = routing
+    return payload
 
 
 def _memo(
@@ -92,8 +91,8 @@ def _memo(
     jurisdiction: str,
     actor: str,
     settings: Settings | None,
-) -> Any:
-    """One memo, from which the section tools return their section.
+) -> tuple[Any, str]:
+    """One memo and its review hand-off, from which the section tools return their section.
 
     The three section tools are not cheaper paths than ``build_credit_memo``: the service
     produces covenants, risk flags and peer comparisons while building a memo, and each
@@ -102,13 +101,18 @@ def _memo(
     comparison it ended with a borrower percentile measured against an assumed value of
     zero, which reads exactly like a real position.
     """
+    from ..adapters.controls import RecordingReviewRouter
     from ..api.deps import build_credit_memo_service
     from ..domain.models import MemoInput
 
     c = _container(settings)
-    service = build_credit_memo_service(c)
+    # Every tool builds a memo, and every memo is handed to the review router, so every tool
+    # says what happened to that hand-off.
+    routing = RecordingReviewRouter(c.review_router)
+    service = build_credit_memo_service(c, review_router=routing)
     borrower = _borrower(borrower_name, sector, jurisdiction)
-    return service.build(MemoInput(borrower=borrower), actor)
+    memo = service.build(MemoInput(borrower=borrower), actor)
+    return memo, routing.outcome.value
 
 
 def extract_covenants(
@@ -117,7 +121,7 @@ def extract_covenants(
     jurisdiction: str = "",
     actor: str = _DEFAULT_ACTOR,
     settings: Settings | None = None,
-) -> list[dict[str, Any]]:
+) -> dict[str, Any]:
     """Extract a borrower's financial covenants with a deterministic compliance status.
 
     Returns the ``Covenant`` objects from the borrower's memo, each carrying its threshold,
@@ -131,11 +135,13 @@ def extract_covenants(
       actor: Authenticated identity the request is made for.
 
     Returns:
-      A JSON-safe list of ``Covenant`` dicts.
+      A JSON-safe dict: ``covenants``, the list of ``Covenant`` dicts, and ``review_routing``,
+      what happened to the human-review hand-off of the memo they were taken from.
     """
     from ..domain.serialization import to_jsonable
 
-    return to_jsonable(_memo(borrower_name, sector, jurisdiction, actor, settings).covenants)
+    memo, routing = _memo(borrower_name, sector, jurisdiction, actor, settings)
+    return {"covenants": to_jsonable(memo.covenants), "review_routing": routing}
 
 
 def flag_risks(
@@ -144,7 +150,7 @@ def flag_risks(
     jurisdiction: str = "",
     actor: str = _DEFAULT_ACTOR,
     settings: Settings | None = None,
-) -> list[dict[str, Any]]:
+) -> dict[str, Any]:
     """Identify credit risk flags for a borrower.
 
     Returns a list of categorised, severity-ranked ``RiskFlag`` objects with citations,
@@ -157,11 +163,13 @@ def flag_risks(
       actor: Authenticated identity the request is made for.
 
     Returns:
-      A JSON-safe list of ``RiskFlag`` dicts.
+      A JSON-safe dict: ``risk_flags``, the list of ``RiskFlag`` dicts, and ``review_routing``,
+      what happened to the human-review hand-off of the memo they were taken from.
     """
     from ..domain.serialization import to_jsonable
 
-    return to_jsonable(_memo(borrower_name, sector, jurisdiction, actor, settings).risk_flags)
+    memo, routing = _memo(borrower_name, sector, jurisdiction, actor, settings)
+    return {"risk_flags": to_jsonable(memo.risk_flags), "review_routing": routing}
 
 
 def peer_compare(
@@ -170,7 +178,7 @@ def peer_compare(
     jurisdiction: str = "",
     actor: str = _DEFAULT_ACTOR,
     settings: Settings | None = None,
-) -> list[dict[str, Any]]:
+) -> dict[str, Any]:
     """Compare a borrower's financial metrics against a peer set.
 
     Returns ``PeerComparison`` objects (peer median, the borrower's percentile, deltas)
@@ -184,11 +192,14 @@ def peer_compare(
       actor: Authenticated identity the request is made for.
 
     Returns:
-      A JSON-safe list of ``PeerComparison`` dicts.
+      A JSON-safe dict: ``peer_comparison``, the list of ``PeerComparison`` dicts, and
+      ``review_routing``, what happened to the human-review hand-off of the memo they were
+      taken from.
     """
     from ..domain.serialization import to_jsonable
 
-    return to_jsonable(_memo(borrower_name, sector, jurisdiction, actor, settings).peer_comparison)
+    memo, routing = _memo(borrower_name, sector, jurisdiction, actor, settings)
+    return {"peer_comparison": to_jsonable(memo.peer_comparison), "review_routing": routing}
 
 
 #: The ADK surface, which is the governed tool catalog and nothing else. Held to the

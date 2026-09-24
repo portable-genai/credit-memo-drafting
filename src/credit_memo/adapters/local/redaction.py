@@ -32,6 +32,21 @@ from pii_kit.patterns import Pattern
 from ...config import Settings
 from ...domain.models import RedactionFinding, RedactionResult
 
+# An eight-digit run that is an amount is not a phone number, and a credit case is full of
+# them: "a facility of SGD 85000000" used to reach the model as "SGD [SG_PHONE]", and a
+# balance of "98765432.10" as "[SG_PHONE].10". A phone match directly after a currency marker,
+# or directly before a decimal fraction, is left alone. The shared phone rows cannot see
+# either, so this redactor looks around the match before masking it.
+_AMOUNT_PREFIX = re.compile(r"(?:[$€£¥]|\b(?:SGD|USD|HKD|AUD|JPY|EUR|GBP|CNY|RMB))\s?$")
+_AMOUNT_FRACTION = re.compile(r"\.\d")
+
+
+def _is_an_amount(match: re.Match[str]) -> bool:
+    text = match.string
+    return bool(
+        _AMOUNT_PREFIX.search(text, 0, match.start()) or _AMOUNT_FRACTION.match(text, match.end())
+    )
+
 
 class LocalRegexRedactionAdapter:
     """Mask the configured jurisdictions' national ids + email/phone, like DLP de-identify."""
@@ -57,6 +72,8 @@ class LocalRegexRedactionAdapter:
             ) -> str:
                 if _val is not None and not _val(m.group(0)):
                     return m.group(0)  # checksum fail: not a real identifier, leave it intact
+                if "PHONE" in _it and _is_an_amount(m):
+                    return m.group(0)  # an amount, not a phone number
                 counts[_it] = counts.get(_it, 0) + 1
                 return f"[{_it}]"
 
