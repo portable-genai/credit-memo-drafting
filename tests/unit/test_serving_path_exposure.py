@@ -45,6 +45,12 @@ _ENV = (
 )
 
 
+@pytest.fixture(autouse=True)
+def _name_a_review_console(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A managed process with review routing on names its console, or it refuses to boot."""
+    monkeypatch.setenv("HUMAN_REVIEW_URL", "https://review.example.test")
+
+
 def _app_under(monkeypatch: pytest.MonkeyPatch, **env: str | None) -> Any:
     """Re-import the API module under a scrubbed environment and return its app object.
 

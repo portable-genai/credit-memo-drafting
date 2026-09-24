@@ -163,6 +163,22 @@ def _print_risk_flags(flags: tuple[RiskFlag, ...], indent: str = "  ") -> None:
         typer.echo(f"{indent}  - ({f.category.value}/{f.severity.value}) {f.detail}")
 
 
+#: The human-review hand-off outcome in plain words, as the console states it.
+_REVIEW_ROUTING_TEXT = {
+    "routed": "Sent to the review console.",
+    "failed": "Could not reach the review console; this memo is not queued for review.",
+    "off": "Review routing is off in this deployment; this memo is not queued for review.",
+    "not_required": "Human review was not required, so nothing was routed.",
+}
+
+
+def _echo_review_routing(outcome: str) -> None:
+    typer.secho(
+        f"  Review routing: {outcome} ({_REVIEW_ROUTING_TEXT[outcome]})",
+        fg=typer.colors.GREEN if outcome == "routed" else typer.colors.YELLOW,
+    )
+
+
 def _print_memo(memo: CreditMemo) -> None:
     typer.secho(f"Credit memo — {memo.borrower.name}", bold=True, fg=typer.colors.GREEN)
     _echo_review_banner(memo.requires_human_review)
@@ -198,10 +214,17 @@ def build(
 ) -> None:
     """Build a full cited credit memo for a borrower."""
 
+    from ..adapters.controls import RecordingReviewRouter
+
+    routing: RecordingReviewRouter | None = None
+
     def _do() -> CreditMemo:
         from ..domain.models import Borrower, MemoInput
 
-        svc = _deps().build_credit_memo_service(_container())
+        nonlocal routing
+        container = _container()
+        routing = RecordingReviewRouter(container.review_router)
+        svc = _deps().build_credit_memo_service(container, review_router=routing)
         b = Borrower(
             id=borrower.lower().replace(" ", "-"),
             name=borrower,
@@ -212,6 +235,8 @@ def build(
 
     memo = _run("build", _do)
     _print_memo(memo)
+    if routing is not None:
+        _echo_review_routing(routing.outcome.value)
 
 
 @app.command()

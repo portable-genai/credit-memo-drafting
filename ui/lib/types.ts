@@ -392,7 +392,14 @@ export interface CreditMemo {
    * is a question about a facility that did not exist last cycle.
    */
   renewal_delta: RenewalDelta | null;
+  /** Redaction changed the case the analyst gave before the model saw it. */
+  input_redacted?: boolean;
+  /** What happened to the hand-off to the review console. */
+  review_routing?: ReviewRouting;
 }
+
+/** What happened to the human-review hand-off for one memo. */
+export type ReviewRouting = "routed" | "failed" | "off" | "not_required";
 
 /** How one line moved between the prior memo and this one. */
 export interface SectionDelta {

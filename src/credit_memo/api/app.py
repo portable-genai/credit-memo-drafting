@@ -50,6 +50,7 @@ from ..domain.spread_service import SpreadService
 from ..envread import boolean_setting, read_env_setting, setting_or_default
 from ..ports.identity import VERIFIED
 from . import deps
+from .disclosure import disclose
 from .schemas import (
     AgentCardModel,
     AnalysisBuildRequest,
@@ -671,6 +672,8 @@ def build_analysis_memo(
     body: AnalysisBuildRequest,
     principal: CurrentPrincipal,
     service: Annotated[CreditMemoService, Depends(deps.get_credit_memo_service)],
+    redaction: deps.RequestRedaction,
+    routing: deps.RequestReviewRouter,
 ) -> JSONResponse | CreditMemoResponse:
     """Build the memo from the evidence already in this analysis.
 
@@ -741,7 +744,9 @@ def build_analysis_memo(
     except SpreadNotConfirmedError as exc:
         return _ungrounded_response(str(exc))
 
-    response = CreditMemoResponse.from_domain(memo)
+    # What the controls did travels with the memo, into the bundle too: a memo read back later
+    # still says whether it was sent to the review console.
+    response = disclose(CreditMemoResponse.from_domain(memo), redaction=redaction, routing=routing)
     memo_json = response.model_dump(mode="json")
     # The memo lives in the bundle with the evidence it was built from, and dies with it.
     # Revision 1 is opened here rather than on the first edit, so the chain starts at the
@@ -1514,6 +1519,8 @@ def build_credit_memo(
     request: CreditMemoRequest,
     principal: CurrentPrincipal,
     service: Annotated[CreditMemoService, Depends(deps.get_credit_memo_service)],
+    redaction: deps.RequestRedaction,
+    routing: deps.RequestReviewRouter,
 ) -> JSONResponse | CreditMemoResponse:
     """Build a full cited credit memo for a borrower and its filings."""
     # The domain refuses a spread holding a figure no engine may read (an unconfirmed
@@ -1543,7 +1550,7 @@ def build_credit_memo(
         )
     except RetrievalEmptyError as exc:
         return _ungrounded_response(f"No borrower evidence available to ground the memo: {exc}")
-    return CreditMemoResponse.from_domain(memo)
+    return disclose(CreditMemoResponse.from_domain(memo), redaction=redaction, routing=routing)
 
 
 @app.post("/v1/covenants", response_model=CovenantListResponse, tags=["artifacts"])

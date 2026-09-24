@@ -1,4 +1,4 @@
-import type { CreditMemo } from "@/lib/types";
+import type { CreditMemo, ReviewRouting } from "@/lib/types";
 import { CitationList } from "./CitationCard";
 import { CovenantTable } from "./CovenantTable";
 import { PeerComparisonView } from "./PeerComparisonView";
@@ -8,6 +8,13 @@ import { RatioTable } from "./RatioTable";
 import { RenewalDeltaView } from "./RenewalDeltaView";
 import { RiskFlagList } from "./RiskFlagList";
 import { GlobalCashFlowView, GroupRoster, ScenarioView } from "./GroupAndStress";
+
+/** What happened to the hand-off to the review console, in plain words. */
+const REVIEW_ROUTING_TEXT: Record<Exclude<ReviewRouting, "not_required">, string> = {
+  routed: "Sent to the review console.",
+  failed: "Could not reach the review console; this memo is not queued for review.",
+  off: "Review routing is off in this deployment; this memo is not queued for review.",
+};
 
 const KIND_LABEL: Record<string, string> = {
   new_facility: "New facility",
@@ -73,6 +80,25 @@ export function MemoView({ memo }: { memo: CreditMemo }) {
           >
             HUMAN REVIEW REQUIRED · maker-checker gate (P-06). Decision support,
             not a credit decision.
+            {memo.review_routing && memo.review_routing !== "not_required" ? (
+              <span
+                data-review-routing={memo.review_routing}
+                className={`block font-medium ${
+                  memo.review_routing === "routed" ? "text-emerald-800" : "text-rose-800"
+                }`}
+              >
+                {REVIEW_ROUTING_TEXT[memo.review_routing]}
+              </span>
+            ) : null}
+          </p>
+        ) : null}
+        {memo.input_redacted ? (
+          <p
+            role="note"
+            data-input-redacted="true"
+            className="mt-2 rounded border border-sky-200 bg-sky-50 px-2 py-1 text-xs text-sky-900"
+          >
+            Personal data in your input was masked before the model saw it.
           </p>
         ) : null}
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">

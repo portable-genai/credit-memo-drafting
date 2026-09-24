@@ -50,7 +50,25 @@ resource "google_data_loss_prevention_inspect_template" "credit_memo" {
       }
     }
 
-    min_likelihood = "POSSIBLE"
+    # Tuned against false positives (runtime-control contract, 2026-09-24), the same as the
+    # adapter's inline config: only LIKELY findings, and a PERSON_NAME finding containing
+    # credit vocabulary (legal-entity suffixes, regulators, ratios, rating agencies) is
+    # excluded, so a borrower's legal name is not masked as a person.
+    rule_set {
+      info_types {
+        name = "PERSON_NAME"
+      }
+      rules {
+        exclusion_rule {
+          matching_type = "MATCHING_TYPE_PARTIAL_MATCH"
+          regex {
+            pattern = "(?i)\\b(Pte|Pty|Ltd|Limited|Bhd|Berhad|Inc|Corp|Corporation|Holdings?|Group|Bank|Capital|Partners|Fund|Trust|LLC|LLP|PLC|GmbH|KK|MAS|APRA|HKMA|Basel|IFRS|SFRS|Notice|DSCR|LTV|ICR|EBITDA|Covenant|Facility|Revolver|RCF|Term Loan|Guarantor|Sponsor|Moody's|Fitch|S&P)\\b"
+          }
+        }
+      }
+    }
+
+    min_likelihood = "LIKELY"
     include_quote  = false # never echo the matched PII back out (P-04)
   }
 }

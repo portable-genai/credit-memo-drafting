@@ -38,6 +38,8 @@ for a live build.
    the analysis-bundle bucket (regional, CMEK, 15-day lifecycle), DLP, Model Armor, KMS,
    IAM and VPC-SC, all in `asia-southeast1`).
 3. Build and push the image (`Dockerfile`), deploy to Agent Runtime / Cloud Run.
+   Name the review console (`HUMAN_REVIEW_URL`) or state `CREDIT_MEMO_REVIEW_ROUTING=off`:
+   under `gcp` or `platform` with routing on, the service refuses to boot without one.
 4. Register the agent card with `agent-registry` and confirm `model-quality-gate` eval gate is green before promotion.
 
 ## Health and observability
@@ -56,7 +58,28 @@ for a live build.
 | `RetrievalEmptyError` | No evidence in `enterprise-knowledge-base` for the borrower | Ingest the borrower's filings; check ACL tags. |
 | Memo returns a blocked envelope | Guardrail blocked input/output | Inspect the `agent-guardrail-gateway` finding; the request is audited as BLOCKED. |
 | Covenant status looks wrong | Bad extracted threshold/operator/value | Status is deterministic; check the extracted terms and their citations. |
+| Boot refuses: `Review routing is on ... HUMAN_REVIEW_URL is not set` | Managed profile, routing on, no console named | Set `HUMAN_REVIEW_URL`, or set `CREDIT_MEMO_REVIEW_ROUTING=off` to run without routing. |
+| Memo says "Could not reach the review console" | The hand-off failed (`review_routing: "failed"`) | The memo and its audit record stand; check the console's reachability and the S2S credentials. The service logs the exception type. |
 | Eval gate fails | A metric below threshold | Inspect `python eval/run_eval.py` output; fix groundedness/citation discipline. |
+
+## Runtime controls
+
+`CREDIT_MEMO_GUARDRAIL`, `CREDIT_MEMO_PII_REDACTION` and `CREDIT_MEMO_REVIEW_ROUTING` each
+switch one cheap control. Each is read in three states: unset is on, `true`/`false` (or
+`on`/`off`) wins, and an emptied or unrecognised value refuses at boot. A process with any of
+them off logs one warning at startup naming each.
+
+- **Review routing** is on by default, like the other two. Off binds a router that
+  submits nothing; the ESCALATED audit record is still written and every memo says it is not
+  queued for review. Every caller reports it: the two build routes, the agent and MCP tools,
+  and the CLI.
+- **Redaction disclosure:** a memo built from a case that redaction changed carries
+  `input_redacted: true`, and the console says so.
+- **Redaction tuning:** DLP masks only `LIKELY` findings, replaces each with its info-type name
+  (`[PERSON_NAME]`) rather than `#` characters, and excludes credit vocabulary (legal-entity
+  suffixes, regulators, ratios, rating agencies) from `PERSON_NAME`, both inline and in the
+  `infra/terraform/dlp.tf` template. The local redactor leaves an amount after a currency
+  marker (`SGD 85000000`) or before a decimal fraction (`98765432.10`) alone.
 
 ## Data handling
 

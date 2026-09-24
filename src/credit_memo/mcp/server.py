@@ -22,8 +22,10 @@ from typing import Any
 
 from hex_service_kit import mcpserve
 
+from ..adapters.controls import RecordingReviewRouter
 from ..api import deps
 from ..domain.models import Borrower, MemoInput
+from ..domain.serialization import to_jsonable
 
 #: The tools this module answers, as data, so a test can hold it against the catalog.
 HANDLER_NAMES: tuple[str, ...] = (
@@ -34,30 +36,44 @@ HANDLER_NAMES: tuple[str, ...] = (
 )
 
 
-def _memo(arguments: dict[str, Any], actor: str) -> Any:
+def _memo(arguments: dict[str, Any], actor: str) -> tuple[Any, str]:
+    """One memo, built through a recording router: the memo and its review hand-off."""
     borrower = Borrower(
         id=f"mcp:{arguments.get('borrower_name', '')}",
         name=str(arguments.get("borrower_name", "") or ""),
         sector=str(arguments.get("sector", "") or ""),
         jurisdiction=str(arguments.get("jurisdiction", "") or ""),
     )
-    return deps.get_credit_memo_service().build(MemoInput(borrower=borrower), actor=actor)
+    routing = RecordingReviewRouter(deps.get_container().review_router)
+    memo = deps.get_credit_memo_service(review_router=routing).build(
+        MemoInput(borrower=borrower), actor=actor
+    )
+    return memo, routing.outcome.value
 
 
 def build_handlers(actor: str) -> dict[str, mcpserve.Handler]:
     """Bind each declared tool to the memo service that already performs it."""
 
+    # Every tool builds a memo and hands it to the review router, so every tool says what
+    # happened to that hand-off: routed, failed, off or not_required.
     def build_credit_memo(**arguments: Any) -> Any:
-        return _memo(arguments, actor)
+        memo, routing = _memo(arguments, actor)
+        payload: dict[str, Any] = to_jsonable(memo)
+        payload["review_routing"] = routing
+        return payload
+
+    def _section(arguments: dict[str, Any], attr: str) -> dict[str, Any]:
+        memo, routing = _memo(arguments, actor)
+        return {attr: to_jsonable(getattr(memo, attr)), "review_routing": routing}
 
     def extract_covenants(**arguments: Any) -> Any:
-        return _memo(arguments, actor).covenants
+        return _section(arguments, "covenants")
 
     def flag_risks(**arguments: Any) -> Any:
-        return _memo(arguments, actor).risk_flags
+        return _section(arguments, "risk_flags")
 
     def peer_compare(**arguments: Any) -> Any:
-        return _memo(arguments, actor).peer_comparison
+        return _section(arguments, "peer_comparison")
 
     return {
         "build_credit_memo": build_credit_memo,

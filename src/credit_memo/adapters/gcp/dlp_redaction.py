@@ -7,7 +7,7 @@ first, so PII is minimised to the model (P-04). The call is regional
 (``projects/{project}/locations/{region}``) to keep inspection inside Singapore.
 
 If inspect/de-identify templates are configured, they are used as-is. Otherwise the adapter
-builds an inline configuration that masks the info types most relevant to APAC banking
+builds an inline configuration that replaces the info types most relevant to APAC banking
 (names, emails, phone numbers, card numbers, bank/IBAN codes) plus the national identifiers
 for the jurisdictions configured in ``settings.pii.jurisdictions``, sourced from
 ``domain/pii_patterns.py``. That shared source is the point: the managed and local redactors
@@ -50,7 +50,21 @@ _DEFAULT_INFO_TYPES: tuple[str, ...] = (
     "SWIFT_CODE",
 )
 
-_MASKING_CHAR = "#"
+# Tuned against false positives (runtime-control contract, 2026-09-24). A credit case names
+# companies, sponsors, regulators and ratios, and at POSSIBLE likelihood DLP could take a
+# borrower's legal name ("Tan Holdings Pte Ltd") or a rating agency for a person and mask it,
+# so the model drafted a memo about a borrower the analyst did not name. Three changes: only
+# LIKELY findings are masked; a match is REPLACED with its info-type name rather than a run of
+# mask characters, so the model still reads the shape of the case; and a PERSON_NAME finding
+# containing this domain's vocabulary (legal-entity suffixes, regulators, credit terms, rating
+# agencies) is excluded. infra/terraform/dlp.tf carries the same tuning for its templates.
+_MIN_LIKELIHOOD = "LIKELY"
+_DOMAIN_VOCABULARY_REGEX = (
+    r"(?i)\b(Pte|Pty|Ltd|Limited|Bhd|Berhad|Inc|Corp|Corporation|Holdings?|Group|Bank|"
+    r"Capital|Partners|Fund|Trust|LLC|LLP|PLC|GmbH|KK|MAS|APRA|HKMA|Basel|IFRS|SFRS|"
+    r"Notice|DSCR|LTV|ICR|EBITDA|Covenant|Facility|Revolver|RCF|Term Loan|Guarantor|"
+    r"Sponsor|Moody's|Fitch|S&P)\b"
+)
 
 
 class DlpRedactionAdapter:
@@ -117,7 +131,9 @@ class DlpRedactionAdapter:
             {
                 "info_type": {"name": name},
                 "regex": {"pattern": "|".join(f"(?:{p})" for p in patterns)},
-                "likelihood": "POSSIBLE",
+                # The pattern is specific enough to be a finding in its own right; it must
+                # clear the LIKELY floor below or no national identifier would be masked.
+                "likelihood": "VERY_LIKELY",
             }
             for name, patterns in by_name.items()
         ]
@@ -127,7 +143,20 @@ class DlpRedactionAdapter:
         return {
             "info_types": [{"name": name} for name in _DEFAULT_INFO_TYPES],
             "custom_info_types": self._custom_info_types(),
-            "min_likelihood": "POSSIBLE",
+            "rule_set": [
+                {
+                    "info_types": [{"name": "PERSON_NAME"}],
+                    "rules": [
+                        {
+                            "exclusion_rule": {
+                                "regex": {"pattern": _DOMAIN_VOCABULARY_REGEX},
+                                "matching_type": "MATCHING_TYPE_PARTIAL_MATCH",
+                            }
+                        }
+                    ],
+                }
+            ],
+            "min_likelihood": _MIN_LIKELIHOOD,
             "include_quote": False,
         }
 
@@ -141,9 +170,9 @@ class DlpRedactionAdapter:
                 "transformations": [
                     {
                         "info_types": all_info_types,
-                        "primitive_transformation": {
-                            "character_mask_config": {"masking_character": _MASKING_CHAR}
-                        },
+                        # Replace with the info-type name, e.g. "[PERSON_NAME]": irreversible,
+                        # and the model still reads the case as a sentence.
+                        "primitive_transformation": {"replace_with_info_type_config": {}},
                     }
                 ]
             }

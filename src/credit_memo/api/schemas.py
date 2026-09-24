@@ -13,6 +13,7 @@ domain models, the ports, and the orchestration services, never on a concrete ad
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -1401,6 +1402,10 @@ class RecommendationModel(BaseModel):
         )
 
 
+#: The four outcomes of a human-review hand-off, as the API reports them.
+ReviewRoutingValue = Literal["routed", "failed", "off", "not_required"]
+
+
 class CreditMemoResponse(BaseModel):
     """The full credit memo (mirror of CreditMemo)."""
 
@@ -1441,6 +1446,10 @@ class CreditMemoResponse(BaseModel):
     caveats: list[str] = Field(default_factory=list)
     questions_for_client: list[str] = Field(default_factory=list)
     manifest: AnalysisManifestModel | None = None
+    #: Redaction changed the case the analyst gave before the model saw it.
+    input_redacted: bool = False
+    #: What happened to the human-review hand-off: routed, failed, off or not_required.
+    review_routing: ReviewRoutingValue = "not_required"
 
     @classmethod
     def from_domain(cls, memo: m.CreditMemo) -> CreditMemoResponse:

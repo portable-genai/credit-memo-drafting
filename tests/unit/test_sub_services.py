@@ -192,7 +192,7 @@ def test_agent_memo_service_uses_configured_covenant_policy(monkeypatch):
             captured["band"] = self.band
             return {"actor": actor, "borrower": memo_input.borrower.id}
 
-    def fake_build(container):  # type: ignore[no-untyped-def]
+    def fake_build(container, **_wrappers):  # type: ignore[no-untyped-def]
         service = StubService()
         service.band = container.settings.policy.covenant_at_risk_band
         return service

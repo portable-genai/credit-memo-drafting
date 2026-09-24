@@ -14,7 +14,11 @@ knows which ports each service needs.
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Annotated, Any
 
+from fastapi import Depends
+
+from ..adapters.controls import DisclosingRedaction, RecordingReviewRouter
 from ..config import Container, Settings, build_container
 from ..domain.services import (
     CovenantService,
@@ -40,13 +44,39 @@ def get_settings() -> Settings:
 # --------------------------------------------------------------------------- #
 
 
-def get_credit_memo_service() -> CreditMemoService:
+def get_request_redaction() -> DisclosingRedaction:
+    """The redaction adapter for ONE request, wrapped so the response can disclose a change.
+
+    FastAPI resolves a dependency once per request, so the route and the service it builds
+    receive the same wrapper and the route reads what the service's redaction did.
+    """
+    return DisclosingRedaction(get_container().redaction)
+
+
+def get_request_review_router() -> RecordingReviewRouter:
+    """The review router for ONE request, wrapped so the response reports the hand-off."""
+    return RecordingReviewRouter(get_container().review_router)
+
+
+#: Injected by FastAPI; ``None`` when a getter is called directly (the MCP server does), which
+#: binds the container's adapters unwrapped.
+RequestRedaction = Annotated[DisclosingRedaction | None, Depends(get_request_redaction)]
+RequestReviewRouter = Annotated[RecordingReviewRouter | None, Depends(get_request_review_router)]
+
+
+def get_credit_memo_service(
+    redaction: RequestRedaction = None, review_router: RequestReviewRouter = None
+) -> CreditMemoService:
     """CreditMemoService(extraction, knowledge_base, peer_data, llm, guardrail,
     redaction, tracer, audit)."""
-    return build_credit_memo_service(get_container())
+    return build_credit_memo_service(
+        get_container(), redaction=redaction, review_router=review_router
+    )
 
 
-def build_credit_memo_service(container: Container) -> CreditMemoService:
+def build_credit_memo_service(
+    container: Container, *, redaction: Any = None, review_router: Any = None
+) -> CreditMemoService:
     """Assemble a :class:`CreditMemoService` from an explicit Container."""
     return CreditMemoService(
         extraction=container.extraction,
@@ -54,10 +84,10 @@ def build_credit_memo_service(container: Container) -> CreditMemoService:
         peer_data=container.peer_data,
         llm=container.llm,
         guardrail=container.guardrail,
-        redaction=container.redaction,
+        redaction=redaction or container.redaction,
         tracer=container.tracer,
         audit=container.audit,
-        review_router=container.review_router,
+        review_router=review_router or container.review_router,
         covenant_at_risk_band=container.settings.policy.covenant_at_risk_band,
         analysis_bundle=container.analysis_bundle,
         policy_pack=container.policy_pack,

@@ -94,7 +94,9 @@ what makes "the model never supplied this number" a property rather than a promi
   `RenewalDiffService`, `RevisionService`, `CommentService`.
 - `CreditReviewPolicy`: a memo always `requires_human_review=True`; any BREACH covenant or
   HIGH/CRITICAL risk flag escalates. Routing that escalation to `human-review-console` is
-  OPT-IN (`CREDIT_MEMO_REVIEW_ENABLED`); the flag and the audit record stand either way.
+  on unless a deployment switches it off (`CREDIT_MEMO_REVIEW_ROUTING=off`); the flag and
+  the audit record stand either way, and every memo reports `review_routing` (`routed`,
+  `failed`, `off`, `not_required`).
 
 The deterministic guarantee has two halves. Covenant status is computed by
 `_grounded.covenant_status(current_value, threshold, operator)`, the single auditable place
@@ -115,7 +117,7 @@ redact -> guardrail(INPUT)
 -> the bank's own policy limits and scorecard, arithmetically
 -> reconcile (quote on page, balance sheet, sources = uses, certificate, continuity)
 -> peer comps -> assemble CreditMemo (with its input manifest)
--> guardrail(OUTPUT) -> review policy -> audit -> optional escalation routing
+-> guardrail(OUTPUT) -> review policy -> audit -> escalation routing (switchable)
 ```
 
 Order is load-bearing in two places. Ratios are computed **before** drafting so the
@@ -231,7 +233,7 @@ Peer data is public filing data read over HTTPS: no platform HTTP adapter of our
 | GuardrailPort | Model Armor | heuristic injection screen | `agent-guardrail-gateway` | stub |
 | PIIRedactionPort | DLP | regex de-identify | `agent-guardrail-gateway` | stub |
 | AuditSinkPort | Cloud Logging | append-only SQLite | `agent-observability` | stub |
-| ReviewRouterPort | `human-review-console` (opt-in) | in-process recorder | `human-review-console` | stub |
+| ReviewRouterPort | `human-review-console` (on; `CREDIT_MEMO_REVIEW_ROUTING`) | in-process recorder | `human-review-console` | stub |
 | IdentityPort | IAP assertion | seeded persona | IAP assertion | stub |
 | ObservabilityTracerPort | Cloud Trace | no-op spans | same as gcp | stub |
 | EvaluationGatePort | Gen AI eval | in-repo offline gate | `model-quality-gate` | stub |
