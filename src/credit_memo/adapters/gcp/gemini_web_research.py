@@ -39,14 +39,10 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from hex_service_kit import provenance
+
 from ...config import Settings
-from ...domain.models import (
-    LlmMessage,
-    LlmRequest,
-    MarketContext,
-    ThinkingLevel,
-    WebEvidence,
-)
+from ...domain.models import MarketContext, WebEvidence
 
 RESEARCH_SYSTEM = (
     "You are helping a credit analyst gather public context on a borrower or its sector. "
@@ -121,8 +117,9 @@ class GeminiWebResearchAdapter:
 
             client = self._get_client()
             self._queries_run += 1
+            model = self.settings.models.reasoning
             response = client.models.generate_content(
-                model=self.settings.models.reasoning,
+                model=model,
                 contents=[
                     types.Content(
                         role="user",
@@ -131,7 +128,9 @@ class GeminiWebResearchAdapter:
                 ],
                 config=types.GenerateContentConfig(
                     system_instruction=RESEARCH_SYSTEM,
-                    temperature=0.0,
+                    # No temperature: this call SUMMARISES what the search returned for the
+                    # analyst to read, and nothing deterministic consumes it (WebEvidence
+                    # carries no number), so its sampling is left to the model.
                     # The search tool cannot be combined with a response schema on Vertex,
                     # which is why this adapter parses prose rather than asking for JSON,
                     # and why it is a separate agent from the memo drafter.
@@ -142,6 +141,10 @@ class GeminiWebResearchAdapter:
         except Exception:  # noqa: BLE001 - a failed search must never fail a memo
             return None
 
+        # Noted only after the call succeeded, and this is the one call here that attaches
+        # the Google Search tool, so the console's Search pill appears for exactly this.
+        provenance.note_model(model)
+        provenance.note_search()
         return MarketContext(
             query=safe,
             purpose=purpose,
@@ -225,13 +228,3 @@ def build_query(borrower_name: str, sector: str, jurisdiction: str, topic: str) 
     """
     parts = [borrower_name.strip(), sector.strip(), jurisdiction.strip(), topic.strip()]
     return " ".join(part for part in parts if part)
-
-
-def research_request(query: str) -> LlmRequest:
-    """The request shape, exposed so a test can assert on it without a client."""
-    return LlmRequest(
-        messages=(LlmMessage(role="user", content=query),),
-        system_instruction=RESEARCH_SYSTEM,
-        thinking=ThinkingLevel.LOW,
-        temperature=0.0,
-    )

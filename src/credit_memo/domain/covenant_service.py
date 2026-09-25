@@ -96,6 +96,9 @@ class CovenantService:
             user_content=user,
             model=None,  # adapter default => reasoning model gemini-3.5-flash
             response_schema=_COVENANT_SCHEMA,
+            # Pinned: covenant terms are EXTRACTED, and the thresholds read here are the
+            # operands of the deterministic compliance test.
+            temperature=0.0,
         )
         response = self._llm.generate(request)
         g.maybe_record_usage(self._tracer, response)

@@ -160,7 +160,11 @@ class LlmRequest:
     system_instruction: str | None = None
     model: str | None = None  # None => adapter default from config
     thinking: ThinkingLevel = ThinkingLevel.MEDIUM
-    temperature: float = 0.0  # omitted at a call site means this value; it must not sample
+    #: Sampling is chosen PER CALL. ``0.0`` pins it where the output is extracted, classified,
+    #: scored or fed to a deterministic check; ``None`` (the default) sends no temperature at
+    #: all, for drafting, narration and judging. Absent, never ``1.0``: some models reject the
+    #: parameter outright.
+    temperature: float | None = None
     max_output_tokens: int = 4096
     response_schema: dict | None = None  # JSON schema for structured output
     documents: tuple[LlmDocument, ...] = ()  # files sent alongside the prompt

@@ -81,6 +81,8 @@ class RiskFlagService:
             user_content=user,
             model=None,
             response_schema=_RISK_FLAG_SCHEMA,
+            # Pinned: each flag is a CLASSIFICATION (category and severity) of cited evidence.
+            temperature=0.0,
         )
         response = self._llm.generate(request)
         g.maybe_record_usage(self._tracer, response)
