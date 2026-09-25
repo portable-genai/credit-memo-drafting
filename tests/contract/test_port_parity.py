@@ -63,8 +63,9 @@ PORT_PROTOCOLS: dict[str, type] = {
 }
 
 # Profiles whose adapters must construct + satisfy the Protocols with no GCP SDK.
-# ``live`` is SDK-free too: SEC EDGAR over httpx plus a local model server, so an
-# unbound live port would silently fall back to a managed GCP adapter.
+# ``live`` is SDK-free too: SEC EDGAR over httpx plus the local model through the shared kit
+# client, and its optional web-research leg builds without the Gemini SDK (it reports itself
+# unavailable), so an unbound live port would silently fall back to a managed GCP adapter.
 SDK_FREE_PROFILES = ("onprem", "local", "live")
 
 

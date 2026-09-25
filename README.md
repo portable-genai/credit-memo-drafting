@@ -141,6 +141,18 @@ credit-memo covenants "Acme Manufacturing Pte Ltd (FICTIONAL)" --sector manufact
 credit-memo serve --port 8093
 ```
 
+### The `live` profile: real filings on the local model
+
+`CREDIT_MEMO_PROFILE=live` grounds on real SEC EDGAR records and answers with the fleet's
+local open-weight model through the shared `hex_service_kit.localmodel` client
+(`LOCAL_MODEL_URL`, default `http://127.0.0.1:8001/chat/completions`; `LOCAL_MODEL`, default
+`mlx-community/gemma-4-31b-it-8bit`). It needs no cloud credentials. The optional public-web
+research (`CREDIT_MEMO_RESEARCH_ENABLED=true`) is its only Gemini call: it needs
+`GOOGLE_CLOUD_PROJECT`, the `[gcp]` extra and application-default credentials, and without
+them it reports itself unavailable while the memo core keeps working. Start the model server
+with `python -m mlx_vlm.server --model mlx-community/gemma-4-31b-it-8bit --port 8001`; see
+[`DEMO.md`](DEMO.md) Demo C.
+
 ## HTTP API
 
 Three surfaces. An **analysis** is the unit of work: open one with its evidence, spread it,
