@@ -39,7 +39,14 @@ for a live build.
    IAM and VPC-SC, all in `asia-southeast1`).
 3. Build and push the image (`Dockerfile`), deploy to Agent Runtime / Cloud Run.
    Name the review console (`HUMAN_REVIEW_URL`) or state `CREDIT_MEMO_REVIEW_ROUTING=off`:
-   under `gcp` or `platform` with routing on, the service refuses to boot without one.
+   under `gcp` or `platform` with routing on, the service refuses to boot without one. Under
+   `gcp` the deployed console is an embedded app behind the portal's IAP edge, so
+   `HUMAN_REVIEW_URL` is `https://<edge-host>/apps/human-review-console/api` and
+   `HUMAN_REVIEW_IAP_AUDIENCE` must name the deployment's IAP OAuth client id beside it; the
+   router mints a Google-signed ID token for that audience with the service's own identity on
+   every submission. Boot refuses `gcp` with routing on and either variable missing, and
+   refuses an audience that is the `/projects/.../backendServices/...` path. The console must
+   list this service's account in its `REVIEW_IAP_SERVICE_CALLERS_JSON`, or it answers 403.
 4. Register the agent card with `agent-registry` and confirm `model-quality-gate` eval gate is green before promotion.
 
 ## Health and observability
@@ -59,6 +66,9 @@ for a live build.
 | Memo returns a blocked envelope | Guardrail blocked input/output | Inspect the `agent-guardrail-gateway` finding; the request is audited as BLOCKED. |
 | Covenant status looks wrong | Bad extracted threshold/operator/value | Status is deterministic; check the extracted terms and their citations. |
 | Boot refuses: `Review routing is on ... HUMAN_REVIEW_URL is not set` | Managed profile, routing on, no console named | Set `HUMAN_REVIEW_URL`, or set `CREDIT_MEMO_REVIEW_ROUTING=off` to run without routing. |
+| Boot refuses: `... needs both HUMAN_REVIEW_URL ... and HUMAN_REVIEW_IAP_AUDIENCE` | `gcp`, routing on, the console URL or the edge audience missing | Set both (the edge path and the IAP OAuth client id), or set `CREDIT_MEMO_REVIEW_ROUTING=off`. |
+| Boot refuses: `HUMAN_REVIEW_IAP_AUDIENCE must be the IAP OAuth client id` | The backend-service path was pasted as the audience | Use the OAuth client id; the backend-service path is what IAP compares its own assertion against. |
+| Memo says "Could not reach the review console" under `gcp`, console logs 401/403 | The edge refused the minted token, or the console does not allowlist this service's account | Check `HUMAN_REVIEW_IAP_AUDIENCE` is the IAP OAuth client id, and that the console's `REVIEW_IAP_SERVICE_CALLERS_JSON` names this service's account. |
 | Memo says "Could not reach the review console" | The hand-off failed (`review_routing: "failed"`) | The memo and its audit record stand; check the console's reachability and the S2S credentials. The service logs the exception type. |
 | Eval gate fails | A metric below threshold | Inspect `python eval/run_eval.py` output; fix groundedness/citation discipline. |
 
