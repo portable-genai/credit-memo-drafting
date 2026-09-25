@@ -14,8 +14,8 @@ Step-by-step scripts for demoing `credit-memo-drafting` two ways:
 - **Demo C - REAL borrowers under the `live` profile** (the audience-facing demo): type
   any US-listed company name and the memo grounds on that company's **real SEC EDGAR
   record** (registrant profile, latest 10-K XBRL figures, filing accession), with real
-  same-industry peers (same SIC code, real filed figures) and generation by the Gemini
-  API. For a private borrower, upload its financial statements (PDF or text; template
+  same-industry peers (same SIC code, real filed figures) and generation by the local
+  open-weight model on this machine. For a private borrower, upload its financial statements (PDF or text; template
   downloadable) and the memo grounds on the uploaded evidence instead.
 
 - **The full business walkthrough** (`make walkthrough`, and the section below): one deal
@@ -33,20 +33,24 @@ Step-by-step scripts for demoing `credit-memo-drafting` two ways:
 ### Demo C in three commands
 
 ```bash
-# 1. There is no local model server to start. Every model call in this profile is the
-#    Gemini API: EDGAR is not Google Search, but it leaves the data centre all the same,
-#    so this profile cannot answer without outbound network either way.
+# 1. Start the local model server (skip if one already answers on :8001). The live
+#    profile reaches it through the shared kit client: LOCAL_MODEL_URL / LOCAL_MODEL.
+python -m mlx_vlm.server --model mlx-community/gemma-4-31b-it-8bit --port 8001
 
-# 2. Declare your EDGAR traffic (SEC fair-access policy) and serve live (generation needs
-#    a GCP project + application-default credentials).
-SEC_EDGAR_CONTACT=you@example.com GOOGLE_CLOUD_PROJECT=<project> \
-  CREDIT_MEMO_PROFILE=live python -m credit_memo.api.app
+# 2. Declare your EDGAR traffic (SEC fair-access policy) and serve live. No cloud
+#    credentials are needed.
+SEC_EDGAR_CONTACT=you@example.com CREDIT_MEMO_PROFILE=live python -m credit_memo.api.app
 
 # 3. Build a memo for a real company (or use the UI on :3000).
 curl -s -X POST localhost:8093/v1/credit-memo -H 'Content-Type: application/json' \
   -H 'X-Dev-Persona: analyst' \
   -d '{"borrower": {"id": "apple-inc", "name": "Apple Inc", "sector": "technology", "jurisdiction": "US"}}'
 ```
+
+Optional public-web research for the analyst: add `CREDIT_MEMO_RESEARCH_ENABLED=true` (plus
+`GOOGLE_CLOUD_PROJECT`, the `[gcp]` extra and application-default credentials). That is the
+only Gemini call under `live`. Without credentials the research panel says the leg is
+unavailable, and the memo is built as before.
 
 Audience data: `GET /v1/documents/template` (CSV of the form fields) and
 `POST /v1/documents` (multipart: file + borrower_id + title); the next memo build for that

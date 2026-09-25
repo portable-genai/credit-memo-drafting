@@ -226,7 +226,7 @@ Peer data is public filing data read over HTTPS: no platform HTTP adapter of our
 | PolicyPackPort | uploaded YAML/JSON | uploaded YAML/JSON | same as gcp | stub |
 | ExportPort | DOCX/HTML + PDF (reportlab, in process) | DOCX/HTML (stdlib) | same as gcp | stub |
 | WebResearchPort | Gemini grounding at `global`, opt-in | fixture | same as gcp | stub |
-|  | `live` uses the same Gemini grounding as `gcp`: it grounds the memo on real filings, and a fictional fixture beside those teaches an audience to trust a search that never ran. |||||
+|  | `live` uses the same Gemini grounding as `gcp`, opt-in the same way: it grounds the memo on real filings, and a fictional fixture beside those teaches an audience to trust a search that never ran. Switched on without credentials it reports itself unavailable. |||||
 | EntityResolutionPort | GLEIF register, opt-in | fixture register | B1 `/v1/ubo-graph` | stub |
 | PeerDataPort | SEC EDGAR | in-process peer table | same as gcp | stub |
 | LLMPort | Gemini | deterministic schema-driven | same as gcp | stub |
@@ -241,8 +241,10 @@ Peer data is public filing data read over HTTPS: no platform HTTP adapter of our
 | ToolCatalogPort | MCP catalog | in-process catalog | same as gcp | stub |
 
 A fifth profile, `live`, sits beside these: SDK-free but not offline. It reads real SEC
-EDGAR filings for both retrieval and peers and calls a real model, which is how a claim
-about real data gets tested without a managed deployment.
+EDGAR filings for both retrieval and peers and calls a real model, the local open-weight
+model through the shared `hex_service_kit.localmodel` client, which is how a claim about
+real data gets tested without a managed deployment. Its only Gemini call is the opt-in web
+research above.
 
 Under `local`, the platform-client ports (knowledge base, guardrail, redaction, audit,
 eval, registry) use in-process implementations, not HTTP to sibling services: a laptop

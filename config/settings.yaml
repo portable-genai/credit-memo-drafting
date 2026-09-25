@@ -7,6 +7,9 @@
 #   local  : a WORKING offline laptop stack (SQLite FTS5 retrieval + a deterministic
 #            schema-driven LLM, regex DLP, heuristic guardrail, append-only audit),
 #            SDK-free, no API key, no emulator required. The dev / test default.
+#   live   : the laptop lane: real SEC EDGAR grounding answered by the local open-weight
+#            model (LOCAL_MODEL_URL / LOCAL_MODEL); Gemini only for the optional web
+#            research, and only while CREDIT_MEMO_RESEARCH_ENABLED is on.
 #   onprem : fail-fast Google Distributed Cloud migration placeholders (raise).
 # Switch with CREDIT_MEMO_PROFILE (or profile: below). Nothing in domain/ changes.
 #
@@ -175,12 +178,14 @@ adapters:
   # `live` searches for real. It is the profile that grounds on real SEC filings for a
   # real listed borrower, and a fixture answering "Singapore manufacturing output
   # (FICTIONAL FIXTURE)" beside genuine filings teaches an audience to trust a search
-  # that never happened -- the one thing this adapter family exists to prevent.
+  # that never happened -- the one thing this adapter family exists to prevent. Under live
+  # it is the ONLY Gemini call: switched on without GOOGLE_CLOUD_PROJECT, the [gcp] extra or
+  # ADC, it reports itself unavailable and the memo core runs without it.
   web_research:
     gcp: credit_memo.adapters.gcp.gemini_web_research:GeminiWebResearchAdapter
     platform: credit_memo.adapters.gcp.gemini_web_research:GeminiWebResearchAdapter
     local: credit_memo.adapters.local.web_research:LocalFixtureWebResearchAdapter
-    live: credit_memo.adapters.gcp.gemini_web_research:GeminiWebResearchAdapter
+    live: credit_memo.adapters.live.web_research:LiveWebResearchAdapter
     onprem: credit_memo.adapters.onprem.web_research:OnPremWebResearchAdapter
   # Who else a PUBLIC REGISTER says is in the borrower's group. A suggestion about who
   # exists, never a figure: every entity comes back VENDOR-provenanced and a related entity
@@ -239,11 +244,13 @@ adapters:
     local: credit_memo.adapters.local.peer_data:LocalPeerDataAdapter
     live: credit_memo.adapters.live.peer_data:LiveEdgarPeerDataAdapter
     onprem: credit_memo.adapters.onprem.peer_data:OnPremPeerDataAdapter
+  # The core model. live = the fleet's local open-weight model through the shared
+  # hex_service_kit.localmodel client (LOCAL_MODEL_URL / LOCAL_MODEL), no cloud credentials.
   llm:
     gcp: credit_memo.adapters.gcp.gemini_llm:GeminiLLMAdapter
     platform: credit_memo.adapters.gcp.gemini_llm:GeminiLLMAdapter
     local: credit_memo.adapters.local.llm:LocalDeterministicLLMAdapter
-    live: credit_memo.adapters.gcp.gemini_llm:GeminiLLMAdapter
+    live: credit_memo.adapters.live.llm:LocalModelLLMAdapter
     onprem: credit_memo.adapters.onprem.llm:OnPremLLMAdapter
   guardrail:
     gcp: credit_memo.adapters.gcp.model_armor_guardrail:ModelArmorGuardrailAdapter
