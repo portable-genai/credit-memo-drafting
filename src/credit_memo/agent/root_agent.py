@@ -82,13 +82,14 @@ def build_root_agent(settings: Settings | None = None) -> LlmAgent:
 
     tools: list[Any] = list(build_function_tools())
 
-    # Temperature 0, not 0.2. Every other grounded path in this repo pins zero at source
-    # (``tests/unit/test_grounded_requests_do_not_sample.py``), and a credit artifact that
-    # comes back different on a re-run is one a reviewer cannot check against the memo the
-    # committee read. ``thinking_level`` is the control the pinned model generation takes;
-    # ``thinking_budget`` was the previous generation's token count and is ignored.
+    # No temperature. The agent CONVERSES: it picks a tool and narrates what the tool
+    # returned. Every artifact a reviewer checks (the memo, its covenants, spread and flags) is
+    # built inside the tools, whose extraction calls pin 0.0 at their own call sites
+    # (``tests/unit/test_sampling_per_call.py``), so the narration's sampling is left to the
+    # model, and absent rather than 1.0 because some models reject the parameter.
+    # ``thinking_level`` is the control the pinned model generation takes; ``thinking_budget``
+    # was the previous generation's token count and is ignored.
     generate_content_config = types.GenerateContentConfig(
-        temperature=0.0,
         thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.HIGH),
     )
 

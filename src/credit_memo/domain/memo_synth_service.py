@@ -128,6 +128,10 @@ class MemoSynthService:
             # stops mid-object, the parser reads nothing, and the memo says the evidence
             # does not support one.
             max_output_tokens=16384,
+            # Pinned although the prose is drafting: the same answer carries the normalised
+            # financial metrics, which feed the peer comparison and the tie-out
+            # reconciliation, and a figure that moved on a re-run would move those checks.
+            temperature=0.0,
         )
         response = self._llm.generate(llm_request)
         g.maybe_record_usage(self._tracer, response)
@@ -273,7 +277,9 @@ class MemoSynthService:
             ),
             model=None,
             response_schema=_CRITIQUE_SCHEMA,
-            temperature=0.0,
+            # Free: this is a JUDGE of the draft's groundedness. Its confidence and caveats are
+            # shown to the reviewer; no deterministic check reads them.
+            temperature=None,
         )
         try:
             response = self._llm.generate(request)

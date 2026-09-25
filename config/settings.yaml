@@ -46,8 +46,6 @@ models:
   location: ${CREDIT_MEMO_MODEL_LOCATION:-asia-southeast1}
   reasoning: gemini-3.5-flash          # GA — memo synthesis + extraction (thinking=high)
   triage: gemini-3.5-flash        # GA — routing / triage / guardrail pre-checks
-  hard_reasoning: gemini-3.5-flash  # in-region SG commitment; no Gemini 3 PRO tier serves any location
-  use_hard_reasoning: false
 
 
 policy_pack:

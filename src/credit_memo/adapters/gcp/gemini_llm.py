@@ -8,9 +8,11 @@ extraction and risk-flag identification; triage/classification uses
 and ``gemini-2.0-flash`` are never used.
 
 The adapter maps the domain :class:`LlmRequest` onto ``client.models.generate_content``
-(system instruction, temperature, max-output-tokens, a :class:`ThinkingConfig` mapped
-from ``request.thinking``, and structured-output config when a response schema is
-supplied), and maps ``usage_metadata`` back onto :class:`TokenUsage`.
+(system instruction, temperature when the request pins one and none at all when it is
+``None``, max-output-tokens, a :class:`ThinkingConfig` mapped from ``request.thinking``, and
+structured-output config when a response schema is supplied), and maps ``usage_metadata``
+back onto :class:`TokenUsage`. After every successful call it notes the model it called
+(``hex_service_kit.provenance``), which is what the console's model pill names.
 
 All Google Cloud / GenAI SDK imports are lazy so the on-prem / test profile imports this
 module without ``google-genai`` installed.
@@ -20,6 +22,8 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Any
+
+from hex_service_kit import provenance
 
 from ...config import Settings
 from ...domain.models import LlmRequest, LlmResponse, ThinkingLevel, TokenUsage
@@ -61,6 +65,7 @@ class GeminiLLMAdapter:
         config = self._build_config(request, types)
 
         response = client.models.generate_content(model=model, contents=contents, config=config)
+        provenance.note_model(model)
         text = getattr(response, "text", "") or ""
         finish = self._finish_reason(response)
         if finish not in ("STOP", "None", ""):
@@ -122,21 +127,23 @@ class GeminiLLMAdapter:
             "Reply with the single label only, no punctuation or explanation.\n\n"
             f"Text:\n{text}"
         )
+        model = self._models.triage
         response = client.models.generate_content(
-            model=self._models.triage,
+            model=model,
             # One turn, passed as a Content rather than a one-element list: the SDK's
             # `contents` union accepts either, and a list of Content is not assignable to
             # a list of the union it declares (lists are invariant), which the newer
             # google-genai stubs now say out loud.
             contents=types.Content(role="user", parts=[types.Part.from_text(text=prompt)]),
             config=types.GenerateContentConfig(
-                temperature=0.0,
+                temperature=0.0,  # pinned: a label is a classification
                 max_output_tokens=16,
                 thinking_config=types.ThinkingConfig(
                     thinking_level=self._thinking_level(ThinkingLevel.MINIMAL, types)
                 ),
             ),
         )
+        provenance.note_model(model)
         raw = (getattr(response, "text", "") or "").strip()
         return self._match_label(raw, labels)
 
@@ -172,12 +179,15 @@ class GeminiLLMAdapter:
 
     def _build_config(self, request: LlmRequest, types: Any) -> Any:
         kwargs: dict[str, Any] = {
-            "temperature": request.temperature,
             "max_output_tokens": request.max_output_tokens,
             "thinking_config": types.ThinkingConfig(
                 thinking_level=self._thinking_level(request.thinking, types)
             ),
         }
+        if request.temperature is not None:
+            # Omitted, not defaulted, when the call site leaves sampling free: some models
+            # reject the parameter, so "free" has to mean absent rather than 1.0.
+            kwargs["temperature"] = request.temperature
         if request.system_instruction:
             kwargs["system_instruction"] = request.system_instruction
         if request.response_schema is not None:

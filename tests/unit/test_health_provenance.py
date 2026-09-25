@@ -1,14 +1,16 @@
-"""The banner's server half: this service names its runtime and its model.
+"""The model pill's server half: this service names its runtime and its model.
 
-Every served UI in the fleet states, at the top of every page, where it is running and
-which model answers (org decision, 2026-08-30). The console must never infer either. A
+Every served UI in the fleet shows, at the top right of every page, which model answers and
+where it runs (org decision 2026-08-30, as pills since 2026-09-23). Before any answer the pill
+states the configured ``generator_model`` below; after one, the ``X-Answered-By`` header of
+that response (``tests/unit/test_answer_provenance.py``). The console must never infer either. A
 page that read its runtime from ``window.location`` would be right until the deployment
 served through a proxy, and wrong silently after that; a page that hard-coded a model name
 would keep printing it after the binding changed.
 
 So the service answers, and the answer is DERIVED FROM THE BINDING the container will
 actually build rather than from a second field someone has to remember to update. That is
-the property these tests pin: rebinding ``llm`` for a profile has to change what the banner
+the property these tests pin: rebinding ``llm`` for a profile has to change what the pill
 says, in the same edit.
 """
 
@@ -57,7 +59,7 @@ def test_the_runtime_says_where_the_process_runs_not_whose_model_it_calls(
     Under ``live`` the optional web-research leg can call Gemini, so it would be easy to
     call that runtime "GCP". It is not: the process, the EDGAR cache, the core model and
     the audit trail are all on the operator's laptop.
-    The banner states WHERE, and the model half states WHOSE, precisely so the two facts
+    The pill's title states WHERE, and its text states WHOSE, precisely so the two facts
     cannot be collapsed into one misleading sentence. ``onprem`` reads local for the same
     reason, and there it is the whole selling point.
     """
@@ -94,6 +96,6 @@ def test_the_onprem_placeholder_does_not_advertise_a_model_it_never_serves(
     """The on-prem adapter raises rather than generating.
 
     Naming a model for it would put a working generator at the top of a page that cannot
-    generate, which is the exact class of claim this banner exists to prevent.
+    generate, which is the exact class of claim this pill exists to prevent.
     """
     assert "not-implemented" in dataclasses.replace(settings, profile="onprem").generator_model

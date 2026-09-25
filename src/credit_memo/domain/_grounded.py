@@ -297,8 +297,9 @@ def build_llm_request(
     user_content: str,
     model: str | None,
     response_schema: dict | None,
+    *,
+    temperature: float | None,
     thinking: ThinkingLevel = ThinkingLevel.HIGH,
-    temperature: float = 0.0,
     max_output_tokens: int = 8192,
     documents: tuple[LlmDocument, ...] = (),
 ) -> LlmRequest:
@@ -306,6 +307,10 @@ def build_llm_request(
 
     ``model=None`` lets the adapter pick its configured default (the reasoning model,
     ``gemini-3.5-flash``); thinking defaults to HIGH for grounded reasoning per SPEC.
+
+    ``temperature`` has NO default, so every grounded call site says which kind it is:
+    ``0.0`` where the output is extracted, classified, scored or fed to a deterministic
+    check, ``None`` (sent as no temperature at all) for drafting, narration and judging.
 
     ``max_output_tokens`` covers the THINKING and the answer together, which is why 4096 was
     not enough. On a real credit file the reasoning alone took about 3,000 tokens, leaving

@@ -142,6 +142,9 @@ class GeminiSpreadExtractionAdapter:
             model=None,
             response_schema=SPREAD_SCHEMA,
             documents=documents,
+            # Pinned: every line item is an EXTRACTED figure the engines compute from once
+            # a person confirms it.
+            temperature=0.0,
         )
         response = self._generator().generate(request)
         parsed = g.parse_structured(response)

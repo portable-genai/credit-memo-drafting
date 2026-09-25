@@ -29,7 +29,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from hex_service_kit import cors_allowlist, resolve_bind_host
 from hex_service_kit.logging import configure_logging
-from hex_service_kit.web import add_loopback_exposure_guard
+from hex_service_kit.web import add_loopback_exposure_guard, install_answer_provenance
 
 from ..config import end_user_auth_kind, resolve_profile
 from ..domain import _grounded as g
@@ -261,6 +261,20 @@ async def _security_headers(request: Request, call_next: Any) -> Any:
     if frame_options:
         response.headers["X-Frame-Options"] = frame_options
     return response
+
+
+# Which model answered, and whether it searched: the model adapters note it as they call
+# (`hex_service_kit.provenance.note_model` / `note_search`; the kit's local-model client notes
+# itself) and this emits it as `X-Answered-By` / `X-Search-Used` on the same response. The
+# console's pills read those two headers, so what a pill names is what answered, never what
+# configuration says would. A request that noted nothing (health, uploads, the deterministic
+# engines) sends neither, and the pill keeps showing the configured `generator_model` from
+# `/healthz`. The console calls this service cross-origin when it runs standalone, and a
+# cross-origin response hides from JavaScript every header it does not expose, so the kit's
+# middleware also names both in `Access-Control-Expose-Headers` on every response
+# (tests/unit/test_answer_provenance.py holds that). Registered before the exposure guard,
+# which must stay the outermost middleware.
+install_answer_provenance(app)
 
 
 # A request arrives with nothing authenticating the END USER unless BOTH of these hold, and

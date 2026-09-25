@@ -21,7 +21,9 @@ import json
 import re
 from typing import Any
 
-from ...config import Settings
+from hex_service_kit import provenance
+
+from ...config import OFFLINE_STUB_MODEL, Settings
 from ...domain.models import (
     LlmRequest,
     LlmResponse,
@@ -105,6 +107,9 @@ class LocalDeterministicLLMAdapter:
     # LLMPort
     # ------------------------------------------------------------------ #
     def generate(self, request: LlmRequest) -> LlmResponse:
+        # What answered is this stub, under the name ``generator_model`` gives it, whatever
+        # model id the response below carries for the services that record one.
+        provenance.note_model(OFFLINE_STUB_MODEL)
         self._used_source_ids = self._source_ids_from_request(request)
         self._prompt = self._user_content(request)
         body = self._body_for_schema(request.response_schema)
@@ -118,6 +123,7 @@ class LocalDeterministicLLMAdapter:
 
     def classify(self, text: str, labels: list[str]) -> str:
         # Deterministic triage: first label (the services only use this for routing).
+        provenance.note_model(OFFLINE_STUB_MODEL)
         return labels[0] if labels else ""
 
     # ------------------------------------------------------------------ #

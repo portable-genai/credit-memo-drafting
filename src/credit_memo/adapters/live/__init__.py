@@ -9,6 +9,6 @@ trail stays on the machine. The fictional built-in corpus never appears under th
 
 Gemini appears in exactly one place: the OPTIONAL public-web research leg
 (:mod:`.web_research`), and only while ``CREDIT_MEMO_RESEARCH_ENABLED`` is on. With it off,
-the default, the profile needs no cloud credentials at all. The UI provenance banner states
-that the runtime is local and names the local model that answers.
+the default, the profile needs no cloud credentials at all. The UI's model pill states that
+the runtime is local and names the local model that answers.
 """

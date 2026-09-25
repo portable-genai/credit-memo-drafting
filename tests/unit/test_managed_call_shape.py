@@ -36,7 +36,7 @@ def _passage(source_id: str, page: int) -> RetrievedPassage:
 
 def test_the_token_budget_leaves_room_for_the_answer_after_the_thinking() -> None:
     """Thinking is charged to the same budget, so 4096 truncated the memo mid-JSON."""
-    request = g.build_llm_request("system", "user", None, None)
+    request = g.build_llm_request("system", "user", None, None, temperature=0.0)
     assert request.max_output_tokens >= 8192
 
 
