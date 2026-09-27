@@ -24,7 +24,7 @@ against remain invented (`config/policy_pack.example.yaml`).
 | P-07 Everything cited and audited | Met | Every figure/covenant/risk carries a `Citation`; `AuditEvent` written to Cloud Logging (`cloud_logging_audit.py` / `agent-observability`) on every interaction. |
 | P-08 Quality / model-risk gate | Met | `eval/run_eval.py` + `eval/rubrics/*.yaml`, which are the ONLY home for the bars: the runner reads them and carries no threshold dict. Enforced in CI by `gate.yaml`, which runs `make check`; `model-quality-gate` owns promotion via `EvaluationGatePort`. |
 | P-09 Determinism where it matters | Met | Covenant compliance is a deterministic calculation (`_grounded.covenant_status`); peer comps are arithmetic; the LLM never overrides either. |
-| P-10 Observability / FinOps | Met | `CloudTraceTracerAdapter` spans + token-usage metrics; message-content capture OFF. |
+| P-10 Observability / FinOps | Met | `CloudTracerAdapter` (the commons `build_tracer`) exports spans and token counts OTLP through the agent-observability collector only; message-content capture OFF. |
 | P-11 Secure SDLC | Met | Offline lint+type+test gate runs on the `local` profile (no GCP SDK); pinned deps; non-root Dockerfile; secrets gitignored. |
 | P-12 Reversibility | Met | The `local` family proves the domain runs entirely off-cloud (SDK-free, end to end), and the `onprem` family is the documented sovereign migration exit with proven interface parity (P-02). |
 
