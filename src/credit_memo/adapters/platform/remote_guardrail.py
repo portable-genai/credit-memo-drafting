@@ -56,7 +56,17 @@ class RemoteGuardrailAdapter:
         return self._parse_verdict(response.json(), direction)
 
     @staticmethod
-    def _parse_verdict(body: dict, fallback_direction: Direction) -> GuardrailVerdict:
+    def _parse_verdict(body: object, fallback_direction: Direction) -> GuardrailVerdict:
+        """Parse the gateway's JSON. FAIL CLOSED: allowed only on a literal JSON ``true``.
+
+        ``bool(...)`` would allow on the string ``"false"``, on ``1`` and on any non-empty
+        object or list; anything that is not exactly ``true`` blocks. A body that is not a
+        JSON object is not a verdict at all and raises.
+        """
+        if not isinstance(body, dict):
+            raise RemoteGuardrailError(
+                f"guardrail gateway returned a non-object verdict: {type(body).__name__}"
+            )
         raw_direction = body.get("direction")
         direction = Direction(raw_direction) if raw_direction else fallback_direction
         findings = tuple(
@@ -68,7 +78,7 @@ class RemoteGuardrailAdapter:
             for item in (body.get("findings") or ())
         )
         return GuardrailVerdict(
-            allowed=bool(body.get("allowed", False)),
+            allowed=body.get("allowed") is True,
             direction=direction,
             findings=findings,
             sanitized_text=body.get("sanitized_text"),
