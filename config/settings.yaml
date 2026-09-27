@@ -280,8 +280,8 @@ adapters:
     live: credit_memo.adapters.local.review_router:LocalReviewRouter
     onprem: credit_memo.adapters.onprem.review_router:OnPremReviewRouter
   tracer:
-    gcp: credit_memo.adapters.gcp.cloud_trace_tracer:CloudTraceTracerAdapter
-    platform: credit_memo.adapters.gcp.cloud_trace_tracer:CloudTraceTracerAdapter
+    gcp: credit_memo.adapters.gcp.tracer:CloudTracerAdapter
+    platform: credit_memo.adapters.gcp.tracer:CloudTracerAdapter
     local: credit_memo.adapters.local.tracer:LocalNoopTracerAdapter
     live: credit_memo.adapters.local.tracer:LocalNoopTracerAdapter
     onprem: credit_memo.adapters.onprem.tracer:OnPremTracerAdapter
