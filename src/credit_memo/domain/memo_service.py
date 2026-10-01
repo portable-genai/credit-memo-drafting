@@ -17,9 +17,12 @@ Pipeline (each step in ``tracer.span``; audited at the end):
          and the computed ratios as authoritative blocks
       -> covenant status tested against the COMPUTED value where the spread supports
          it, otherwise against the extracted one; risk flags
+         [every prompt carries document text: guardrail.screen(INPUT) on the prompt
+          as sent, blocked -> audit BLOCKED + raise before the model sees it]
       -> peer comps (same-industry SEC filers; arithmetic only)
       -> assemble CreditMemo
-      -> guardrail.screen(OUTPUT)            [blocked -> audit BLOCKED + raise]
+      -> guardrail.screen(OUTPUT)            [every model-written field returned;
+                                              blocked -> audit BLOCKED + raise]
       -> review policy (always requires_human_review=True; escalation flag)
       -> audit.record(already-redacted)
 
@@ -65,6 +68,7 @@ from .models import (
     FinancialSpread,
     GlobalCashFlow,
     GuardrailVerdict,
+    LlmRequest,
     MemoInput,
     PeerComparison,
     PolicyException,
@@ -89,6 +93,28 @@ from .scenario_service import ScenarioService
 from .serialization import to_jsonable
 from .spread_service import SpreadService
 from .tie_out_service import TieOutService
+
+
+class _ScreenedLlm:
+    """The LLM port with each prompt INPUT-screened as it is sent.
+
+    The request goes on unchanged after an allowed verdict, so the model is sent exactly
+    the text the guardrail saw. A block raises before the model is called.
+    """
+
+    def __init__(self, llm: Any, guardrail: Any) -> None:
+        self._llm = llm
+        self._guardrail = guardrail
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._llm, name)
+
+    def generate(self, request: LlmRequest) -> Any:
+        prompt = "\n".join(message.content for message in request.messages)
+        verdict: GuardrailVerdict = self._guardrail.screen(prompt, Direction.INPUT)
+        if not verdict.allowed:
+            raise GuardrailBlockedError(verdict.reason or "model prompt blocked by guardrail")
+        return self._llm.generate(request)
 
 
 class CreditMemoService:
@@ -134,12 +160,14 @@ class CreditMemoService:
         # reporting the borrower against them.
         self._policy_pack = policy_pack
 
-        # Sub-services compose the same ports (explicit-DI per SPEC §5).
-        self._synth = MemoSynthService(llm=llm, tracer=tracer)
+        # Sub-services compose the same ports (explicit-DI per SPEC §5). Their prompts carry
+        # the retrieved passages, so they get the LLM behind an INPUT screen of each prompt.
+        screened_llm = _ScreenedLlm(llm, guardrail)
+        self._synth = MemoSynthService(llm=screened_llm, tracer=tracer)
         self._covenants = CovenantService(
-            llm=llm, tracer=tracer, at_risk_band=covenant_at_risk_band
+            llm=screened_llm, tracer=tracer, at_risk_band=covenant_at_risk_band
         )
-        self._risk = RiskFlagService(llm=llm, tracer=tracer)
+        self._risk = RiskFlagService(llm=screened_llm, tracer=tracer)
         self._peers = PeerCompService(peer_data=peer_data, tracer=tracer)
         # No ports and no I/O: the ratio engine is arithmetic over a confirmed spread,
         # which is what makes a memo's figures replayable years after it was written.
@@ -238,17 +266,27 @@ class CreditMemoService:
             )
         ratios: tuple[Ratio, ...] = self._ratios.compute_all(spread) if spread is not None else ()
 
-        # 6) Synthesise the memo prose + normalise financial metrics (LLM, grounded).
-        draft = self._synth.synthesise(
-            borrower, passages, actor, request=memo_input.request, ratios=ratios
-        )
+        # The passages below are text extracted from the uploaded documents, and every
+        # prompt from here carries them: the case summary screened at step 2 is not what the
+        # model is asked. Each prompt is INPUT-screened as it is sent (``_ScreenedLlm``), so
+        # an instruction hidden in a borrower document is checked before a model reads it.
+        try:
+            # 6) Synthesise the memo prose + normalise financial metrics (LLM, grounded).
+            draft = self._synth.synthesise(
+                borrower, passages, actor, request=memo_input.request, ratios=ratios
+            )
 
-        # 7) Covenant status computed against the engine's value where the spread
-        #    supports it, and grounded risk flags.
-        covenants: tuple[Covenant, ...] = self._covenants.extract(
-            borrower, passages, actor, spread=spread
-        )
-        risk_flags: tuple[RiskFlag, ...] = self._risk.flag(borrower, passages, actor)
+            # 7) Covenant status computed against the engine's value where the spread
+            #    supports it, and grounded risk flags.
+            covenants: tuple[Covenant, ...] = self._covenants.extract(
+                borrower, passages, actor, spread=spread
+            )
+            risk_flags: tuple[RiskFlag, ...] = self._risk.flag(borrower, passages, actor)
+        except GuardrailBlockedError:
+            # The blocked prompt carries unredacted document text, so the audit keeps the
+            # redacted case summary, as the step 2 block does.
+            self._write_audit(actor, redacted_summary, "", Decision.BLOCKED)
+            raise
 
         # 8) Test the request against the bank's own policy, and score its own scorecard.
         #    Both are arithmetic over figures a person confirmed, and both run BEFORE the
@@ -314,8 +352,8 @@ class CreditMemoService:
         if renewal_delta is not None:
             memo = replace(memo, renewal_delta=renewal_delta)
 
-        # 12) Guardrail screen (OUTPUT) on the assembled prose.
-        out_text = f"{memo.summary}\n{memo.recommendation_rationale}"
+        # 12) Guardrail screen (OUTPUT) on every model-written field the caller receives.
+        out_text = self._output_text(memo)
         out_verdict: GuardrailVerdict = self._guardrail.screen(out_text, Direction.OUTPUT)
         if not out_verdict.allowed:
             self._write_audit(actor, redacted_summary, "", Decision.BLOCKED, direction="output")
@@ -704,6 +742,22 @@ class CreditMemoService:
             if spread.borrower_id == memo_input.borrower.id:
                 return spread
         return memo_input.spreads[0]
+
+    @staticmethod
+    def _output_text(memo: CreditMemo) -> str:
+        """Every model-written field of the memo, rendered for the OUTPUT screen.
+
+        The covenant terms, risk flags, caveats, client questions and metric labels are
+        all written by a model and all returned verbatim, so screening the summary and
+        rationale alone let the rest of the memo out unchecked.
+        """
+        lines = [memo.summary, memo.recommendation_rationale]
+        lines += [f"{m.name} {m.period} {m.currency}" for m in memo.financial_metrics]
+        lines += [f"{c.description} {c.period}" for c in memo.covenants]
+        lines += [flag.detail for flag in memo.risk_flags]
+        lines += list(memo.caveats)
+        lines += list(memo.questions_for_client)
+        return "\n".join(lines)
 
     @staticmethod
     def _case_summary(memo_input: MemoInput) -> str:

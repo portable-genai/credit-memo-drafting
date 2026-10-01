@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from . import _grounded as g
+from .errors import GuardrailBlockedError
 from .models import (
     Borrower,
     Citation,
@@ -283,6 +284,10 @@ class MemoSynthService:
         )
         try:
             response = self._llm.generate(request)
+        except GuardrailBlockedError:
+            # A blocked prompt is a refusal, not a critique failure: degrading past it would
+            # return a memo built from evidence the guardrail just refused.
+            raise
         except Exception:  # noqa: BLE001 - critique failure must not drop the memo
             return prior_confidence, []
         g.maybe_record_usage(self._tracer, response)
