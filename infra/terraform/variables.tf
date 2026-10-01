@@ -115,9 +115,9 @@ variable "vpc_network_name" {
 }
 
 variable "enable_vpc_sc" {
-  description = "Create the VPC Service Controls perimeter around the AI/data APIs (P-05)."
+  description = "Create the VPC Service Controls perimeter around the AI/data APIs (P-05). Off by default since 2026-10-01 (slice 7 of the posture rule: a control that is not irreversible defaults off in code); terraform.tfvars.example states the production form."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "manage_org_policies" {
