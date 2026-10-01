@@ -122,7 +122,7 @@ variable "enable_vpc_sc" {
 
 variable "manage_org_policies" {
   type        = bool
-  default     = true
+  default     = false
   description = <<-EOT
     Whether THIS stack writes the project's Org Policies (gcp.resourceLocations and
     iam.disableServiceAccountKeyCreation).
@@ -136,6 +136,9 @@ variable "manage_org_policies" {
     applying it into a shared project silently narrows `gcp.resourceLocations` to that region
     and breaks every sibling that reaches another one -- a sibling using Document AI in `us`
     stops extracting, and nothing in this stack's plan says so.
+
+    Off by default since 2026-10-02 (slice 7 of the posture rule: a control that is not
+    irreversible defaults off in code); terraform.tfvars.example states the production form.
   EOT
 }
 
